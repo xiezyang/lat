@@ -358,7 +358,12 @@ bool translate_movss(IR1_INST *pir1)
     if (ir1_opnd_is_xmm(dest) && ir1_opnd_is_mem(src)) {
         IR2_OPND temp = load_freg_from_ir1_1(src, false, IS_INTEGER);
         IR2_OPND xmm_dest = ra_alloc_xmm(ir1_opnd_base_reg_num(dest));
-        la_xvpickve_w(xmm_dest, temp, 0);
+        if(option_enable_lasx) {
+            la_xvpickve_w(xmm_dest, temp, 0);
+        } else {
+            la_vandi_b(xmm_dest, xmm_dest, 0);
+            la_vextrins_w(xmm_dest, temp, 0);
+        }
         return true;
     } else if (ir1_opnd_is_mem(dest) && ir1_opnd_is_xmm(src)) {
         store_freg_to_ir1(ra_alloc_xmm(ir1_opnd_base_reg_num(src)), dest,

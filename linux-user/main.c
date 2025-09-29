@@ -1094,20 +1094,20 @@ int main(int argc, char **argv, char **envp)
     /* Lets check hwcap */
     #include <asm/hwcap.h>
     int need_cap, hwcap;
-    need_cap = HWCAP_LOONGARCH_LSX | HWCAP_LOONGARCH_LASX | HWCAP_LOONGARCH_LBT_X86;
+    need_cap = HWCAP_LOONGARCH_LSX | HWCAP_LOONGARCH_LBT_X86;
     hwcap = qemu_getauxval(AT_HWCAP);
     if (need_cap != (hwcap & need_cap)) {
         fprintf(stderr, "LAT needs LSX/LASX and LBT extension support.\n");
         fprintf(stderr, "Extension not found:");
         if (!(hwcap & HWCAP_LOONGARCH_LSX))
             fprintf(stderr, " LSX");
-        if (!(hwcap & HWCAP_LOONGARCH_LASX)) {
-                fprintf(stderr, " LASX");
-                option_enable_lasx = 0;
-        }
         if (!(hwcap & HWCAP_LOONGARCH_LBT_X86))
             fprintf(stderr, " LBT_X86");
         fprintf(stderr, ". Please check KERNEL and HARDWARE.\n");
+    }
+    if (!(hwcap & HWCAP_LOONGARCH_LASX)) {
+            fprintf(stderr, "not found LASX, use 128-bit vectors\n");
+            option_enable_lasx = 0;
     }
 #endif
 
