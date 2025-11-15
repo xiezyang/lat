@@ -141,6 +141,8 @@ TRANS_FUNC_DEF(jecxz);
 TRANS_FUNC_DEF(jrcxz);
 TRANS_FUNC_DEF(in);
 TRANS_FUNC_DEF(out);
+TRANS_FUNC_DEF(into);
+TRANS_FUNC_DEF(bound);
 TRANS_FUNC_DEF(call);
 TRANS_FUNC_DEF(jmp);
 TRANS_FUNC_DEF(ljmp);
@@ -1228,6 +1230,8 @@ void helper_raise_int(void);
 void helper_raise_illop(void);
 void helper_raise_trapop(void);
 void helper_raise_gpf(void);
+void helper_raise_into(void);
+void helper_raise_bound(void);
 void helper_raise_syscall(void);
 
 bool si12_overflow(long si12);

@@ -327,6 +327,67 @@ bool translate_out(IR1_INST *pir1)
     return true;
 }
 
+bool translate_into(IR1_INST *pir1)
+{
+    /* raise INTO , enabel when OF = 1 */
+    IR2_OPND flag_opnd = ra_alloc_itemp();
+    IR2_OPND label_z = ra_alloc_label();
+    la_x86mfflag(flag_opnd, OF_USEDEF_BIT);
+    la_beq(flag_opnd, zero_ir2_opnd, label_z);
+
+    IR2_OPND tmp_opnd = ra_alloc_itemp();
+    IR2_OPND eip_opnd = ra_alloc_dbt_arg2();
+    li_d(eip_opnd, ir1_addr(pir1));
+    la_store_addrx(eip_opnd, env_ir2_opnd,
+                    lsenv_offset_of_eip(lsenv));
+    tr_save_registers_to_env(0xff, 0xff, option_save_xmm, options_to_save());
+    aot_load_host_addr(tmp_opnd, (ADDR)helper_raise_into,
+        LOAD_HELPER_RAISE_INTO, 0);
+    la_jirl(zero_ir2_opnd, tmp_opnd, 0);
+    ra_free_temp(tmp_opnd);
+
+    la_label(label_z);
+    ra_free_temp(flag_opnd);
+    return true;
+}
+
+bool translate_bound(IR1_INST *pir1)
+{
+    /* raise BOUND , disenable when a<=b<=c */
+    int opnd_size = ir1_opnd_size(ir1_get_opnd(pir1, 0));
+    IR2_OPND high = ra_alloc_itemp();
+    IR2_OPND src = load_ireg_from_ir1(ir1_get_opnd(pir1, 0), SIGN_EXTENSION, false);
+    IR2_OPND bound_low = load_ireg_from_ir1(ir1_get_opnd(pir1, 1), SIGN_EXTENSION, false);
+    if (opnd_size == 16) {
+        la_srai_w(high, bound_low, 16);
+        la_slli_w(bound_low, bound_low, 16);
+        la_srai_w(bound_low, bound_low, 16);
+    } else {
+        la_srai_d(high, bound_low, 32);
+        la_bstrpick_w(bound_low, bound_low, 31, 0);
+    }
+    IR2_OPND label_oh = ra_alloc_label();
+    IR2_OPND label_ol = ra_alloc_label();
+    la_blt(high, src, label_oh);
+    la_bge(src, bound_low, label_ol);
+    ra_free_temp(high);
+
+    la_label(label_oh);
+    IR2_OPND tmp_opnd = ra_alloc_itemp();
+    IR2_OPND eip_opnd = ra_alloc_dbt_arg2();
+    li_d(eip_opnd, ir1_addr(pir1));
+    la_store_addrx(eip_opnd, env_ir2_opnd,
+                    lsenv_offset_of_eip(lsenv));
+    tr_save_registers_to_env(0xff, 0xff, option_save_xmm, options_to_save());
+    aot_load_host_addr(tmp_opnd, (ADDR)helper_raise_bound,
+        LOAD_HELPER_RAISE_BOUND, 0);
+    la_jirl(zero_ir2_opnd, tmp_opnd, 0);
+    ra_free_temp(tmp_opnd);
+
+    la_label(label_ol);
+    return true;
+}
+
 bool translate_prefetch(IR1_INST *pir1) { return true; }
 bool translate_prefetchnta(IR1_INST *pir1) { return true; }
 // bool translate_prefetcht0(IR1_INST *pir1) { return true; }
@@ -469,6 +530,30 @@ bool translate_invalid(IR1_INST *pir1)
     la_jirl(zero_ir2_opnd, tmp_opnd, 0);
     ra_free_temp(tmp_opnd);
     return true;
+}
+
+void helper_raise_into(void)
+{
+    CPUX86State *env = (CPUX86State *)lsenv->cpu_state;
+    CPUState *cs = env_cpu(env);
+
+    cs->exception_index = EXCP04_INTO;
+    env->error_code = 0;
+    env->exception_is_int = 0;
+    env->exception_next_eip = env->eip;
+    cpu_loop_exit(cs);
+}
+
+void helper_raise_bound(void)
+{
+    CPUX86State *env = (CPUX86State *)lsenv->cpu_state;
+    CPUState *cs = env_cpu(env);
+
+    cs->exception_index = EXCP05_BOUND;
+    env->error_code = 0;
+    env->exception_is_int = 0;
+    env->exception_next_eip = env->eip;
+    cpu_loop_exit(cs);
 }
 
 #ifdef TARGET_X86_64
