@@ -235,7 +235,11 @@ IR1_INST *get_ir1_list(struct TranslationBlock *tb, ADDRX pc, int max_insns)
             pir1->info = (void *)((uint64_t)pir1_base +
                     (ir1_num * sizeof(struct la_dt_insn)));
             pir1->info->id = dt_X86_INS_INVALID;
-            pir1->info->address = pre->info->address + pre->info->size;
+			if (ir1_num == 0) {
+				pir1->info->address = pc;
+			} else {
+				pir1->info->address = pre->info->address + pre->info->size;
+			}
             ir1_num++;
             break;
         }
