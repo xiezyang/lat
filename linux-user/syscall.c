@@ -17279,7 +17279,6 @@ defined(__loongarch__)
 #endif
     default:
         qemu_log_mask(LOG_UNIMP, "Unsupported syscall: %d\n", num);
-        lsassert(CODEIS64);
         return -TARGET_ENOSYS;
     }
     return ret;
