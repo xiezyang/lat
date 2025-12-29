@@ -139,7 +139,7 @@ void tu_reset_tb(TranslationBlock *tb);
     result; \
 })  /* EXPAND_TO_64BIT */
 
-#ifdef CONFIG_LATX_SMC_OPT
+#if defined(CONFIG_LATX) && defined(CONFIG_LATX_SMC_OPT)
 
 /*
  * Retranslation strategy for SMC optimization.
@@ -553,6 +553,7 @@ static inline bool spm_exist(uint64_t addr, uint64_t len)
     }
 }
 
+#ifdef CONFIG_LATX_SMC_OPT
 static bool is_shadow_page(target_ulong address)
 {
     return page_get_target_data(address);
@@ -569,6 +570,7 @@ static bool is_shadow_page_not_shmm(target_ulong address)
     ShadowPageDesc *spd = page_get_target_data(address);
     return spd && !(spd->is_shmm);
 }
+#endif
 
 #ifndef CONFIG_USER_ONLY
 PageDesc *page_find_alloc(tb_page_addr_t index, int alloc)
@@ -1960,7 +1962,9 @@ static void do_tb_phys_invalidate(TranslationBlock *tb, bool rm_from_page_list)
     qatomic_set(&tcg_ctx->tb_phys_invalidate_count,
                tcg_ctx->tb_phys_invalidate_count + 1);
 
+#ifdef CONFIG_LATX_SMC_OPT
     jrra_install_smc_sentinel(tb);
+#endif
 }
 
 static void tb_phys_invalidate__locked(TranslationBlock *tb)
@@ -4025,12 +4029,18 @@ void page_protect(tb_page_addr_t address)
         }
 
         pageflags_set_clear(start, last, 0, PAGE_WRITE);
+#ifdef CONFIG_LATX_SMC_OPT
         if (!is_shadow_page_not_shmm(address)) {
+#endif
             mprotect(g2h_untagged(start), qemu_host_page_size,
                     (prot & PAGE_BITS) & ~PAGE_WRITE);
+#ifdef CONFIG_LATX_SMC_OPT
         }
+#endif
     }
 }
+
+#if defined(CONFIG_LATX) && defined(CONFIG_LATX_SMC_OPT)
 
 /*
  * SMC shared mmap strategy
@@ -4246,6 +4256,8 @@ static void smc_retrans_triger(TranslationBlock *ctb)
 
 #endif
 
+#if defined(CONFIG_LATX) && defined(CONFIG_LATX_SMC_OPT)
+
 #define SMC_CREATE_SHADOW_PAGE_SHMM(address, p) do {                        \
     if (!is_shadow_page(address) && !(p->flags & PAGE_WRITE)) {             \
         smc_create_shadow_page_shmm(address & qemu_host_page_mask);         \
@@ -4314,6 +4326,10 @@ static void smc_retrans_triger(TranslationBlock *ctb)
         g_assert_not_reached();                                         \
     }                                                                   \
 } while (0)
+
+#endif
+
+#if defined(CONFIG_LATX) && defined(CONFIG_LATX_SMC_OPT)
 
 int smc_store_helper_vst_x4(void *env,
         uint64_t address, int r0, int r1, int r2, int r3)
@@ -4435,6 +4451,8 @@ do_return:
     return 0;
 }
 
+#endif
+
 /* called from signal handler: invalidate the code and unprotect the
  * page. Return 0 if the fault was not handled, 1 if it was handled,
  * and 2 if it was handled but the caller must cause the TB to be
@@ -4453,12 +4471,15 @@ do_return:
  */
 int page_unprotect(target_ulong address, uintptr_t pc, int *emu)
 {
-    PageFlagsNode *p = NULL, *p2 = NULL;
+    PageFlagsNode *p = NULL;
     bool current_tb_invalidated;
+#ifdef CONFIG_LATX_SMC_OPT
+    PageFlagsNode *p2 = NULL;
     int do_mprotect = 1;
     int inv_one_tb = 0;
     int size = 1;
     int force_inv_host_page= 0;
+#endif
 
     /* Technically this isn't safe inside a signal handler.  However we
        know this only ever happens in a synchronous SEGV handler, so in
@@ -4467,7 +4488,6 @@ int page_unprotect(target_ulong address, uintptr_t pc, int *emu)
 
 #ifdef CONFIG_LATX_SMC_OPT
     smc_retrans_triger(tcg_tb_lookup(pc));
-#endif
 
     if (emu) {
         if (*emu > 0) {
@@ -4485,6 +4505,7 @@ int page_unprotect(target_ulong address, uintptr_t pc, int *emu)
                    (address2 & TARGET_PAGE_MASK);
     int is_cross_host = (address  & qemu_host_page_mask) !=
                         (address2 & qemu_host_page_mask);
+#endif
     /* If @emu == NULL, the size will be 1 which makes address == address2.
      * Then is_cross and is_cross_host will both be false. */
 
@@ -4495,6 +4516,7 @@ int page_unprotect(target_ulong address, uintptr_t pc, int *emu)
         mmap_unlock();
         return 0;
     }
+#ifdef CONFIG_LATX_SMC_OPT
     if (is_cross) {
         p2 = pageflags_find(address2, address2);
         if (!p2 || !(p2->flags & PAGE_WRITE_ORG)) {
@@ -4502,13 +4524,18 @@ int page_unprotect(target_ulong address, uintptr_t pc, int *emu)
             return 0;
         }
     }
+#endif
 
     current_tb_invalidated = false;
+#ifdef CONFIG_LATX_SMC_OPT
     if (!force_inv_host_page &&
         /* check PAGE_WRITE on the guest pages */
         ((!is_cross && p->flags & PAGE_WRITE) ||
          ( is_cross && p->flags & PAGE_WRITE && p2->flags & PAGE_WRITE)))
     {
+#else
+    if (p->flags & PAGE_WRITE) {
+#endif
         /*
          * If the page is actually marked WRITE then assume this is because
          * this thread raced with another one which got here first and
@@ -4549,14 +4576,17 @@ int page_unprotect(target_ulong address, uintptr_t pc, int *emu)
             pflags[i] = pageflags_find(addr, addr);
             /* Check flags before creating shadow page.
              * All guest page must be valid. */
+#ifdef CONFIG_LATX_SMC_OPT
             if (inv_one_tb &&
                (!pflags[i] || !(pflags[i]->flags & PAGE_VALID))) {
                 inv_one_tb = 0;
             }
+#endif
             addr += TARGET_PAGE_SIZE;
         }
 no_pageflags_cache:
 
+#ifdef CONFIG_LATX_SMC_OPT
         if (inv_one_tb) {
             /* === create shadow page for smc === */
             if (latx_smc_shmm()) {
@@ -4671,6 +4701,9 @@ no_pageflags_cache:
                 }
             }
         } else if (qemu_host_page_size <= TARGET_PAGE_SIZE) {
+#else
+        if (qemu_host_page_size <= TARGET_PAGE_SIZE) {
+#endif
             start = address & TARGET_PAGE_MASK;
             len = TARGET_PAGE_SIZE;
             prot = p->flags | PAGE_WRITE;
@@ -4704,6 +4737,7 @@ no_pageflags_cache:
                 addr += TARGET_PAGE_SIZE;
             }
         }
+#ifdef CONFIG_LATX_SMC_OPT
         if (do_mprotect) {
             if (prot & PAGE_EXEC) {
                 prot = (prot & ~PAGE_EXEC) | PAGE_READ;
@@ -4712,6 +4746,12 @@ no_pageflags_cache:
                 mprotect((void *)g2h_untagged(start), len, prot & PAGE_BITS);
             }
         }
+#else
+        if (prot & PAGE_EXEC) {
+            prot = (prot & ~PAGE_EXEC) | PAGE_READ;
+        }
+        mprotect((void *)g2h_untagged(start), len, prot & PAGE_BITS);
+#endif
     }
     mmap_unlock();
 
@@ -5255,6 +5295,7 @@ int shared_private_interpret(siginfo_t *info, ucontext_t *uc)
             info->si_addr = (void *)siaddr;
             return 1;
         }
+#ifdef CONFIG_LATX_SMC_OPT
         if (latx_smc_inv_tb()) {
             /* Maybe a write on the smc page which is writable on guest view.
              *
@@ -5269,10 +5310,12 @@ int shared_private_interpret(siginfo_t *info, ucontext_t *uc)
              * back to try page_unprotect() to make the host page writable. */
             return 1;
         }
+#endif
         /* SC is still unsupported */
         break;
     }
 
+#ifdef CONFIG_LATX_SMC_OPT
     /* Interpret atomic inst on smc shmm page can not maintain
      * atomicity since the host page is still readable.
      * Fallback to try page_unprotect(). */
@@ -5281,6 +5324,9 @@ int shared_private_interpret(siginfo_t *info, ucontext_t *uc)
         return 1;                                                   \
     }                                                               \
 } while (0)
+#else
+#define SMC_SHMM_INTERPRET_FALLBACK(spd)
+#endif
 
     switch (inst >> 22) {
     case 0xa0: /* LD.B */

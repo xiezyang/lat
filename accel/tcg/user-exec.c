@@ -198,7 +198,7 @@ static void show_latx_signal_debuginfo(siginfo_t *info, uintptr_t pc,
 }
 #endif
 
-#ifdef CONFIG_LATX_SMC_OPT
+#if defined(CONFIG_LATX) && defined(CONFIG_LATX_SMC_OPT)
 
 static uint64_t parse_guest_store(siginfo_t *info, ucontext_t *uc, int *size)
 {
