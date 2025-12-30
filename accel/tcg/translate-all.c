@@ -2122,6 +2122,7 @@ static inline void tbmini_set_pointer(uint64_t* tbm, uint64_t tb_addr)
 #endif
 
 /* Called with mmap_lock held for user mode emulation.  */
+#ifdef CONFIG_LATX
 TranslationBlock *tb_gen_code(CPUState *cpu,
                               target_ulong pc, target_ulong cs_base,
                               uint32_t flags, int cflags)
@@ -2198,9 +2199,6 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     tb->jmp_target_arg[0] = TB_JMP_RESET_OFFSET_INVALID;
     tb->jmp_target_arg[1] = TB_JMP_RESET_OFFSET_INVALID;
     tcg_ctx->tb_cflags = cflags;
-#ifndef CONFIG_LATX
- tb_overflow:
-#else
     tb->bool_flags = OPT_BCC;
     tb->s_data->_top_out = -1;
     tb->s_data->_top_in = -1;
@@ -2223,9 +2221,254 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
         smc_retrans_remove(pc);
     }
 #endif
+
+    /* generate machine code */
+    tb->jmp_reset_offset[0] = TB_JMP_RESET_OFFSET_INVALID;
+    tb->jmp_reset_offset[1] = TB_JMP_RESET_OFFSET_INVALID;
+    tb->jmp_stub_reset_offset[0] = TB_JMP_RESET_OFFSET_INVALID;
+    tb->jmp_stub_reset_offset[1] = TB_JMP_RESET_OFFSET_INVALID;
+    tb->jmp_indirect = TB_JMP_RESET_OFFSET_INVALID;
+#ifdef CONFIG_LATX_INSTS_PATTERN
+    tb->eflags_target_arg[0] = TB_JMP_RESET_OFFSET_INVALID;
+    tb->eflags_target_arg[1] = TB_JMP_RESET_OFFSET_INVALID;
+    tb->eflags_target_arg[2] = TB_JMP_RESET_OFFSET_INVALID;
+#endif
+#ifdef CONFIG_LATX_TU
+    tu_reset_tb(tb);
+    tb->s_data->tu_tb_mode = TB_GEN_CODE;
+#endif
+    clear_signal_link_flag(tb, 0);
+    clear_signal_link_flag(tb, 1);
+    tb->first_jmp_align = TB_JMP_RESET_OFFSET_INVALID;
+    tcg_ctx->tb_jmp_reset_offset = tb->jmp_reset_offset;
+    if (TCG_TARGET_HAS_direct_jump) {
+        tcg_ctx->tb_jmp_insn_offset = tb->jmp_target_arg;
+        tcg_ctx->tb_jmp_target_addr = NULL;
+    } else {
+        tcg_ctx->tb_jmp_insn_offset = NULL;
+        tcg_ctx->tb_jmp_target_addr = tb->jmp_target_arg;
+    }
+
+#ifdef CONFIG_PROFILER
+    /* TODO: tb_count1 */
+    qatomic_set(&prof->tb_count1, prof->tb_count1 + 1);
+    qatomic_set(&prof->tb_count, prof->tb_count + 1);
+    ti = profile_getclock();
 #endif
 
-#ifndef CONFIG_LATX
+    /*
+     * remove write prot of the page in case of paralell code modification,
+     * but the paired page cross 16K boundary is still not protected.
+     */
+    int p_flags = page_get_flags(pc);
+    if ((p_flags & PAGE_WRITE) && !is_shadow_page_not_shmm(pc)) {
+        mprotect((void*)(pc & qemu_host_page_mask), qemu_host_page_size, PROT_READ);
+    }
+
+#ifdef CONFIG_LATX_MONITOR_SHARED_MEM
+    if (option_monitor_shared_mem) {
+        tb->checksum = p_flags & PAGE_MEMSHARE;
+    }
+#endif
+    gen_code_size = target_latx_host(env, tb, max_insns);
+    if (unlikely(gen_code_size < 0)) {
+        /*
+         * Overflow of code_gen_buffer, or the current slice of it.
+         *
+         * TODO: We don't need to re-do gen_intermediate_code, nor
+         * should we re-do the tcg optimization currently hidden
+         * inside tcg_gen_code.  All that should be required is to
+         * flush the TBs, allocate a new TB, re-initialize it per
+         * above, and re-do the actual code generation.
+         */
+        goto buffer_overflow;
+    }
+
+    if (gen_code_size == 0) {
+        return NULL;
+    }
+
+    /*
+     * To handle segv case, every insn has encode data at the end of tb
+     * Calculate the search_size and set the new gen_code_buf
+     */
+    search_size = encode_search(tb, (void *)gen_code_buf + gen_code_size);
+    if (unlikely(search_size < 0)) {
+        qatomic_set(&tcg_ctx->code_gen_ptr, tcg_ctx->code_gen_highwater + 1);
+        goto buffer_overflow;
+    }
+    /*
+     * The tail of each TB's code buffer stores the TBMini structure of
+     * the next TB.
+     *
+     *                  dcache
+     *                / aligned
+     *    +-----------+--------+
+     *    |   codes   | TBMini |
+     *    +-----------+--------+
+     *                  ^  ^
+     *          magic  /   | 48 bits
+     *          number    TB pointer
+     */
+    tb->tc.size = gen_code_size;
+
+#ifdef CONFIG_LATX_AOT
+    if (option_aot) {
+        tb->s_data->tu_size = ROUND_UP(gen_code_size + search_size, CODE_GEN_ALIGN);
+    }
+#endif
+
+#ifdef CONFIG_PROFILER
+    qatomic_set(&prof->code_time, prof->code_time + profile_getclock() - ti);
+    qatomic_set(&prof->code_in_len, prof->code_in_len + tb->size);
+    qatomic_set(&prof->code_out_len, prof->code_out_len + gen_code_size);
+    qatomic_set(&prof->search_out_len, prof->search_out_len + search_size);
+#endif
+
+    uintptr_t sptr = (uintptr_t)gen_code_buf + gen_code_size;
+    qatomic_set(&tcg_ctx->code_gen_ptr, (void *)
+        ROUND_UP(sptr + search_size, CODE_GEN_ALIGN));
+
+    /* init jump list */
+    qemu_spin_init(&tb->jmp_lock);
+    tb->jmp_list_head = (uintptr_t)NULL;
+    tb->jmp_list_next[0] = (uintptr_t)NULL;
+    tb->jmp_list_next[1] = (uintptr_t)NULL;
+    tb->jmp_dest[0] = (uintptr_t)NULL;
+    tb->jmp_dest[1] = (uintptr_t)NULL;
+    tb->canlink[0] = 1;
+    tb->canlink[1] = 1;
+#ifdef CONFIG_LATX_LAZYLINK
+    tb->lazylink[0] = 1;
+    tb->lazylink[1] = 1;
+#endif
+
+    assert(!use_tu_jmp(tb));
+    /* init original jump addresses which have been set during tcg_gen_code() */
+    if (tb->jmp_reset_offset[0] != TB_JMP_RESET_OFFSET_INVALID) {
+        tb_reset_jump(tb, 0);
+    }
+    if (tb->jmp_reset_offset[1] != TB_JMP_RESET_OFFSET_INVALID) {
+        tb_reset_jump(tb, 1);
+    }
+
+    /*
+     * If the TB is not associated with a physical RAM page then
+     * it must be a temporary one-insn TB, and we have nothing to do
+     * except fill in the page_addr[] fields. Return early before
+     * attempting to link to other TBs or add to the lookup table.
+     */
+    if (phys_pc == -1) {
+        tb_set_page_addr0(tb, -1);
+        tb_set_page_addr1(tb, -1);
+        return tb;
+    }
+
+    /* check next page if needed */
+    virt_page2 = (pc + tb->size - 1) & TARGET_PAGE_MASK;
+    phys_page2 = -1;
+    if ((pc & TARGET_PAGE_MASK) != virt_page2) {
+        phys_page2 = get_page_addr_code(env, virt_page2);
+    }
+
+    flush_idcache_range(0, 0, 0);
+
+#ifdef CONFIG_LATX_AOT
+    if (in_pre_translate) {
+        return tb;
+    }
+#endif
+
+    tcg_tb_insert(tb);
+
+    /*
+     * No explicit memory barrier is required -- tb_link_page() makes the
+     * TB visible in a consistent state.
+     */
+    existing_tb = tb_link_page(tb, phys_pc, phys_page2);
+    /* if the TB already exists, discard what we just translated */
+    if (unlikely(existing_tb != tb)) {
+        uintptr_t orig_aligned = (uintptr_t)gen_code_buf;
+
+#if defined(CONFIG_LATX) && defined(CONFIG_LATX_TBMINI_ENABLE)
+        orig_aligned -= sizeof(struct TBMini);
+#endif
+
+        if (!option_split_tb) {
+            orig_aligned -= ROUND_UP(sizeof(*tb), qemu_icache_linesize);
+        }
+
+        qatomic_set(&tcg_ctx->code_gen_ptr, (void *)orig_aligned);
+        tb_destroy(tb);
+        tcg_tb_remove(tb);
+        return existing_tb;
+    }
+    return tb;
+}
+#else
+TranslationBlock *tb_gen_code(CPUState *cpu,
+                              target_ulong pc, target_ulong cs_base,
+                              uint32_t flags, int cflags)
+{
+    CPUArchState *env = cpu->env_ptr;
+    TranslationBlock *tb, *existing_tb;
+    tb_page_addr_t phys_pc, phys_page2;
+    target_ulong virt_page2;
+    tcg_insn_unit *gen_code_buf;
+    int max_insns;
+    int gen_code_size, search_size;
+#ifdef CONFIG_PROFILER
+    TCGProfile *prof = &tcg_ctx->prof;
+    int64_t ti;
+#endif
+    void *host_pc;
+
+    assert_memory_lock();
+    qemu_thread_jit_write();
+
+    phys_pc = get_page_addr_code_hostp(env, pc, &host_pc);
+
+    if (phys_pc == -1) {
+        /* Generate a one-shot TB with 1 insn in it */
+        cflags = (cflags & ~CF_COUNT_MASK) | CF_LAST_IO | 1;
+    }
+
+    max_insns = cflags & CF_COUNT_MASK;
+    if (max_insns == 0) {
+        max_insns = CF_COUNT_MASK;
+    }
+    if (max_insns > TCG_MAX_INSNS) {
+        max_insns = TCG_MAX_INSNS;
+    }
+    if (cpu->singlestep_enabled || singlestep) {
+        max_insns = 1;
+    }
+
+ buffer_overflow:
+
+    tb = tcg_tb_alloc(tcg_ctx);
+
+    if (unlikely(!tb)) {
+        /* flush must be done */
+        tb_flush(cpu);
+        mmap_unlock();
+        /* Make the execution loop process the flush as soon as possible.  */
+        cpu->exception_index = EXCP_INTERRUPT;
+        cpu_loop_exit(cpu);
+    }
+
+    gen_code_buf = tcg_ctx->code_gen_ptr;
+
+    tb->tc.ptr = tcg_splitwx_to_rx(gen_code_buf);
+    tb->pc = pc;
+    /* tb->cs_base = cs_base; */
+    tb->flags = flags;
+    tb->cflags = cflags;
+    tb->jmp_target_arg[0] = TB_JMP_RESET_OFFSET_INVALID;
+    tb->jmp_target_arg[1] = TB_JMP_RESET_OFFSET_INVALID;
+    tcg_ctx->tb_cflags = cflags;
+ tb_overflow:
+
 #ifdef CONFIG_PROFILER
     /* includes aborted translations because of exceptions */
     qatomic_set(&prof->tb_count1, prof->tb_count1 + 1);
@@ -2246,7 +2489,6 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     max_insns = tb->icount;
 
     trace_translate_block(tb, tb->pc, tb->tc.ptr);
-#endif
 
     /* generate machine code */
     tb->jmp_reset_offset[0] = TB_JMP_RESET_OFFSET_INVALID;
@@ -2254,20 +2496,6 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     tb->jmp_stub_reset_offset[0] = TB_JMP_RESET_OFFSET_INVALID;
     tb->jmp_stub_reset_offset[1] = TB_JMP_RESET_OFFSET_INVALID;
     tb->jmp_indirect = TB_JMP_RESET_OFFSET_INVALID;
-#ifdef CONFIG_LATX_INSTS_PATTERN
-    tb->eflags_target_arg[0] = TB_JMP_RESET_OFFSET_INVALID;
-    tb->eflags_target_arg[1] = TB_JMP_RESET_OFFSET_INVALID;
-    tb->eflags_target_arg[2] = TB_JMP_RESET_OFFSET_INVALID;
-#endif
-#ifdef CONFIG_LATX_TU
-    tu_reset_tb(tb);
-    tb->s_data->tu_tb_mode = TB_GEN_CODE;
-#endif
-#ifdef CONFIG_LATX
-    clear_signal_link_flag(tb, 0);
-    clear_signal_link_flag(tb, 1);
-    tb->first_jmp_align = TB_JMP_RESET_OFFSET_INVALID;
-#endif
     tcg_ctx->tb_jmp_reset_offset = tb->jmp_reset_offset;
     if (TCG_TARGET_HAS_direct_jump) {
         tcg_ctx->tb_jmp_insn_offset = tb->jmp_target_arg;
@@ -2277,7 +2505,6 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
         tcg_ctx->tb_jmp_target_addr = tb->jmp_target_arg;
     }
 
-#ifndef CONFIG_LATX
 #ifdef CONFIG_PROFILER
     qatomic_set(&prof->tb_count, prof->tb_count + 1);
     qatomic_set(&prof->interm_time,
@@ -2402,83 +2629,6 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     }
 #endif
 
-#else /* CONFIG_LATX */
-#ifdef CONFIG_PROFILER
-    /* TODO: tb_count1 */
-    qatomic_set(&prof->tb_count1, prof->tb_count1 + 1);
-    qatomic_set(&prof->tb_count, prof->tb_count + 1);
-    ti = profile_getclock();
-#endif
-
-    /*
-     * remove write prot of the page in case of paralell code modification,
-     * but the paired page cross 16K boundary is still not protected.
-     */
-    int p_flags = page_get_flags(pc);
-    if ((p_flags & PAGE_WRITE) && !is_shadow_page_not_shmm(pc)) {
-        mprotect((void*)(pc & qemu_host_page_mask), qemu_host_page_size, PROT_READ);
-    }
-
-#ifdef CONFIG_LATX_MONITOR_SHARED_MEM
-    if (option_monitor_shared_mem) {
-        tb->checksum = p_flags & PAGE_MEMSHARE;
-    }
-#endif
-    gen_code_size = target_latx_host(env, tb, max_insns);
-    if (unlikely(gen_code_size < 0)) {
-        /*
-         * Overflow of code_gen_buffer, or the current slice of it.
-         *
-         * TODO: We don't need to re-do gen_intermediate_code, nor
-         * should we re-do the tcg optimization currently hidden
-         * inside tcg_gen_code.  All that should be required is to
-         * flush the TBs, allocate a new TB, re-initialize it per
-         * above, and re-do the actual code generation.
-         */
-        goto buffer_overflow;
-    }
-
-    if (gen_code_size == 0) {
-        return NULL;
-    }
-
-    /*
-     * To handle segv case, every insn has encode data at the end of tb
-     * Calculate the search_size and set the new gen_code_buf
-     */
-    search_size = encode_search(tb, (void *)gen_code_buf + gen_code_size);
-    if (unlikely(search_size < 0)) {
-        qatomic_set(&tcg_ctx->code_gen_ptr, tcg_ctx->code_gen_highwater + 1);
-        goto buffer_overflow;
-    }
-    /*
-     * The tail of each TB's code buffer stores the TBMini structure of
-     * the next TB.
-     *
-     *                  dcache
-     *                / aligned
-     *    +-----------+--------+
-     *    |   codes   | TBMini |
-     *    +-----------+--------+
-     *                  ^  ^
-     *          magic  /   | 48 bits
-     *          number    TB pointer
-     */
-    tb->tc.size = gen_code_size;
-
-#ifdef CONFIG_LATX_AOT
-    if (option_aot) {
-        tb->s_data->tu_size = ROUND_UP(gen_code_size + search_size, CODE_GEN_ALIGN);
-    }
-#endif
-
-#ifdef CONFIG_PROFILER
-    qatomic_set(&prof->code_time, prof->code_time + profile_getclock() - ti);
-    qatomic_set(&prof->code_in_len, prof->code_in_len + tb->size);
-    qatomic_set(&prof->code_out_len, prof->code_out_len + gen_code_size);
-    qatomic_set(&prof->search_out_len, prof->search_out_len + search_size);
-#endif
-#endif
 
     uintptr_t sptr = (uintptr_t)gen_code_buf + gen_code_size;
     qatomic_set(&tcg_ctx->code_gen_ptr, (void *)
@@ -2491,16 +2641,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     tb->jmp_list_next[1] = (uintptr_t)NULL;
     tb->jmp_dest[0] = (uintptr_t)NULL;
     tb->jmp_dest[1] = (uintptr_t)NULL;
-    tb->canlink[0] = 1;
-    tb->canlink[1] = 1;
-#ifdef CONFIG_LATX_LAZYLINK
-    tb->lazylink[0] = 1;
-    tb->lazylink[1] = 1;
-#endif
 
-#ifdef CONFIG_LATX
-    assert(!use_tu_jmp(tb));
-#endif
     /* init original jump addresses which have been set during tcg_gen_code() */
     if (tb->jmp_reset_offset[0] != TB_JMP_RESET_OFFSET_INVALID) {
         tb_reset_jump(tb, 0);
@@ -2528,16 +2669,6 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
         phys_page2 = get_page_addr_code(env, virt_page2);
     }
 
-#ifdef CONFIG_LATX
-    flush_idcache_range(0, 0, 0);
-#endif
-
-#ifdef CONFIG_LATX_AOT
-    if (in_pre_translate) {
-        return tb;
-    }
-#endif
-
     tcg_tb_insert(tb);
 
     /*
@@ -2549,16 +2680,6 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     if (unlikely(existing_tb != tb)) {
         uintptr_t orig_aligned = (uintptr_t)gen_code_buf;
 
-#if defined(CONFIG_LATX) && defined(CONFIG_LATX_TBMINI_ENABLE)
-        orig_aligned -= sizeof(struct TBMini);
-#endif
-
-#ifdef CONFIG_LATX
-        if (!option_split_tb) {
-            orig_aligned -= ROUND_UP(sizeof(*tb), qemu_icache_linesize);
-        }
-#endif
-
         qatomic_set(&tcg_ctx->code_gen_ptr, (void *)orig_aligned);
         tb_destroy(tb);
         tcg_tb_remove(tb);
@@ -2566,6 +2687,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     }
     return tb;
 }
+#endif
 
 #ifdef CONFIG_LATX_AOT
 void aot_tb_register(TranslationBlock *tb)

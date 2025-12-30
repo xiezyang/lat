@@ -182,6 +182,7 @@ static void init_delay_params(SyncClocks *sc, const CPUState *cpu)
  * TCG is not considered a security-sensitive part of QEMU so this does not
  * affect the impact of CFI in environment with high security requirements
  */
+#ifdef CONFIG_LATX
 static inline TranslationBlock * QEMU_DISABLE_CFI
 cpu_tb_exec(CPUState *cpu, TranslationBlock *itb, int *tb_exit)
 {
@@ -263,7 +264,6 @@ cpu_tb_exec(CPUState *cpu, TranslationBlock *itb, int *tb_exit)
 #ifdef CONFIG_LATX_DEBUG
     latx_before_exec_trace_tb(env, itb);
 #endif
-#ifdef CONFIG_LATX
 
     env->fpu_clobber = false;
     ret = tcg_qemu_tb_exec(env, tb_ptr);
@@ -304,9 +304,6 @@ cpu_tb_exec(CPUState *cpu, TranslationBlock *itb, int *tb_exit)
         link_indirect_jmp(env);
     }
 
-#else
-    ret = tcg_qemu_tb_exec(env, tb_ptr);
-#endif
 #ifdef CONFIG_LATX_DEBUG
     latx_after_exec_trace_tb(env, itb);
 #endif
@@ -366,6 +363,80 @@ cpu_tb_exec(CPUState *cpu, TranslationBlock *itb, int *tb_exit)
 
     return last_tb;
 }
+#else
+static inline TranslationBlock * QEMU_DISABLE_CFI
+cpu_tb_exec(CPUState *cpu, TranslationBlock *itb, int *tb_exit)
+{
+    if (!itb) {
+        fprintf(stderr, "[LATX] ERROR!\n");
+    }
+    CPUArchState *env = cpu->env_ptr;
+    uintptr_t ret;
+    TranslationBlock *last_tb;
+    const void *tb_ptr = itb->tc.ptr;
+    if (qemu_loglevel_mask(CPU_LOG_EXEC)) {
+        qemu_log_mask_and_addr(CPU_LOG_EXEC, itb->pc,
+               "pid(%d) - tid(%" PRIuPTR ") Trace cpu%d: %p [ "
+               TARGET_FMT_lx "/%#x] %s\n",
+               getpid(), (uintptr_t)pthread_self(), cpu->cpu_index, itb->tc.ptr,
+               itb->pc, itb->flags, lookup_symbol(itb->pc));
+    }
+
+#if defined(DEBUG_DISAS)
+    if (qemu_loglevel_mask(CPU_LOG_TB_CPU)
+        && qemu_log_in_addr_range(itb->pc)) {
+        FILE *logfile = qemu_log_lock();
+        int flags = 0;
+        if (qemu_loglevel_mask(CPU_LOG_TB_FPU)) {
+            flags |= CPU_DUMP_FPU;
+        }
+#if defined(TARGET_I386)
+        flags |= CPU_DUMP_CCOP;
+#endif
+        log_cpu_state(cpu, flags);
+        qemu_log_unlock(logfile);
+    }
+#endif /* DEBUG_DISAS */
+
+    qemu_thread_jit_execute();
+    ret = tcg_qemu_tb_exec(env, tb_ptr);
+    cpu->can_do_io = 1;
+    /*
+     * TODO: Delay swapping back to the read-write region of the TB
+     * until we actually need to modify the TB.  The read-only copy,
+     * coming from the rx region, shares the same host TLB entry as
+     * the code that executed the exit_tb opcode that arrived here.
+     * If we insist on touching both the RX and the RW pages, we
+     * double the host TLB pressure.
+     */
+    last_tb = tcg_splitwx_to_rw((void *)(ret & ~TB_EXIT_MASK));
+    *tb_exit = ret & TB_EXIT_MASK;
+
+    trace_exec_tb_exit(last_tb, *tb_exit);
+
+    if (*tb_exit > TB_EXIT_IDX1) {
+        /* We didn't start executing this TB (eg because the instruction
+         * counter hit zero); we must restore the guest PC to the address
+         * of the start of the TB.
+         */
+        CPUClass *cc = CPU_GET_CLASS(cpu);
+        qemu_log_mask_and_addr(CPU_LOG_EXEC, last_tb->pc,
+                               "Stopped execution of TB chain before %p ["
+                               TARGET_FMT_lx "] %s\n",
+                               last_tb->tc.ptr, last_tb->pc,
+                               lookup_symbol(last_tb->pc));
+        if (cc->tcg_ops->synchronize_from_tb) {
+            cc->tcg_ops->synchronize_from_tb(cpu, last_tb);
+        } else {
+            assert(cc->set_pc);
+            cc->set_pc(cpu, last_tb->pc);
+        }
+    }
+
+
+    return last_tb;
+}
+#endif
 
 
 static void cpu_exec_enter(CPUState *cpu)
@@ -718,6 +789,7 @@ static inline void tb_add_jump(TranslationBlock *tb, int n,
 #include "tu.h"
 #endif
 
+#ifdef CONFIG_LATX
 static inline TranslationBlock *tb_find(CPUState *cpu,
                                         TranslationBlock *last_tb,
                                         int tb_exit, uint32_t cflags)
@@ -786,6 +858,49 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
     }
     return tb;
 }
+#else
+static inline TranslationBlock *tb_find(CPUState *cpu,
+                                        TranslationBlock *last_tb,
+                                        int tb_exit, uint32_t cflags)
+{
+    CPUArchState *env = (CPUArchState *)cpu->env_ptr;
+    TranslationBlock *tb;
+    target_ulong cs_base, pc;
+    uint32_t flags;
+
+    cpu_get_tb_cpu_state(env, &pc, &cs_base, &flags);
+
+    tb = tb_lookup(cpu, pc, cs_base, flags, cflags);
+    if (tb == NULL) {
+        mmap_lock();
+
+    tb = tb_gen_code(cpu, pc, cs_base, flags, cflags);
+
+    if (!tb) {
+        mmap_unlock();
+        return NULL;
+    }
+        /* We add the TB in the virtual pc hash table for the fast lookup */
+        int hash_value = tb_jmp_cache_hash_func(pc);
+        qatomic_set(&cpu->tb_jmp_cache[hash_value], tb);
+        mmap_unlock();
+    }
+#ifndef CONFIG_USER_ONLY
+    /* We don't take care of direct jumps when address mapping changes in
+     * system emulation. So it's not safe to make a direct jump to a TB
+     * spanning two pages because the mapping for the second page can change.
+     */
+    if (tb->page_addr[1] != -1) {
+        last_tb = NULL;
+    }
+#endif
+    /* See if we can patch the calling TB. */
+    if (last_tb) {
+        tb_add_jump(last_tb, tb_exit, tb);
+    }
+    return tb;
+}
+#endif
 
 static inline bool cpu_handle_halt(CPUState *cpu)
 {
