@@ -16789,7 +16789,11 @@ defined(__loongarch__)
             }
             vir_guest_stack_size = rnew.rlim_cur;
         }
+#ifdef CONFIG_LATX
         if (option_prlimit && arg3 && (resource == RLIMIT_AS || resource == RLIMIT_DATA)) {
+#else
+        if (arg3 && (resource == RLIMIT_AS || resource == RLIMIT_DATA)) {
+#endif
             if (!lock_user_struct(VERIFY_READ, target_rnew, arg3, 1)) {
                 return -TARGET_EFAULT;
             }
@@ -16808,7 +16812,11 @@ defined(__loongarch__)
             }
             target_rold->rlim_cur = tswap64(rold.rlim_cur);
             target_rold->rlim_max = tswap64(rold.rlim_max);
+#ifdef CONFIG_LATX
             if (option_prlimit && (resource == RLIMIT_AS || resource == RLIMIT_DATA)) {
+#else
+            if ((resource == RLIMIT_AS || resource == RLIMIT_DATA)) {
+#endif
                 target_rold->rlim_cur = tswap64(vir_rlimit_as_old);
             } else if (resource == RLIMIT_STACK) {
                 target_rold->rlim_cur = tswap64(vir_guest_stack_size);

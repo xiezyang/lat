@@ -712,7 +712,11 @@ abi_long target_mmap(abi_ulong start, abi_ulong len, int target_prot,
         goto fail;
     }
 
+#ifdef CONFIG_LATX
     if (option_prlimit && rlimit_as_account && (vir_rlimit_as != RLIM_INFINITY)
+#else
+    if (rlimit_as_account && (vir_rlimit_as != RLIM_INFINITY)
+#endif
         && (len + vir_rlimit_as_acc >= vir_rlimit_as)) {
         errno = ENOMEM;
         goto fail;
@@ -1067,7 +1071,11 @@ abi_long target_mmap(abi_ulong start, abi_ulong len, int target_prot,
 #if defined(CONFIG_LATX_KZT) && defined(TARGET_X86_64)
     kzt_wine_bridge(start, fd);
 #endif
+#ifdef CONFIG_LATX
     if (option_prlimit && rlimit_as_account && vir_rlimit_as != RLIM_INFINITY) {
+#else
+    if (rlimit_as_account && vir_rlimit_as != RLIM_INFINITY) {
+#endif
         vir_rlimit_as_acc += len;
     }
     if (shadow_fd != -1) {
@@ -1191,7 +1199,11 @@ int target_munmap(abi_ulong start, abi_ulong len, int rlimit_as_account)
     }
     mmap_unlock();
 
+#ifdef CONFIG_LATX
     if (option_prlimit && rlimit_as_account && vir_rlimit_as != RLIM_INFINITY) {
+#else
+    if (rlimit_as_account && vir_rlimit_as != RLIM_INFINITY) {
+#endif
         if (vir_rlimit_as_acc > len) {
             vir_rlimit_as_acc -= len;
         } else {
@@ -1232,7 +1244,11 @@ abi_long target_mremap(abi_ulong old_addr, abi_ulong old_size,
         return -1;
     }
 
+#ifdef CONFIG_LATX
     if (option_prlimit && rlimit_as_account && (new_size > old_size)
+#else
+    if (rlimit_as_account && (new_size > old_size)
+#endif
         && (vir_rlimit_as != RLIM_INFINITY)) {
         abi_ulong diff = new_size - old_size;
         if (diff + vir_rlimit_as_acc > vir_rlimit_as ) {
@@ -1337,7 +1353,11 @@ abi_long target_mremap(abi_ulong old_addr, abi_ulong old_size,
 
     mmap_unlock();
 
+#ifdef CONFIG_LATX
     if (option_prlimit && rlimit_as_account && (new_size != old_size)
+#else
+    if (rlimit_as_account && (new_size != old_size)
+#endif
         && (vir_rlimit_as != RLIM_INFINITY)) {
         abi_long diff = new_size - old_size;
         if ((diff > 0) || (vir_rlimit_as_acc > -diff)) {
