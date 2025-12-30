@@ -1260,7 +1260,9 @@ void tcg_context_init(TCGContext *s)
     cpu_env = temp_tcgv_ptr(ts);
 }
 
+#ifdef CONFIG_LATX
 static struct separated_data s_data;
+#endif
 
 /*
  * Allocate TBs right before their corresponding translated code, making
@@ -1273,6 +1275,7 @@ TranslationBlock *tcg_tb_alloc(TCGContext *s)
     void *next;
 
  retry:
+#ifdef CONFIG_LATX
     if (option_split_tb) {
         tb = (void *)ROUND_UP((uintptr_t)s->tb_gen_ptr, align);
         void *next_tb = (void *)ROUND_UP((uintptr_t)(tb + 1), align);
@@ -1288,6 +1291,10 @@ TranslationBlock *tcg_tb_alloc(TCGContext *s)
         tb = (void *)ROUND_UP((uintptr_t)s->code_gen_ptr, align);
         next = (void *)ROUND_UP((uintptr_t)(tb + 1), align);
     }
+#else
+	tb = (void *)ROUND_UP((uintptr_t)s->code_gen_ptr, align);
+	next = (void *)ROUND_UP((uintptr_t)(tb + 1), align);
+#endif
     if (unlikely(next > s->code_gen_highwater)) {
         if (tcg_region_alloc(s)) {
             return NULL;
@@ -1296,7 +1303,9 @@ TranslationBlock *tcg_tb_alloc(TCGContext *s)
     }
     qatomic_set(&s->code_gen_ptr, next);
     s->data_gen_ptr = NULL;
+#ifdef CONFIG_LATX
     tb->s_data = &s_data;
+#endif
     return tb;
 }
 
@@ -1307,6 +1316,7 @@ TranslationBlock *tcg_tb_alloc_full(TCGContext *s)
     void *next;
     struct separated_data *new_s_data;
  retry:
+#ifdef CONFIG_LATX
     if (option_split_tb) {
         tb = (void *)ROUND_UP((uintptr_t)s->tb_gen_ptr, align);
         new_s_data = (void *)ROUND_UP((uintptr_t)(tb + 1), align);
@@ -1324,6 +1334,11 @@ TranslationBlock *tcg_tb_alloc_full(TCGContext *s)
         new_s_data = (void *)ROUND_UP((uintptr_t)(tb + 1), align);
         next = (void *)ROUND_UP((uintptr_t)(new_s_data + 1), align);
     }
+#else
+    tb = (void *)ROUND_UP((uintptr_t)s->code_gen_ptr, align);
+    new_s_data = (void *)ROUND_UP((uintptr_t)(tb + 1), align);
+    next = (void *)ROUND_UP((uintptr_t)(new_s_data + 1), align);
+#endif
     if (unlikely(next > s->code_gen_highwater)) {
         if (tcg_region_alloc(s)) {
             return NULL;
@@ -1332,7 +1347,9 @@ TranslationBlock *tcg_tb_alloc_full(TCGContext *s)
     }
     qatomic_set(&s->code_gen_ptr, next);
     s->data_gen_ptr = NULL;
+#ifdef CONFIG_LATX
     tb->s_data = new_s_data;
+#endif
     return tb;
 }
 
@@ -1398,9 +1415,11 @@ void tcg_prologue_init(TCGContext *s)
 
     tcg_register_jit(tcg_splitwx_to_rx(s->code_gen_buffer), total_size);
 
+#ifdef CONFIG_LATX
     if (option_split_tb) {
         s->tb_gen_ptr = s->tb_gen_buffer;
     }
+#endif
 
 #ifdef DEBUG_DISAS
     if (qemu_loglevel_mask(CPU_LOG_TB_OUT_ASM)) {

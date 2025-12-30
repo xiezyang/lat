@@ -1483,9 +1483,11 @@ void tcg_exec_init(unsigned long tb_size, int splitwx)
     assert(ok);
 
     ok = alloc_tb_gen_buffer(size_code_gen_buffer(tb_size));
+#ifdef CONFIG_LATX
     if (!ok) {
         option_split_tb = 0;
     }
+#endif
 
 #if defined(CONFIG_SOFTMMU)
     /* There's no guest base to take into account, so go ahead and
@@ -2521,9 +2523,11 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
         orig_aligned -= sizeof(struct TBMini);
 #endif
 
+#ifdef CONFIG_LATX
         if (!option_split_tb) {
             orig_aligned -= ROUND_UP(sizeof(*tb), qemu_icache_linesize);
         }
+#endif
 
         qatomic_set(&tcg_ctx->code_gen_ptr, (void *)orig_aligned);
         tb_destroy(tb);
