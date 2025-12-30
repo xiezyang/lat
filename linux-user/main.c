@@ -412,15 +412,15 @@ static void handle_arg_latx_disassemble_trace_cmp(const char *arg)
     options_parse_latx_disassemble_trace_cmp(arg);
 }
 
+static void handle_arg_imm_skip_pc(const char *arg) {
+  imm_skip_pc = strtol(arg, NULL, 16);
+}
+
 #endif
 
 static void handle_arg_help(const char *arg)
 {
     usage(EXIT_SUCCESS);
-}
-
-static void handle_arg_imm_skip_pc(const char *arg) {
-  imm_skip_pc = strtol(arg, NULL, 16);
 }
 
 static void handle_arg_log(const char *arg)
@@ -604,13 +604,6 @@ static void handle_arg_plugin(const char *arg)
 #endif
 
 #ifdef CONFIG_LATX
-static void handle_arg_version(const char *arg)
-{
-    printf("lat-" TARGET_NAME " " LATX_VERSION
-           "\n");
-    exit(EXIT_SUCCESS);
-}
-
 static void handle_arg_ld_prefix(const char *arg)
 {
     interp_prefix = strdup(arg);
@@ -796,14 +789,15 @@ static void handle_arg_lat_aot_left_file_size(const char *arg)
     aot_left_file_minsize_optarg = arg;
 }
 #endif
-#else
+#endif
+
 static void handle_arg_version(const char *arg)
 {
-    printf("lat-" TARGET_NAME " " QEMU_FULL_VERSION
+    printf("lat-" TARGET_NAME " " LATX_VERSION
            "\n");
     exit(EXIT_SUCCESS);
 }
-#endif
+
 
 struct qemu_argument {
     const char *argv;
@@ -873,6 +867,8 @@ static const struct qemu_argument arg_table[] = {
     "",           "force mmap with address to be MAP_FIXED"},
     {"latx-unimp-dump",     "LATX_UNIMP_DUMP", false, handle_arg_latx_unimp_dump,
     "",                 "LATX dump unsupport syscall"},
+    {"L",          "LAT_LD_PREFIX",   true,  handle_arg_ld_prefix,
+     "path",       "set the elf interpreter prefix to 'path'"},
 #endif
 #if defined(CONFIG_LATX_DEBUG) || defined(CONFIG_DEBUG_TCG)
 #ifdef CONFIG_LATX
@@ -906,6 +902,8 @@ static const struct qemu_argument arg_table[] = {
     {"latx-disassemble-trace-cmp",     "LATX_DISASSEMBLE_TRACE_CMP",
         true, handle_arg_latx_disassemble_trace_cmp,
         "", "LATX Compare different disassemble."},
+    {"imm-skip",   "LAT_IMM_SKIP_PC", true, handle_arg_imm_skip_pc,
+     "address",    "latx imm reg opt skip pc"},
 #endif
     {"h",          "",                 false, handle_arg_help,
      "",           "print this help"},
@@ -932,8 +930,6 @@ static const struct qemu_argument arg_table[] = {
     {"d",          "LAT_LOG",         true,  handle_arg_log,
      "item[,...]", "enable logging of specified items "
      "(use '-d help' for a list of items)"},
-    {"imm-skip",   "LAT_IMM_SKIP_PC", true,  handle_arg_imm_skip_pc,
-     "address",    "latx imm reg opt skip pc"},
     {"dfilter",    "LAT_DFILTER",     true,  handle_arg_dfilter,
      "range[,...]","filter logging based on address range"},
     {"D",          "LAT_LOG_FILENAME", true, handle_arg_log_filename,
@@ -955,8 +951,6 @@ static const struct qemu_argument arg_table[] = {
      "",           "[file=]<file>[,arg=<string>]"},
 #endif
 #endif
-    {"L",          "LAT_LD_PREFIX",   true,  handle_arg_ld_prefix,
-     "path",       "set the elf interpreter prefix to 'path'"},
     {"version",    "LAT_VERSION",     false, handle_arg_version,
      "",           "display version information and exit"},
 #if defined(TARGET_XTENSA)
