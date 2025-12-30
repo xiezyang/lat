@@ -1049,6 +1049,7 @@ static void host_signal_handler(int host_signum, siginfo_t *info,
     ucontext_t *uc = puc;
     struct emulated_sigtable *k;
 
+#ifdef CONFIG_LATX
     if (host_signum == SIGSEGV) {
         if ((*(unsigned int *)UC_PC(uc) == WRITE_ILL_INST) || (*(unsigned int *)UC_PC(uc) == READ_ILL_INST)) {
             env->puc = uc;
@@ -1074,6 +1075,7 @@ static void host_signal_handler(int host_signum, siginfo_t *info,
             info->si_addr = (void *)real_si_addr;
         }
     }
+#endif
 
     /* workaround: Clear FCSR.Cause */
     if (host_signum == SIGFPE) {

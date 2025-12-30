@@ -8727,6 +8727,7 @@ install:
     return 0;
 }
 
+#if !defined(TARGET_X86_64) || defined(CONFIG_LATX)
 static abi_long do_get_thread_area(CPUX86State *env, abi_ulong ptr)
 {
 #ifdef TARGET_X86_64
@@ -8777,6 +8778,7 @@ static abi_long do_get_thread_area(CPUX86State *env, abi_ulong ptr)
     unlock_user_struct(target_ldt_info, ptr, 1);
     return 0;
 }
+#endif
 
 #if defined(TARGET_ABI32)
 abi_long do_arch_prctl(CPUX86State *env, int code, abi_ulong addr)
@@ -8912,7 +8914,11 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
          * generate code for parallel execution and flush old translations.
          * Do this now so that the copy gets CF_PARALLEL too.
          */
+#ifdef CONFIG_LATX
         if (!close_latx_parallel && !(cpu->tcg_cflags & CF_PARALLEL)) {
+#else
+        if (!(cpu->tcg_cflags & CF_PARALLEL)) {
+#endif
             cpu->tcg_cflags |= CF_PARALLEL;
             tb_flush(cpu);
         }
@@ -10390,7 +10396,9 @@ static char* get_latx_binfmtinterpreter(void)
     char tmpstr [PATH_MAX];
     DIR *dir = opendir(binfmt_path);
     if (dir == NULL) {
+#ifdef CONFIG_LATX
        lsassertm(0, "dir %s not exist\n", binfmt_path);
+#endif
        return NULL;
     }
 
@@ -10404,7 +10412,9 @@ static char* get_latx_binfmtinterpreter(void)
         if (value) {
             if(!strncmp(value, magic, strlen(magic))) {
                 value = get_key_value_from_file("interpreter", tmpstr);
+#ifdef CONFIG_LATX
                 lsassert(value);
+#endif
                 return value;
             }
             free(value);
@@ -10426,7 +10436,9 @@ static int open_other_cmdline(void *cpu_env, int fd, const char *oldpath)
         latx_binfmtinterpreter = get_latx_binfmtinterpreter();
     }
     FILE *f = fopen(oldpath, "r");
+#ifdef CONFIG_LATX
     lsassertm(f, "can open %s", oldpath);
+#endif
     if(!f) {
         free(argv);
         return -1;
@@ -10471,7 +10483,9 @@ static int open_other_cmdline(void *cpu_env, int fd, const char *oldpath)
                 int len = strlen(argv[i]);
                 len++;
                 if (write(fd, argv[i], len) != len) {
+#ifdef CONFIG_LATX
                     lsassert(0);
+#endif
                     ret = -1;
                     goto out;
                 }
@@ -10487,7 +10501,9 @@ static int open_other_cmdline(void *cpu_env, int fd, const char *oldpath)
         int len = strlen(argv[i]);
         len++;
         if (write(fd, argv[i], len) != len) {
+#ifdef CONFIG_LATX
             lsassert(0);
+#endif
             ret = -1;
             goto out;
         }
@@ -10519,6 +10535,7 @@ struct open_self_maps_data {
 # define test_stack(S, E, L)  (S == L)
 #endif
 
+#ifdef CONFIG_LATX
 static void open_self_maps_4(const struct open_self_maps_data *d,
                              const MapInfo *mi, abi_ptr start,
                              abi_ptr end, unsigned flags)
@@ -10674,6 +10691,7 @@ static int open_self_maps_1_real(CPUArchState *env, int fd, bool smaps)
 
     return 0;
 }
+#endif
 
 static void show_smaps(int fd, unsigned long size)
 {
@@ -10787,14 +10805,22 @@ static int open_self_maps_1(CPUArchState *cpu_env, int fd, bool smaps)
 
 static int open_self_maps(void *cpu_env, int fd, const char *oldpath)
 {
+#ifdef CONFIG_LATX
     return option_real_maps ? open_self_maps_1_real((CPUArchState *)cpu_env, fd, false)
         : open_self_maps_1((CPUArchState *)cpu_env, fd, false);
+#else
+    return open_self_maps_1((CPUArchState *)cpu_env, fd, false);
+#endif
 }
 
 static int open_self_smaps(void *cpu_env, int fd, const char *oldpath)
 {
+#ifdef CONFIG_LATX
     return option_real_maps ? open_self_maps_1_real((CPUArchState *)cpu_env, fd, true)
         : open_self_maps_1((CPUArchState *)cpu_env, fd, true);
+#else
+    return open_self_maps_1((CPUArchState *)cpu_env, fd, true);
+#endif
 }
 
 static int open_self_stat(void *cpu_env, int fd, const char *oldpath)

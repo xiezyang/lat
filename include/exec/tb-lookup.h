@@ -15,7 +15,9 @@
 
 #include "exec/exec-all.h"
 #include "exec/tb-hash.h"
+#ifdef CONFIG_LATX
 #include "latx-options.h"
+#endif
 
 #ifdef CONFIG_LATX_FAST_JMPCACHE
 #include "exec/fasttb.h"

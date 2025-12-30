@@ -680,10 +680,12 @@ static inline void tb_add_jump(TranslationBlock *tb, int n,
                           (uintptr_t)tb_next);
     if (old) {
         goto out_unlock_next;
+#ifdef CONFIG_LATX
     } else if (tb_need_relink(tb, n)) {
         clear_signal_link_flag(tb, n);
         latx_tb_set_jmp_target(tb, n, tb_next);
         goto out_unlock_next;
+#endif
     }
 
 #ifdef CONFIG_LATX
@@ -836,7 +838,6 @@ TranslationBlock * kzt_tb_find_exp(
 {
     return tb_find(cpu, last_tb, tb_exit, cflags);
 }
-
 #endif
 
 static inline bool cpu_handle_exception(CPUState *cpu, int *ret)

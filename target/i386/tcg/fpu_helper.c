@@ -773,6 +773,7 @@ static void set_x86_rounding_mode(unsigned mode, float_status *status)
     };
     assert(mode < ARRAY_SIZE(x86_round_mode));
     set_float_rounding_mode(x86_round_mode[mode], status);
+#ifdef CONFIG_LATX
     if (option_set_rounding_opt) {
         static int round_mode_enum[4] = {
             FE_TONEAREST,
@@ -782,6 +783,7 @@ static void set_x86_rounding_mode(unsigned mode, float_status *status)
         };
         fesetround(round_mode_enum[mode]);
     }
+#endif
 }
 
 void update_fp_status(CPUX86State *env)

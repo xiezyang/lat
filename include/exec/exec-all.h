@@ -62,6 +62,19 @@ void set_tb_relink_flag(TranslationBlock *tb, int index);
 void clear_signal_link_flag(TranslationBlock *tb, int index);
 
 void tb_reset_jump(TranslationBlock *tb, int n);
+/**
+ * gen_intermediate_code
+ * @cpu: cpu context
+ * @tb: translation block
+ * @max_insns: max number of instructions to translate
+ * @pc: guest virtual program counter address
+ * @host_pc: host physical program counter address
+ *
+ * This function must be provided by the target, which should create
+ * the target-specific DisasContext, and then invoke translator_loop.
+ */
+void gen_intermediate_code(CPUState *cpu, TranslationBlock *tb, int max_insns,
+                           target_ulong pc, void *host_pc);
 void restore_state_to_opc(CPUArchState *env, TranslationBlock *tb,
                           target_ulong *data);
 int encode_search(TranslationBlock *tb, uint8_t *block);
@@ -596,6 +609,9 @@ struct TranslationBlock {
 #endif
 
     target_ulong pc;   /* simulated PC corresponding to this block (EIP + CS base) */
+#ifndef CONFIG_LATX
+    target_ulong cs_base; /* CS base for this block */
+#endif
     /* jmp_lock placed here to fill a 4-byte hole. Its documentation is below */
     QemuSpin jmp_lock;
 

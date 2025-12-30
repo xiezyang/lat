@@ -14,7 +14,9 @@
 #include "qemu/units.h"
 #include "qemu/selfmap.h"
 #include "qapi/error.h"
+#ifdef CONFIG_LATX
 #include "latx-options.h"
+#endif
 #include "signal-common.h"
 #include "target_signal.h"
 

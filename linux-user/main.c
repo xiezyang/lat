@@ -17,7 +17,6 @@
  *  along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "library_private.h"
 #include "qemu/osdep.h"
 #include "qemu-common.h"
 #include "qemu/units.h"
@@ -29,6 +28,9 @@
 #include <linux/binfmts.h>
 #include <stdlib.h>
 
+#ifdef CONFIG_LATX
+#include "library_private.h"
+#endif
 #include "qapi/error.h"
 #include "qemu.h"
 #include "qemu/path.h"
@@ -103,6 +105,10 @@ int box64_tcmalloc_minimal = 0;
 #ifndef AT_FLAGS_PRESERVE_ARGV0
 #define AT_FLAGS_PRESERVE_ARGV0_BIT 0
 #define AT_FLAGS_PRESERVE_ARGV0 (1 << AT_FLAGS_PRESERVE_ARGV0_BIT)
+#endif
+
+#ifndef MAX_PATH
+#define MAX_PATH 4096
 #endif
 
 char *exec_path;

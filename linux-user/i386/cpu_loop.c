@@ -21,7 +21,9 @@
 #include "qemu-common.h"
 #include "qemu.h"
 #include "cpu_loop-common.h"
+#ifdef CONFIG_LATX
 #include "latx-options.h"
+#endif
 
 /***********************************************************/
 /* CPUX86 core interface */

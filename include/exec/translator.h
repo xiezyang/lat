@@ -26,19 +26,6 @@
 #include "exec/translate-all.h"
 #include "tcg/tcg.h"
 
-/**
- * gen_intermediate_code
- * @cpu: cpu context
- * @tb: translation block
- * @max_insns: max number of instructions to translate
- * @pc: guest virtual program counter address
- * @host_pc: host physical program counter address
- *
- * This function must be provided by the target, which should create
- * the target-specific DisasContext, and then invoke translator_loop.
- */
-void gen_intermediate_code(CPUState *cpu, TranslationBlock *tb, int max_insns,
-                           target_ulong pc, void *host_pc);
 
 /**
  * DisasJumpType:

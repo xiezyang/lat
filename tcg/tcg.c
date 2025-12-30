@@ -553,7 +553,7 @@ static struct tcg_region_tree *tc_ptr_to_region_tree(const void *p)
 
 void tcg_tb_insert(TranslationBlock *tb)
 {
-#ifndef CONFIG_LATX_TU
+#if !defined(CONFIG_LATX_TU) && defined(CONFIG_LATX)
     lsassertm(tb->tc.size, "LATX-ERR %s\n", __func__);
 #endif
     struct tcg_region_tree *rt = tc_ptr_to_region_tree(tb->tc.ptr);

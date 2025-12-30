@@ -16,7 +16,9 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
+#ifdef CONFIG_LATX
 #include "lsenv.h"
+#endif
 #include "qemu/osdep.h"
 #include "trace.h"
 #include "exec/log.h"
@@ -619,6 +621,7 @@ abi_ulong mmap_find_vma_2g(abi_ulong start, abi_ulong size, abi_ulong align)
 }
 #endif
 
+#ifdef CONFIG_LATX
 static int create_shadow_file(int fd, uint64 offset, abi_ulong start, abi_ulong len)
 {
     char *tmp_buf;
@@ -662,6 +665,7 @@ static int create_shadow_file(int fd, uint64 offset, abi_ulong start, abi_ulong 
     unlink(file_name);
     return fd;
 }
+#endif
 
 /*
  * NOTE: all the constants are the HOST ones
@@ -734,9 +738,11 @@ abi_long target_mmap(abi_ulong start, abi_ulong len, int target_prot,
      * be atomic with respect to an external process.
      */
     if (flags & MAP_SHARED) {
+#ifdef CONFIG_LATX
         if (option_monitor_shared_mem) {
             page_flags |= PAGE_MEMSHARE;
         }
+#endif
         CPUState *cpu = thread_cpu;
         if (!(cpu->tcg_cflags & CF_PARALLEL)) {
             cpu->tcg_cflags |= CF_PARALLEL;
@@ -864,6 +870,7 @@ abi_long target_mmap(abi_ulong start, abi_ulong len, int target_prot,
             goto the_end1;
         }
 #endif
+#ifdef CONFIG_LATX
         if (option_shadow_file && !(flags & MAP_ANONYMOUS) &&
             (offset & ~qemu_host_page_mask) != (start & ~qemu_host_page_mask)
             && (len >= 0x4000)) {
@@ -873,6 +880,7 @@ abi_long target_mmap(abi_ulong start, abi_ulong len, int target_prot,
                 offset = start % qemu_host_page_size;
             }
         }
+#endif
 
         if (!(flags & MAP_ANONYMOUS) &&
             (offset & ~qemu_host_page_mask) != (start & ~qemu_host_page_mask)) {
@@ -1331,9 +1339,11 @@ abi_long target_mremap(abi_ulong old_addr, abi_ulong old_size,
         new_addr = h2g(host_addr);
         prot = page_get_flags(old_addr);
         page_set_flags(old_addr, old_addr + old_size, 0);
+#ifdef CONFIG_LATX
         if (option_monitor_shared_mem && (flags & MAP_TYPE) == MAP_SHARED) {
             prot |= PAGE_MEMSHARE;
         }
+#endif
         page_set_flags(new_addr, new_addr + new_size,
                        prot | PAGE_VALID | PAGE_RESET);
     }

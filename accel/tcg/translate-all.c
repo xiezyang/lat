@@ -207,6 +207,28 @@ static void smc_retrans_destory(void)
  *
  * See also: &struct page_collection.
  */
+#ifndef CONFIG_LATX
+typedef struct PageDesc {
+    /* list of TBs intersecting this ram page */
+    uintptr_t first_tb;
+#ifdef CONFIG_SOFTMMU
+    /* in order to optimize self modifying code, we count the number
+       of lookups we do to a given page to use a bitmap */
+    unsigned long *code_bitmap;
+    unsigned int code_write_count;
+#else
+    unsigned long flags;
+    void *target_data;
+#endif
+#ifndef CONFIG_USER_ONLY
+    QemuSpin lock;
+#endif
+#ifdef CONFIG_LATX_AOT2
+    uint8_t page_state;
+#endif
+} PageDesc;
+#endif
+
 struct page_entry {
     PageDesc *pd;
     tb_page_addr_t index;
@@ -406,7 +428,11 @@ int encode_search(TranslationBlock *tb, uint8_t *block)
            one row beginning below the high water mark cannot overrun
            the buffer completely.  Thus we can test for overflow after
            encoding a row without having to check during encoding.  */
+#ifdef CONFIG_LATX
         if (!in_pre_translate && unlikely(p > highwater)) {
+#else
+        if (unlikely(p > highwater)) {
+#endif
             return -1;
         }
     }
@@ -4250,8 +4276,6 @@ static int smc_create_shadow_page_shmm(uint64_t start)
     return 0;
 }
 
-#ifdef CONFIG_LATX_SMC_OPT
-
 static void smc_retrans_triger(TranslationBlock *ctb)
 {
     if (!latx_smc_use_store_helper()) return;
@@ -5187,7 +5211,7 @@ static bool no_right(int64_t addr, int bit_count,
     return false;
 }
 
-#ifndef CONFIG_LOONGARCH_NEW_WORLD
+#if defined(CONFIG_LATX) && !defined(CONFIG_LOONGARCH_NEW_WORLD)
 static void set_interpret_glue_code(ucontext_t *uc, unsigned int inst, int rj)
 {
     int cpu_index = current_cpu->cpu_index;
@@ -5450,9 +5474,11 @@ int shared_private_interpret(siginfo_t *info, ucontext_t *uc)
             return 1;
         }
         assert(siaddr == real_guest_addr);
+#ifdef CONFIG_LATX
         if (reg_itemp_reverse_map[rj] == INVALID_TEMP) {
             set_interpret_glue_code(uc, inst, rj);
         }
+#endif
         UC_GR(uc)[rj] += shadow_pd->access_off;
         goto ret;
     case 0xad: /* FST.S */
@@ -5461,9 +5487,11 @@ int shared_private_interpret(siginfo_t *info, ucontext_t *uc)
             return 1;
         }
         assert(siaddr == real_guest_addr);
+#ifdef CONFIG_LATX
         if (reg_itemp_reverse_map[rj] == INVALID_TEMP) {
             set_interpret_glue_code(uc, inst, rj);
         }
+#endif
         UC_GR(uc)[rj] += shadow_pd->access_off;
         goto ret;
     case 0xae: /* FLD.D */
@@ -5472,9 +5500,11 @@ int shared_private_interpret(siginfo_t *info, ucontext_t *uc)
             return 1;
         }
         assert(siaddr == real_guest_addr);
+#ifdef CONFIG_LATX
         if (reg_itemp_reverse_map[rj] == INVALID_TEMP) {
             set_interpret_glue_code(uc, inst, rj);
         }
+#endif
         UC_GR(uc)[rj] += shadow_pd->access_off;
         goto ret;
     case 0xaf: /* FST.D */
@@ -5483,9 +5513,11 @@ int shared_private_interpret(siginfo_t *info, ucontext_t *uc)
             return 1;
         }
         assert(siaddr == real_guest_addr);
+#ifdef CONFIG_LATX
         if (reg_itemp_reverse_map[rj] == INVALID_TEMP) {
             set_interpret_glue_code(uc, inst, rj);
         }
+#endif
         UC_GR(uc)[rj] += shadow_pd->access_off;
         goto ret;
     case 0xb0: /* VLD */
@@ -5906,9 +5938,11 @@ int shared_private_interpret(siginfo_t *info, ucontext_t *uc)
             return 1;
         }
         assert(siaddr == real_guest_addr);
+#ifdef CONFIG_LATX
         if (reg_itemp_reverse_map[rj] == INVALID_TEMP) {
             set_interpret_glue_code(uc, inst, rj);
         }
+#endif
         UC_GR(uc)[rj] += shadow_pd->access_off;
         goto ret;
     case 0x7068: /* FLDX.D */
@@ -5917,9 +5951,11 @@ int shared_private_interpret(siginfo_t *info, ucontext_t *uc)
             return 1;
         }
         assert(siaddr == real_guest_addr);
+#ifdef CONFIG_LATX
         if (reg_itemp_reverse_map[rj] == INVALID_TEMP) {
             set_interpret_glue_code(uc, inst, rj);
         }
+#endif
         UC_GR(uc)[rj] += shadow_pd->access_off;
         goto ret;
     case 0x7070: /* FSTX.S */
@@ -5928,9 +5964,11 @@ int shared_private_interpret(siginfo_t *info, ucontext_t *uc)
             return 1;
         }
         assert(siaddr == real_guest_addr);
+#ifdef CONFIG_LATX
         if (reg_itemp_reverse_map[rj] == INVALID_TEMP) {
             set_interpret_glue_code(uc, inst, rj);
         }
+#endif
         UC_GR(uc)[rj] += shadow_pd->access_off;
         goto ret;
     case 0x7078: /* FSTX.D */
@@ -5939,9 +5977,11 @@ int shared_private_interpret(siginfo_t *info, ucontext_t *uc)
             return 1;
         }
         assert(siaddr == real_guest_addr);
+#ifdef CONFIG_LATX
         if (reg_itemp_reverse_map[rj] == INVALID_TEMP) {
             set_interpret_glue_code(uc, inst, rj);
         }
+#endif
         UC_GR(uc)[rj] += shadow_pd->access_off;
         goto ret;
     case 0x7080: /* VLDX */
@@ -7253,7 +7293,11 @@ int lock_interpret(siginfo_t *info, ucontext_t *uc)
                  * ll.d zero, zero, 4
                  * amswap.d itemp, zero, mem_opnd
                  */
+#ifdef CONFIG_LATX
                 ret = interpret_cmpxchg16b(uc, inst, &fixed_siaddr);
+#else
+                ret = interpret_cmpxchg16b(uc, inst);
+#endif
                 if (ret == LOCKINT_SEGV) {
                     /* ll.d     : old UC_PC
                      * amswap.d : new UC_PC */
@@ -8047,7 +8091,9 @@ void update_shadow_page_chunk(abi_ulong start, abi_ulong end, int prot,
         }
     }
 }
+#endif
 
+#ifdef CONFIG_LATX
 bool use_indirect_jmp(TranslationBlock *tb)
 {
     return (tb->bool_flags & IS_INDIRECT_JMP) ? true : false;
