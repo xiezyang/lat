@@ -1413,9 +1413,11 @@ typedef struct CPUX86State {
     /* TODO: why? in new qemu has no next_eip member */
     target_ulong exception_next_eip;
     void *tb_jmp_cache_ptr; /* struct TranslationBlock ** */
+#ifdef CONFIG_LATX
     struct __sys {
         int codemode;
     } sys;
+ #endif
  #ifdef CONFIG_LATX_DEBUG
     uint64_t last_store_insn;
     uint64_t tb_exec_count;
@@ -1858,7 +1860,9 @@ static inline void cpu_x86_load_seg_cache(CPUX86State *env,
                 /* long mode */
                 env->hflags |= HF_CS32_MASK | HF_SS32_MASK | HF_CS64_MASK;
                 env->hflags &= ~(HF_ADDSEG_MASK);
+#ifdef CONFIG_LATX
                 env->sys.codemode = 1;
+#endif
             } else
 #endif
             {
@@ -1867,7 +1871,9 @@ static inline void cpu_x86_load_seg_cache(CPUX86State *env,
                     >> (DESC_B_SHIFT - HF_CS32_SHIFT);
                 env->hflags = (env->hflags & ~(HF_CS32_MASK | HF_CS64_MASK)) |
                     new_hflags;
+#ifdef CONFIG_LATX
                 env->sys.codemode = 0;
+#endif
             }
         }
         if (seg_reg == R_SS) {

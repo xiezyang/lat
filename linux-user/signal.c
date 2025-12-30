@@ -1482,11 +1482,13 @@ static void handle_pending_signal(CPUArchState *cpu_env, int sig,
                 save_v86_state(env);
         }
 #else
+#ifdef CONFIG_LATX
         if (!CODEIS64) {
             CPUX86State *env = cpu_env;
             if (env->eflags & VM_MASK)
                 save_v86_state(env);
         }
+#endif
 #endif
         /* prepare the stack frame of the virtual CPU */
 #if defined(TARGET_ARCH_HAS_SETUP_FRAME)

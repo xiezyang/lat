@@ -200,7 +200,9 @@ static void emulate_vsyscall(CPUX86State *env)
 #include "syscall_target_32_nr.h"
 int syscall_64_to_32[TARGET32_TARGET_NR_LATX_LAST + 1] = {0};
 #include "syscall_64_to_32_map.h"
+#ifdef CONFIG_LATX
 #include "lsenv.h"
+#endif
 #endif
 
 void cpu_loop(CPUX86State *env)

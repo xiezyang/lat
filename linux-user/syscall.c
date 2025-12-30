@@ -13896,6 +13896,7 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
             unlock_user_struct(buf, arg1, 1);
         }
         return ret;
+#ifdef CONFIG_LATX
     case TARGET_NR_modify_ldt:
         if (!CODEIS64) {
             return do_modify_ldt(cpu_env, arg1, arg2, arg3);
@@ -13903,6 +13904,12 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
             lsassert(0);
             return -TARGET_ENOSYS;
         }
+#else
+#ifdef TARGET_I386
+    case TARGET_NR_modify_ldt:
+        return do_modify_ldt(cpu_env, arg1, arg2, arg3);
+#endif
+#endif
 #if !defined(TARGET_X86_64)
     case TARGET_NR_vm86:
         return do_vm86(cpu_env, arg1, arg2);
@@ -15979,12 +15986,21 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
           return 0;
       }
 #else
+#ifdef CONFIG_LATX
       if (!CODEIS64) {
           return do_set_thread_area(cpu_env, arg1);
       } else {
           lsassert(0);
           return -TARGET_ENOSYS;
       }
+#else
+#if defined(TARGET_I386) && defined(TARGET_ABI32)
+          return do_set_thread_area(cpu_env, arg1);
+#else
+        return -TARGET_ENOSYS;
+
+#endif
+#endif
 #endif
 #endif
 #ifdef TARGET_NR_get_thread_area
@@ -15995,12 +16011,21 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
             return ts->tp_value;
         }
 #else
+#ifdef CONFIG_LATX
         if (!CODEIS64) {
             return do_get_thread_area(cpu_env, arg1);
         } else {
             lsassert(0);
             return -TARGET_ENOSYS;
         }
+#else
+#if defined(TARGET_I386) && defined(TARGET_ABI32)
+        return do_get_thread_area(cpu_env, arg1);
+#else
+        return -TARGET_ENOSYS;
+
+#endif
+#endif
 #endif
 #endif
 #ifdef TARGET_NR_getdomainname
