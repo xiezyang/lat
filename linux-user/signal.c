@@ -1082,10 +1082,10 @@ static void host_signal_handler(int host_signum, siginfo_t *info,
 #endif
     }
 
+#ifdef CONFIG_LATX
     if (host_signum == SIGILL && jrra_handle_sigill(env, uc)) {
         return;
     }
-#ifdef CONFIG_LATX
     /*
      * store ucontext_t to env for context switch.
      */

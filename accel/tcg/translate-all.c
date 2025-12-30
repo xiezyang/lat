@@ -2644,7 +2644,9 @@ bool tb_invalidate_phys_page_unwind(tb_page_addr_t addr, uintptr_t pc, int *tbco
         int smcsize = 0;
         bool smc_crosspage = false;
 
+#ifdef CONFIG_LATX
         uint32_t inst = 0;
+#endif
 
         if (tbcount) {
             smcaddr = addr;
@@ -2688,13 +2690,17 @@ foreach_tb_start:
                 current_tb_modified = true;
                 cpu_restore_state_from_tb(current_cpu, current_tb, pc, true);
             }
+#ifdef CONFIG_LATX
             bool inst_saved = jrra_preserve_current_tb_head(tb, current_tb,
                                     current_tb_modified, &inst);
+#endif
             tb_phys_invalidate__locked(tb);
+#ifdef CONFIG_LATX
             if (inst_saved) {
                 jrra_restore_current_tb_head(tb, current_tb,
                                     current_tb_modified, inst);
             }
+#endif
         }
 
         /* back to handle the 1st page when cross page */
