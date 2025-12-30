@@ -1873,7 +1873,9 @@ static inline void tb_remove_from_jmp_list(TranslationBlock *orig, int n_orig)
    another TB */
 void tb_reset_jump(TranslationBlock *tb, int n)
 {
+#ifdef CONFIG_LATX
     assert(!use_tu_jmp(tb));
+#endif
     uintptr_t addr = (uintptr_t)(tb->tc.ptr + tb->jmp_reset_offset[n]);
     tb_set_jmp_target(tb, n, addr);
 #ifdef CONFIG_LATX_INSTS_PATTERN
@@ -2470,7 +2472,9 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     tb->lazylink[1] = 1;
 #endif
 
+#ifdef CONFIG_LATX
     assert(!use_tu_jmp(tb));
+#endif
     /* init original jump addresses which have been set during tcg_gen_code() */
     if (tb->jmp_reset_offset[0] != TB_JMP_RESET_OFFSET_INVALID) {
         tb_reset_jump(tb, 0);
@@ -3081,7 +3085,11 @@ static gboolean tb_tree_stats_iter(gpointer key, gpointer value, gpointer data)
     if (tb_page_addr1(tb) != -1) {
         tst->cross_page++;
     }
+#ifdef CONFIG_LATX
     if (!use_tu_jmp(tb) && tb->jmp_reset_offset[0] != TB_JMP_RESET_OFFSET_INVALID) {
+#else
+    if (tb->jmp_reset_offset[0] != TB_JMP_RESET_OFFSET_INVALID) {
+#endif
         tst->direct_jmp_count++;
         if (tb->jmp_reset_offset[1] != TB_JMP_RESET_OFFSET_INVALID) {
             tst->direct_jmp2_count++;

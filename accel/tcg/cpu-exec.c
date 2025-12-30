@@ -549,7 +549,9 @@ void tb_stub_bypass(TranslationBlock *tb, int n, uintptr_t addr)
 
 void tb_set_jmp_target(TranslationBlock *tb, int n, uintptr_t addr)
 {
+#ifdef CONFIG_LATX
     assert(!use_tu_jmp(tb));
+#endif
 #if defined(CONFIG_LATX) && defined(CONFIG_LATX_BNE_B)
 #define B_SHIFT     26
 #define OFF16_BITS  0xfc0003ff
