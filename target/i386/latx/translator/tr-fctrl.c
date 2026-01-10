@@ -9,11 +9,14 @@ static void update_fcsr_flag(IR2_OPND status_word, IR2_OPND fcsr)
     IR2_OPND temp = ra_alloc_itemp();
 
     /* convert x86 to LA */
-    la_bstrins_w(temp, status_word, X87_SR_OFF_DE, X87_SR_OFF_DE);
     la_bitrev_w(temp, status_word);
     la_bstrpick_w(temp, temp, 30, 26);
     /* set fcsr  */
-    la_bstrins_w(fcsr, temp, FCSR_OFF_FLAGS_V, FCSR_OFF_FLAGS_I);
+    la_bstrins_w(fcsr, temp, FCSR_OFF_FLAGS_Z, FCSR_OFF_FLAGS_I);
+    la_bstrpick_w(temp, status_word,
+                            X87_SR_OFF_IE, X87_SR_OFF_IE);
+    la_bstrins_w(fcsr, temp,
+                            FCSR_OFF_FLAGS_V, FCSR_OFF_FLAGS_V);
 
     la_movgr2fcsr(fcsr_ir2_opnd, fcsr);
 
@@ -131,15 +134,20 @@ void update_sw_by_fcsr(IR2_OPND sw_opnd)
 
     IR2_OPND fcsr = ra_alloc_itemp();
     IR2_OPND temp1 = ra_alloc_itemp();
+    IR2_OPND temp2 = ra_alloc_itemp();
     la_movfcsr2gr(fcsr, fcsr_ir2_opnd);
 
     /* convert LA to x86*/
     la_bitrev_w(temp1, fcsr);
     la_srli_d(temp1, temp1, 11);
-    la_bstrins_d(sw_opnd, temp1, X87_SR_OFF_IE, X87_SR_OFF_IE);
-    la_srli_d(temp1, temp1, 1);
-    /* set status_word*/
-    la_bstrins_d(sw_opnd, temp1, X87_SR_OFF_PE, X87_SR_OFF_ZE);
+    la_bstrpick_d(temp2, temp1, 0, 0);
+    /* set X87_SR_OFF_IE */
+    la_or(sw_opnd, sw_opnd, temp2);
+    la_bstrpick_d(temp2, temp1, 4, 1);
+    la_slli_d(temp2, temp2, 2);
+    /* set X87_SR_OFF_ZE to X87_SR_OFF_PE */
+    la_or(sw_opnd, sw_opnd, temp2);
+    ra_free_temp(temp2);
 
     /* update top */
     la_x86mftop(temp1);
