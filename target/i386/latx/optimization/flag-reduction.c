@@ -267,6 +267,7 @@ static const IR1_EFLAG_USEDEF ir1_opcode_eflag_usedef[] = {
 
     FLAG_DEFINE(ADCX,    __CF, __CF, __NONE),
     FLAG_DEFINE(ADOX,    __OF, __OF, __NONE),
+    FLAG_DEFINE(BNDMOV,     __NONE, __NONE, __NONE),
     FLAG_DEFINE(ENDING,  __INVALID, __INVALID, __INVALID),
 };
 

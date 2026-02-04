@@ -1903,6 +1903,7 @@ typedef enum dt_x86_insn {
 	dt_X86_INS_ENDBR32,
 	dt_X86_INS_ENDBR64,
 
+	dt_X86_INS_BNDMOV,
 	dt_X86_INS_ENDING, // mark the end of the list of insn
 } dt_x86_insn;
 

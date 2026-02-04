@@ -1855,6 +1855,7 @@ static bool (*translate_functions[])(IR1_INST *) = {
     TRANS_FUNC_GEN(CRC32, crc32),
     TRANS_FUNC_GEN(PCLMULQDQ, pclmulqdq),
 
+    TRANS_FUNC_GEN(BNDMOV, nop),
     TRANS_FUNC_GEN_REAL(ENDING, NULL),
 };
 

@@ -464,6 +464,7 @@ static void init_insn_reg()
 static void init_insn_tr()
 {
     LA_X86_INSN_DEF(git_x86_insn_tr, X86_INS_, INVALID);
+    LA_X86_INSN_DEF(git_x86_insn_tr, X86_INS_, BNDMOV);
 
     LA_X86_INSN_DEF(git_x86_insn_tr, X86_INS_, AAA);
     LA_X86_INSN_DEF(git_x86_insn_tr, X86_INS_, AAD);
