@@ -410,7 +410,7 @@ static bool tu_split_tb(TranslationBlock *pre_tb, TranslationBlock *tb)
 
     if (spilt_success) {
         pre_tb->s_data->last_ir1_type = IR1_TYPE_NORMAL;
-        pre_tb->s_data->next_tb[TU_TB_INDEX_NEXT] = NULL;
+        pre_tb->s_data->next_tb[TU_TB_INDEX_NEXT] = tb;
         pre_tb->s_data->next_tb[TU_TB_INDEX_TARGET] = NULL;
         pre_tb->size -= tb->size;
         pre_tb->icount -= tb->icount;
@@ -421,7 +421,7 @@ static bool tu_split_tb(TranslationBlock *pre_tb, TranslationBlock *tb)
     } else {
         /*Can't judge pre_tb or tb was broken.*/
         tu_set_tb_to_translate_context(pre_tb);
-        tu_set_tb_to_translate_context(tb);
+        //tu_set_tb_to_translate_context(tb);
     }
     return spilt_success;
 }
