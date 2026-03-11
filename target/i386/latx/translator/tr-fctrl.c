@@ -64,10 +64,9 @@ static void update_fcsr_enable(IR2_OPND control_word, IR2_OPND fcsr)
 
     } else {
         /* convert x86 to LA */
-        la_bstrins_w(temp, control_word, X87_CR_OFF_PM, X87_CR_OFF_IM);
-        la_bstrins_w(temp, control_word, X87_CR_OFF_DM, X87_CR_OFF_DM);
-        la_bitrev_w(temp, temp);
+        la_bitrev_w(temp, control_word);
         la_bstrpick_w(temp, temp, 30, 26);
+        la_bstrins_w(temp, control_word, FCSR_OFF_EN_V, FCSR_OFF_EN_V);
         la_xori(temp, temp, 0x1f);
         /* set fcsr  */
         la_bstrins_w(fcsr, temp, FCSR_OFF_EN_V, FCSR_OFF_EN_I);
