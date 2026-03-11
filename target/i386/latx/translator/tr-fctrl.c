@@ -13,9 +13,7 @@ static void update_fcsr_flag(IR2_OPND status_word, IR2_OPND fcsr)
     la_bstrpick_w(temp, temp, 30, 26);
     /* set fcsr  */
     la_bstrins_w(fcsr, temp, FCSR_OFF_FLAGS_Z, FCSR_OFF_FLAGS_I);
-    la_bstrpick_w(temp, status_word,
-                            X87_SR_OFF_IE, X87_SR_OFF_IE);
-    la_bstrins_w(fcsr, temp,
+    la_bstrins_w(fcsr, status_word,
                             FCSR_OFF_FLAGS_V, FCSR_OFF_FLAGS_V);
 
     la_movgr2fcsr(fcsr_ir2_opnd, fcsr);
