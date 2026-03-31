@@ -1028,15 +1028,16 @@ void find_option(const char* key, const char* val)
     }
     if (0);
     ENVS
+#undef ENVFUN
     else {
         printf("no option %s\n", key);
     }
 }
 
-static void options_set(void)
+static void options_set(char **target_argv)
 {
     /* set latx.conf */
-    conf_init(exec_path);
+    conf_init(target_argv);
 
     const char *r;
     const struct qemu_argument *arginfo;
@@ -1177,8 +1178,65 @@ int main(int argc, char **argv, char **envp)
         (void) envlist_setenv(envlist, *wrk);
     }
 
+    /* extracting environment variables */
     optind = parse_args(argc, argv);
-    options_set();
+
+    if (argc >= 5 && !strcmp(argv[1], argv[2])) {
+        long long hash = 0;
+        for (int i = 4; i < argc; ++i) {
+            for (int j = 0; argv[i][j] != '\0'; ++j) {
+                hash += argv[i][j];
+            }
+        }
+        if (hash == atoll(argv[3])) {
+            for (int i = 4; i < argc; ++i) {
+                argv[i - 3] = argv[i];
+            }
+            argv[argc - 1] = argv[argc - 2] = argv[argc - 3] = NULL;
+            argc = argc - 3;
+        }
+    }
+
+    /*
+     * get binfmt_misc flags
+     */
+    preserve_argv0 = !!(qemu_getauxval(AT_FLAGS) & AT_FLAGS_PRESERVE_ARGV0);
+
+    /*
+     * Manage binfmt-misc preserve-arg[0] flag
+     *    argv[optind]     full path to the binary
+     *    argv[optind + 1] original argv[0]
+     */
+    if (optind + 1 < argc && preserve_argv0) {
+        optind++;
+    }
+
+    /*
+     * Prepare copy of argv vector for target.
+     */
+    target_argc = argc - optind;
+    target_argv = calloc(target_argc + 1, sizeof (char *));
+    if (target_argv == NULL) {
+        (void) fprintf(stderr, "Unable to allocate memory for target_argv\n");
+        exit(EXIT_FAILURE);
+    }
+
+    /*
+     * If argv0 is specified (using '-0' switch) we replace
+     * argv[0] pointer with the given one.
+     */
+    i = 0;
+    if (argv0 != NULL) {
+        target_argv[i++] = strdup(argv0);
+    }
+
+    for (; i < target_argc; i++) {
+        target_argv[i] = strdup(argv[optind + i]);
+    }
+    target_argv[target_argc] = NULL;
+
+    /* set environment variables */
+    options_set(target_argv);
 
     error_init(argv[0]);
     module_call_init(MODULE_INIT_TRACE);
@@ -1201,21 +1259,6 @@ int main(int argc, char **argv, char **envp)
     qemu_add_opts(&qemu_trace_opts);
     qemu_plugin_add_opts();
 
-    if (argc >= 5 && !strcmp(argv[1], argv[2])) {
-        long long hash = 0;
-        for (int i = 4; i < argc; ++i) {
-            for (int j = 0; argv[i][j] != '\0'; ++j) {
-                hash += argv[i][j];
-            }
-        }
-        if (hash == atoll(argv[3])) {
-            for (int i = 4; i < argc; ++i) {
-                argv[i - 3] = argv[i];
-            }
-            argv[argc - 1] = argv[argc - 2] = argv[argc - 3] = NULL;
-            argc = argc - 3;
-        }
-    }
     log_mask = last_log_mask | (enable_strace ? LOG_STRACE : 0)
                              | (enable_strace_error ? LOG_STRACE_ERROR : 0);
     if (log_mask) {
@@ -1256,20 +1299,6 @@ int main(int argc, char **argv, char **envp)
         }
     }
 
-    /*
-     * get binfmt_misc flags
-     */
-    preserve_argv0 = !!(qemu_getauxval(AT_FLAGS) & AT_FLAGS_PRESERVE_ARGV0);
-
-    /*
-     * Manage binfmt-misc preserve-arg[0] flag
-     *    argv[optind]     full path to the binary
-     *    argv[optind + 1] original argv[0]
-     */
-    if (optind + 1 < argc && preserve_argv0) {
-        optind++;
-    }
-
     if (cpu_model == NULL) {
         cpu_model = cpu_get_model(get_elf_eflags(execfd));
     }
@@ -1285,6 +1314,7 @@ int main(int argc, char **argv, char **envp)
     cpu = cpu_create(cpu_type);
     env = cpu->env_ptr;
     cpu_reset(cpu);
+
 
 #ifdef CONFIG_LATX
     latx_init_fpu_regs(env);
@@ -1388,25 +1418,6 @@ int main(int argc, char **argv, char **envp)
         }
     }
 
-    /*
-     * Prepare copy of argv vector for target.
-     */
-    target_argc = argc - optind;
-    target_argv = calloc(target_argc + 1, sizeof (char *));
-    if (target_argv == NULL) {
-        (void) fprintf(stderr, "Unable to allocate memory for target_argv\n");
-        exit(EXIT_FAILURE);
-    }
-
-    /*
-     * If argv0 is specified (using '-0' switch) we replace
-     * argv[0] pointer with the given one.
-     */
-    i = 0;
-    if (argv0 != NULL) {
-        target_argv[i++] = strdup(argv0);
-    }
-
 #ifdef CONFIG_LATX_AOT
     EVP_MD_CTX *ctx = EVP_MD_CTX_new();
     unsigned char hash[EVP_MAX_MD_SIZE];
@@ -1439,8 +1450,7 @@ int main(int argc, char **argv, char **envp)
     EVP_DigestInit_ex(ctx, EVP_sha1(), NULL);
     EVP_DigestUpdate(ctx, real, strlen(real));
     int aotac = 4;
-    for (; i < target_argc; i++) {
-        target_argv[i] = strdup(argv[optind + i]);
+    for (i = 0; i < target_argc; i++) {
         if (option_aot_wine == 0 && strstr(target_argv[i], "wine")) {
             option_aot_wine = 1;
         }
@@ -1466,12 +1476,7 @@ int main(int argc, char **argv, char **envp)
     strcpy(aot_file_lock, aot_file_path);
     strcat(aot_file_lock, ".lock");
     strcat(aot_file_path, ".aot");
-#else
-    for (; i < target_argc; i++) {
-        target_argv[i] = strdup(argv[optind + i]);
-    }
 #endif
-    target_argv[target_argc] = NULL;
 
 #ifdef TARGET_X86_64
     {

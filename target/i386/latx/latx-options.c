@@ -119,28 +119,13 @@ int option_line_init(char *line, char **name, char **value)
     return true;
 }
 
-char* trim_name(const char *program)
-{
-    size_t len = strlen(program);
-    char *name = malloc(len + 1);
-    len = strlen(program);
-    name = malloc(len + 1);
-    memcpy(name, program, len);
-    name[len] = '\0';
-    while (*name && !isalnum((unsigned char)*name) ) {
-        ++name;
-    }
-    return name;
-}
-
-void load_conf_file(const char *file, const char *program)
+void load_conf_file(const char *file, char *program)
 {
     FILE *fp = fopen(file, "r");
     if (!program || !fp)
         return;
 
-    char *pro_name = trim_name(program);
-    char *line = NULL, *name = NULL;
+    char *line = NULL;
     size_t len = 0;
     int flag = 0;
 
@@ -151,14 +136,14 @@ void load_conf_file(const char *file, const char *program)
             find_option(option_name, option_value);
         }
         // guest name
-        if (line[0] == '[' && strchr(line, ']')) {
+        if (line[0] == '[') {
+            char *end = strchr(line, ']');
+            if(!end) continue;
             if (flag == 2)
                 break;
-            size_t size = strchr(line, ']') - strchr(line, '[') - 1;
-            name = malloc(size + 1);
-            memcpy(name, line + 1,size);
-            name[size] = '\0';
-            if (!strcmp(name, pro_name)) {
+            size_t size = end - line;
+            line[size] = '\0';
+            if (!strcmp(line + 1, program)) {
                 flag = 2;
             }
             else {flag = 1;}
@@ -167,11 +152,48 @@ void load_conf_file(const char *file, const char *program)
     free(line);
 }
 
-void conf_init(const char *program)
+char* guest_program(char **argv)
+{
+    if (!argv || !argv[0])
+        return NULL;
+
+    for (int i = 0; argv[i]; i++) {
+        char *arg = argv[i];
+        if (!arg) continue;
+        char *last_slash = strrchr(arg, '/');
+        char *last_backslash = strrchr(arg, '\\');
+        char *p;
+
+        if (last_slash && last_backslash) {
+            p = (last_slash > last_backslash) ? last_slash : last_backslash;
+        } else if (last_slash) {
+            p = last_slash;
+        } else if (last_backslash) {
+            p = last_backslash;
+        } else {
+            p = arg - 1;
+        }
+        p = p + 1;
+
+        // skip wine
+        if (strstr(p, "wine-preloader") ||
+            strstr(p, "wine64-preloader") ||
+            strstr(p, "wineserver") ||
+            strstr(p, "wine") ||
+            (!p)) {
+            continue;
+        }
+        return p;
+    }
+    return NULL;
+}
+
+void conf_init(char **argv)
 {
     char path[PATH_MAX];
-
+    char *program = guest_program(argv);
     const char *home_path = getenv("HOME");
+
 #ifdef TARGET_X86_64
     /* load /etc/latx-*.conf */
     load_conf_file("/etc/latx-x86_64.conf", program);
