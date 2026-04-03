@@ -739,3 +739,14 @@ summary_info += {'libtasn1':          config_host.has_key('CONFIG_TASN1')}
 summary_info += {'PAM':               config_host.has_key('CONFIG_AUTH_PAM')}
 summary_info += {'ATTR/XATTR support': libattr.found()}
 summary(summary_info, bool_yn: true, section: 'Dependencies')
+
+#set latx.conf in /etc/
+install_data(
+  'configs/latx-x86_64.conf',
+  install_dir: get_option('sysconfdir')
+)
+
+install_data(
+  'configs/latx-i386.conf',
+  install_dir: get_option('sysconfdir')
+)
