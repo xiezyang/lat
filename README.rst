@@ -20,6 +20,12 @@ LATX 基于 QEMU 6 版本开发并进行了深度优化，性能相比原生 QEM
 `提交规范（中文） <COMMIT_CONVENTION.md>`_
 
 
+配置信息
+========
+
+`配置信息  <docs/user/latx-environment.rst>`_
+
+
 项目背景
 ========
 
