@@ -565,13 +565,6 @@ static void handle_arg_trace(const char *arg)
     trace_opt_parse(arg);
 }
 
-#if defined(TARGET_XTENSA)
-static void handle_arg_abi_call0(const char *arg)
-{
-    xtensa_set_abi_call0();
-}
-#endif
-
 static QemuPluginList plugins = QTAILQ_HEAD_INITIALIZER(plugins);
 
 #ifdef CONFIG_PLUGIN
@@ -874,7 +867,7 @@ static const struct qemu_argument arg_table[] = {
     "",           "enable all exception bit in fcsr"},
     {"latx-unlink",     "LATX_UNLINK",       true,  handle_arg_latx_unlink,
     "",           "unlink_count[,cpu_index]"},
-    {"latx-trace",       "",                 true,  handle_arg_latx_trace,
+    {"latx-trace",       "LATX_TRACE",                 true,  handle_arg_latx_trace,
     "bitmap",           "LATX-trace-TB-execution: 2 bits each for TB,ir1,ir2"},
     {"latx-disassemble-trace-cmp",     "LATX_DISASSEMBLE_TRACE_CMP",
         true, handle_arg_latx_disassemble_trace_cmp,
@@ -932,10 +925,6 @@ static const struct qemu_argument arg_table[] = {
      "path",       "set the elf interpreter prefix to 'path'"},
     {"version",    "LAT_VERSION",     false, handle_arg_version,
      "",           "display version information and exit"},
-#if defined(TARGET_XTENSA)
-    {"xtensa-abi-call0", "QEMU_XTENSA_ABI_CALL0", false, handle_arg_abi_call0,
-     "",           "assume CALL0 Xtensa ABI"},
-#endif
     {NULL, NULL, false, NULL, NULL, NULL}
 };
 

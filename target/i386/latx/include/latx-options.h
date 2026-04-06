@@ -188,13 +188,6 @@ extern unsigned long long counter_mips_tr;
 #define ENVSUP_PLUGIN
 #endif
 
-#if defined(TARGET_XTENSA)
-#define ENVSUP_XTENSA \
-    ENVFUN(QEMU_XTENSA_ABI_CALL0, handle_arg_abi_call0)
-#else
-#define ENVSUP_XTENSA
-#endif
-
 #define ENVS \
     ENVSUP_LATX \
     ENVSUP_AVX \
@@ -202,8 +195,7 @@ extern unsigned long long counter_mips_tr;
     ENVSUP_AOT \
     ENVSUP_DEBUG \
     ENVSUP_LATX_DEBUG \
-    ENVSUP_PLUGIN \
-    ENVSUP_XTENSA
+    ENVSUP_PLUGIN
 
 void options_init(void);
 void options_parse_opt(const char *opt);
