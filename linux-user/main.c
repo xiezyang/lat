@@ -1095,6 +1095,10 @@ static int parse_args(int argc, char **argv)
                     parse_options[arg_count].opt_arg = argv[optind];
                     optind++;
                 } else {
+					if (!strcmp(r, "version") || !strcmp(r, "h")
+							|| !strcmp(r, "help")) {
+						arginfo->handle_opt(NULL);
+					}
                     parse_options[arg_count].opt_name = arginfo->argv;
                     parse_options[arg_count].opt_arg = NULL;
                 }
