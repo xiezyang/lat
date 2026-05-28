@@ -128,6 +128,7 @@ EXPORT void* my_glXGetProcAddress(void* name);
 EXPORT void my_glDebugMessageCallback(void* prod, void* param);
 EXPORT int my_glXSwapIntervalMESA(int interval);
 EXPORT void my_glProgramCallbackMESA(void* f, void* data);
+EXPORT void my_eglSetBlobCacheFuncsANDROID(void* dpy, void* set, void* get);
 //EXPORT void* my_glGetVkProcAddrNV(void* name);
 EXPORT void* my_glXGetProcAddress(void* name)
 {
@@ -294,6 +295,54 @@ static void* find_glXSwapIntervalMESA_Fct(void* fct)
     return NULL;
 }
 
+// set_blob_func ...
+#define GO(A)                                                               \
+static uintptr_t my_set_blob_func_fct_##A = 0;                              \
+static void my_set_blob_func_##A(const void* a, int32_t b, const void* c, int32_t d) \
+{                                                                           \
+    RunFunctionWithState(my_set_blob_func_fct_##A, 4, a, b, c, d);          \
+}
+SUPER()
+#undef GO
+
+static void* find_set_blob_func_Fct(void* fct)
+{
+    if(!fct) return fct;
+    if(GetNativeFnc((uintptr_t)fct))  return GetNativeFnc((uintptr_t)fct);
+    #define GO(A) if(my_set_blob_func_fct_##A == (uintptr_t)fct) return my_set_blob_func_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_set_blob_func_fct_##A == 0) {my_set_blob_func_fct_##A = (uintptr_t)fct; return my_set_blob_func_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for libGL set_blob_func callback\n");
+    return NULL;
+}
+
+// get_blob_func ...
+#define GO(A)                                                               \
+static uintptr_t my_get_blob_func_fct_##A = 0;                              \
+static int32_t my_get_blob_func_##A(const void* a, int32_t b, void* c, int32_t d) \
+{                                                                           \
+    return (int32_t)RunFunctionWithState(my_get_blob_func_fct_##A, 4, a, b, c, d); \
+}
+SUPER()
+#undef GO
+
+static void* find_get_blob_func_Fct(void* fct)
+{
+    if(!fct) return fct;
+    if(GetNativeFnc((uintptr_t)fct))  return GetNativeFnc((uintptr_t)fct);
+    #define GO(A) if(my_get_blob_func_fct_##A == (uintptr_t)fct) return my_get_blob_func_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_get_blob_func_fct_##A == 0) {my_get_blob_func_fct_##A = (uintptr_t)fct; return my_get_blob_func_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for libGL get_blob_func callback\n");
+    return NULL;
+}
+
 #undef SUPER
 
 EXPORT void my_glDebugMessageCallback(void* prod, void* param)
@@ -339,6 +388,20 @@ EXPORT void my_glProgramCallbackMESA(void* f, void* data)
         return;
     ProgramCallbackMESA(find_program_callback_Fct(f), data);
 }
+
+EXPORT void my_eglSetBlobCacheFuncsANDROID(void* dpy, void* set, void* get)
+{
+    static vFppp_t eglSetBlobCacheFuncsANDROID = NULL;
+
+    if(!eglSetBlobCacheFuncsANDROID && my_context && my_context->glxprocaddress)
+        eglSetBlobCacheFuncsANDROID = my_context->glxprocaddress("eglSetBlobCacheFuncsANDROID");
+
+    if(!eglSetBlobCacheFuncsANDROID)
+        return;
+
+    eglSetBlobCacheFuncsANDROID(dpy, find_set_blob_func_Fct(set), find_get_blob_func_Fct(get));
+}
+
 EXPORT void* my_glXCreateContextAttribsARB(my_XDisplay_t* dpy, void* v2, void*v3, int32_t v4, void*v5);
 EXPORT void* my_glXCreateContextAttribsARB(my_XDisplay_t* dpy, void* v2, void*v3, int32_t v4, void*v5)
 {
