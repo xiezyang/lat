@@ -129,6 +129,7 @@ EXPORT void my_glDebugMessageCallback(void* prod, void* param);
 EXPORT int my_glXSwapIntervalMESA(int interval);
 EXPORT void my_glProgramCallbackMESA(void* f, void* data);
 EXPORT void my_eglSetBlobCacheFuncsANDROID(void* dpy, void* set, void* get);
+EXPORT int my_eglDebugMessageControlKHR(void* prod, void* param);
 //EXPORT void* my_glGetVkProcAddrNV(void* name);
 EXPORT void* my_glXGetProcAddress(void* name)
 {
@@ -271,6 +272,29 @@ static void* find_program_callback_Fct(void* fct)
     printf_log(LOG_NONE, "Warning, no more slot for libGL program_callback callback\n");
     return NULL;
 }
+// egl_debug_callback ...
+#define GO(A)   \
+static uintptr_t my_egl_debug_callback_fct_##A = 0;                                                     \
+    static void my_egl_debug_callback_##A(int32_t a, void* b, int32_t c, void* d, void* e, void* f)       \
+{                                                                                                       \
+    RunFunctionWithState(my_egl_debug_callback_fct_##A, 6, a, b, c, d, e, f);                          \
+}
+SUPER()
+#undef GO
+
+static void* find_egl_debug_callback_Fct(void* fct)
+{
+    if(!fct) return fct;
+    if(GetNativeFnc((uintptr_t)fct))  return GetNativeFnc((uintptr_t)fct);
+    #define GO(A) if(my_egl_debug_callback_fct_##A == (uintptr_t)fct) return my_egl_debug_callback_##A;
+    SUPER()
+    #undef GO
+    #define GO(A) if(my_egl_debug_callback_fct_##A == 0) {my_egl_debug_callback_fct_##A = (uintptr_t)fct; return my_egl_debug_callback_##A; }
+    SUPER()
+    #undef GO
+    printf_log(LOG_NONE, "Warning, no more slot for libGL egl_debug_callback callback\n");
+    return NULL;
+}
 // glXSwapIntervalMESA ...
 #define GO(A)                                           \
 static iFi_t my_glXSwapIntervalMESA_fct_##A = NULL;     \
@@ -400,6 +424,18 @@ EXPORT void my_eglSetBlobCacheFuncsANDROID(void* dpy, void* set, void* get)
         return;
 
     eglSetBlobCacheFuncsANDROID(dpy, find_set_blob_func_Fct(set), find_get_blob_func_Fct(get));
+}
+
+EXPORT int my_eglDebugMessageControlKHR(void* prod, void* param)
+{
+    static iFpp_t DebugMessageControlKHR = NULL;
+    if(!DebugMessageControlKHR)
+        DebugMessageControlKHR = my->eglDebugMessageControlKHR;
+    if(!DebugMessageControlKHR)
+        DebugMessageControlKHR = (iFpp_t)dlsym(RTLD_DEFAULT, "eglDebugMessageControlKHR");
+    if(!DebugMessageControlKHR)
+        return 0;
+    return DebugMessageControlKHR(find_egl_debug_callback_Fct(prod), param);
 }
 
 EXPORT void* my_glXCreateContextAttribsARB(my_XDisplay_t* dpy, void* v2, void*v3, int32_t v4, void*v5);

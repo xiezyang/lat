@@ -9,6 +9,7 @@
 #endif
 
 typedef int32_t (*iFi_t)(int32_t);
+typedef int32_t (*iFpp_t)(void*, void*);
 typedef void* (*pFp_t)(void*);
 typedef void (*vFpp_t)(void*, void*);
 typedef void (*vFipp_t)(int32_t, void*, void*);
@@ -25,6 +26,7 @@ typedef void (*vFppp_t)(void*, void*, void*);
         GO(glDebugMessageCallbackAMD, vFpp_t) \
         GO(glDebugMessageCallbackARB, vFpp_t) \
         GO(glDebugMessageCallbackKHR, vFpp_t) \
+        GO(eglDebugMessageControlKHR, iFpp_t) \
         GO(glProgramCallbackMESA, vFipp_t) \
         GO(glXCreateContextAttribsARB, pFpppip_t) \
         GO(glXMakeCurrent,iFppp_t) \
