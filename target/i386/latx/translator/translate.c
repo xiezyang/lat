@@ -4217,18 +4217,41 @@ void tr_load_xmm64_from_env(uint8 xmm_to_load)
 }
 #endif
 
-void tr_save_ymm_to_env(uint16 ymm_to_save)
+static void tr_save_ymm_to_env_lsx(uint16 ymm_to_save)
 {
     tr_save_xmm_to_env((uint8_t)ymm_to_save);
 #ifdef TARGET_X86_64
     tr_save_xmm64_to_env((uint8_t)(ymm_to_save >> 8));
 #endif
 
-    IR2_OPND env = env_ir2_opnd;
-    if (!option_enable_lasx) {
-        env = ra_alloc_itemp();
-        la_or(env, env_ir2_opnd, zero_ir2_opnd);
+    for (int i = 0; i < CPU_NB_REGS; ++i) {
+        IR2_OPND high;
+
+        if (!(ymm_to_save & (UINT16_C(1) << i))) {
+            continue;
+        }
+        high = ra_alloc_ftemp();
+        li_d(a1_ir2_opnd, lsenv_offset_of_ymmh(lsenv, i));
+        la_add_d(a1_ir2_opnd, env_ir2_opnd, a1_ir2_opnd);
+        la_vld(high, a1_ir2_opnd, 0);
+        li_d(a2_ir2_opnd, lsenv_offset_of_xmm(lsenv, i) + 16);
+        la_add_d(a2_ir2_opnd, env_ir2_opnd, a2_ir2_opnd);
+        la_vst(high, a2_ir2_opnd, 0);
+        ra_free_temp(high);
     }
+}
+
+void tr_save_ymm_to_env(uint16 ymm_to_save)
+{
+    if (!option_enable_lasx) {
+        tr_save_ymm_to_env_lsx(ymm_to_save);
+        return;
+    }
+
+    tr_save_xmm_to_env((uint8_t)ymm_to_save);
+#ifdef TARGET_X86_64
+    tr_save_xmm64_to_env((uint8_t)(ymm_to_save >> 8));
+#endif
 
     for (int i = 0; i < CPU_NB_REGS; ++i) {
         IR2_OPND address;
@@ -4240,14 +4263,10 @@ void tr_save_ymm_to_env(uint16 ymm_to_save)
         high = load_ymm_high128_shadow(i);
         address = ra_alloc_itemp();
         li_d(address, lsenv_offset_of_xmm(lsenv, i) + 16);
-        la_add_d(address, env, address);
+        la_add_d(address, env_ir2_opnd, address);
         la_vst(high, address, 0);
         ra_free_temp(address);
         ra_free_temp(high);
-    }
-
-    if (!option_enable_lasx) {
-        ra_free_temp(env);
     }
 }
 
