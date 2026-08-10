@@ -139,7 +139,7 @@ bool translate_vmovups_lsx(IR1_INST * pir1) {
         IR1_OPND *dest = ir1_get_opnd(pir1, 0);
         IR1_OPND *src = ir1_get_opnd(pir1, 1);
 
-        if (ir1_opnd_is_ymm(dest) && ir1_opnd_is_mem(src)) {
+        if (ir1_opnd_size(dest) == 256 && ir1_opnd_is_mem(src)) {
             int dest_index = ir1_opnd_base_reg_num(dest);
             IR2_OPND low;
             IR2_OPND high;
@@ -147,29 +147,31 @@ bool translate_vmovups_lsx(IR1_INST * pir1) {
             load_v256_from_ir1_mem_exact(src, &low, &high);
             la_vori_b(ra_alloc_xmm(dest_index), low, 0);
             store_ymm_high128_shadow(high, dest_index);
-        } else if (ir1_opnd_is_mem(dest) && ir1_opnd_is_ymm(src)) {
+        } else if (ir1_opnd_is_mem(dest) && ir1_opnd_size(src) == 256) {
             int src_index = ir1_opnd_base_reg_num(src);
 
             store_v256_to_ir1_mem_exact(
                 ra_alloc_xmm(src_index),
                 load_ymm_high128_shadow(src_index), dest);
-        } else if (ir1_opnd_is_ymm(dest) && ir1_opnd_is_ymm(src)) {
+        } else if (ir1_opnd_size(dest) == 256 &&
+                   ir1_opnd_size(src) == 256) {
             int dest_index = ir1_opnd_base_reg_num(dest);
             int src_index = ir1_opnd_base_reg_num(src);
             IR2_OPND high = load_ymm_high128_shadow(src_index);
 
             la_vori_b(ra_alloc_xmm(dest_index), ra_alloc_xmm(src_index), 0);
             store_ymm_high128_shadow(high, dest_index);
-        } else if (ir1_opnd_is_xmm(dest) && ir1_opnd_is_mem(src)) {
+        } else if (ir1_opnd_size(dest) == 128 && ir1_opnd_is_mem(src)) {
             int dest_index = ir1_opnd_base_reg_num(dest);
             IR2_OPND value = load_v128_from_ir1_mem_exact(src);
 
             la_vori_b(ra_alloc_xmm(dest_index), value, 0);
             clear_ymm_high128_shadow(dest_index);
-        } else if (ir1_opnd_is_mem(dest) && ir1_opnd_is_xmm(src)) {
+        } else if (ir1_opnd_is_mem(dest) && ir1_opnd_size(src) == 128) {
             store_v128_to_ir1_mem_exact(
                 ra_alloc_xmm(ir1_opnd_base_reg_num(src)), dest);
-        } else if (ir1_opnd_is_xmm(dest) && ir1_opnd_is_xmm(src)) {
+        } else if (ir1_opnd_size(dest) == 128 &&
+                   ir1_opnd_size(src) == 128) {
             int dest_index = ir1_opnd_base_reg_num(dest);
             IR2_OPND value = ra_alloc_ftemp();
 
