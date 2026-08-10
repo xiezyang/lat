@@ -9117,8 +9117,164 @@ bool translate_vpbroadcastw(IR1_INST *pir1)
 
 typedef IR2_INST *(*avx_lsx_fp_binary_fn)(IR2_OPND, IR2_OPND, IR2_OPND);
 
+typedef struct LsxFpStatus {
+    IR2_OPND mxcsr;
+    IR2_OPND flags;
+    IR2_OPND saved_fcsr;
+} LsxFpStatus;
+
+static void lsx_fp_clear_fcsr_flags(void)
+{
+    IR2_OPND fcsr = ra_alloc_itemp();
+
+    la_movfcsr2gr(fcsr, fcsr_ir2_opnd);
+    la_bstrins_w(fcsr, zero_ir2_opnd,
+                 FCSR_OFF_FLAGS_V, FCSR_OFF_FLAGS_I);
+    la_bstrins_w(fcsr, zero_ir2_opnd,
+                 FCSR_OFF_CAUSE_V, FCSR_OFF_CAUSE_I);
+    la_movgr2fcsr(fcsr_ir2_opnd, fcsr);
+    ra_free_temp(fcsr);
+}
+
+static void lsx_fp_status_begin(LsxFpStatus *status)
+{
+    status->saved_fcsr = set_fpu_fcsr_rounding_field_by_x86();
+    status->mxcsr = ra_alloc_itemp();
+    status->flags = ra_alloc_itemp();
+    la_ld_wu(status->mxcsr, env_ir2_opnd,
+             lsenv_offset_of_mxcsr(lsenv));
+    la_or(status->flags, zero_ir2_opnd, zero_ir2_opnd);
+    lsx_fp_clear_fcsr_flags();
+}
+
+static void lsx_fp_apply_daz(IR2_OPND value, IR2_OPND mxcsr,
+                             IR2_OPND flags, bool double_precision,
+                             int lanes)
+{
+    uint64_t exponent_mask = double_precision ?
+        UINT64_C(0x7ff0000000000000) : UINT64_C(0x000000007f800000);
+    uint64_t fraction_mask = double_precision ?
+        UINT64_C(0x000fffffffffffff) : UINT64_C(0x00000000007fffff);
+    uint64_t sign_mask = double_precision ?
+        UINT64_C(0x8000000000000000) : UINT64_C(0x0000000080000000);
+    IR2_INST *(*pick)(IR2_OPND, IR2_OPND, int) = double_precision ?
+        la_vpickve2gr_du : la_vpickve2gr_w;
+    IR2_INST *(*insert)(IR2_OPND, IR2_OPND, int) = double_precision ?
+        la_vinsgr2vr_d : la_vinsgr2vr_w;
+    IR2_OPND exponent = ra_alloc_itemp();
+
+    li_d(exponent, exponent_mask);
+
+    for (int lane = 0; lane < lanes; lane++) {
+        IR2_OPND bits = ra_alloc_itemp();
+        IR2_OPND field = ra_alloc_itemp();
+        IR2_OPND not_nan = ra_alloc_label();
+        IR2_OPND keep_denormal = ra_alloc_label();
+        IR2_OPND done = ra_alloc_label();
+
+        pick(bits, value, lane);
+        la_and(field, bits, exponent);
+        la_bne(field, exponent, not_nan);
+        li_d(field, fraction_mask);
+        la_and(field, bits, field);
+        la_beq(field, zero_ir2_opnd, done);
+        li_d(field, double_precision ? UINT64_C(0x0008000000000000) :
+             UINT64_C(0x0000000000400000));
+        la_and(field, bits, field);
+        la_bne(field, zero_ir2_opnd, done);
+        la_ori(flags, flags, 0x1);
+        la_b(done);
+
+        la_label(not_nan);
+        la_bne(field, zero_ir2_opnd, done);
+        li_d(field, fraction_mask);
+        la_and(field, bits, field);
+        la_beq(field, zero_ir2_opnd, done);
+
+        la_andi(field, mxcsr, 0x40);
+        la_beq(field, zero_ir2_opnd, keep_denormal);
+        li_d(field, sign_mask);
+        la_and(bits, bits, field);
+        insert(value, bits, lane);
+        la_b(done);
+
+        la_label(keep_denormal);
+        la_ori(flags, flags, 0x2);
+        la_label(done);
+        ra_free_temp(done);
+        ra_free_temp(keep_denormal);
+        ra_free_temp(not_nan);
+        ra_free_temp(field);
+        ra_free_temp(bits);
+    }
+    ra_free_temp(exponent);
+}
+
+static void lsx_fp_apply_fz(IR2_OPND value, IR2_OPND mxcsr,
+                            IR2_OPND flags, bool double_precision,
+                            int lanes)
+{
+    uint64_t exponent_mask = double_precision ?
+        UINT64_C(0x7ff0000000000000) : UINT64_C(0x000000007f800000);
+    uint64_t fraction_mask = double_precision ?
+        UINT64_C(0x000fffffffffffff) : UINT64_C(0x00000000007fffff);
+    uint64_t sign_mask = double_precision ?
+        UINT64_C(0x8000000000000000) : UINT64_C(0x0000000080000000);
+    IR2_INST *(*pick)(IR2_OPND, IR2_OPND, int) = double_precision ?
+        la_vpickve2gr_du : la_vpickve2gr_w;
+    IR2_INST *(*insert)(IR2_OPND, IR2_OPND, int) = double_precision ?
+        la_vinsgr2vr_d : la_vinsgr2vr_w;
+
+    for (int lane = 0; lane < lanes; lane++) {
+        IR2_OPND bits = ra_alloc_itemp();
+        IR2_OPND field = ra_alloc_itemp();
+        IR2_OPND check_subnormal = ra_alloc_label();
+        IR2_OPND done = ra_alloc_label();
+
+        la_andi(field, mxcsr, 0x8000);
+        la_beq(field, zero_ir2_opnd, done);
+        pick(bits, value, lane);
+        li_d(field, exponent_mask);
+        la_and(field, bits, field);
+        la_beq(field, zero_ir2_opnd, check_subnormal);
+        la_b(done);
+        la_label(check_subnormal);
+        li_d(field, fraction_mask);
+        la_and(field, bits, field);
+        la_beq(field, zero_ir2_opnd, done);
+        li_d(field, sign_mask);
+        la_and(bits, bits, field);
+        insert(value, bits, lane);
+        la_ori(flags, flags, 0x30);
+        la_label(done);
+        ra_free_temp(done);
+        ra_free_temp(check_subnormal);
+        ra_free_temp(field);
+        ra_free_temp(bits);
+    }
+}
+
+static void lsx_fp_status_finish(IR1_INST *pir1, LsxFpStatus *status)
+{
+    IR2_OPND fcsr = ra_alloc_itemp();
+
+    la_movfcsr2gr(fcsr, fcsr_ir2_opnd);
+    vmulsd_map_fcsr_flags(fcsr, status->flags);
+    set_fpu_rounding_mode(status->saved_fcsr);
+    ra_free_temp_auto(status->saved_fcsr);
+    ra_free_temp(fcsr);
+
+    vmulsd_raise_unmasked_exception(pir1, status->mxcsr, status->flags);
+    la_or(status->mxcsr, status->mxcsr, status->flags);
+    la_st_w(status->mxcsr, env_ir2_opnd, lsenv_offset_of_mxcsr(lsenv));
+    ra_free_temp(status->flags);
+    ra_free_temp(status->mxcsr);
+}
+
 static bool translate_avx_fp_binary_lsx(IR1_INST *pir1,
-                                        avx_lsx_fp_binary_fn tr_inst)
+                                        avx_lsx_fp_binary_fn tr_inst,
+                                        bool double_precision,
+                                        bool track_fp_status)
 {
     IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
     IR1_OPND *opnd1 = ir1_get_opnd(pir1, 1);
@@ -9126,20 +9282,46 @@ static bool translate_avx_fp_binary_lsx(IR1_INST *pir1,
     bool ymm = ir1_opnd_is_ymm(opnd0);
     IR2_OPND src1_low, src1_high, src2_low, src2_high;
     IR2_OPND result_low = ra_alloc_ftemp();
+    LsxFpStatus status;
 
     lsassert(ir1_opnd_is_xmm(opnd0) || ymm);
     lsassert(ir1_opnd_is_xmm(opnd1) == !ymm ||
              ir1_opnd_is_ymm(opnd1) == ymm);
     load_avx_lsx_operand(opnd1, ymm, &src1_low, &src1_high);
     load_avx_lsx_operand(opnd2, ymm, &src2_low, &src2_high);
+    if (track_fp_status) {
+        lsx_fp_status_begin(&status);
+        lsx_fp_apply_daz(src1_low, status.mxcsr, status.flags,
+                         double_precision, double_precision ? 2 : 4);
+        lsx_fp_apply_daz(src2_low, status.mxcsr, status.flags,
+                         double_precision, double_precision ? 2 : 4);
+        if (ymm) {
+            lsx_fp_apply_daz(src1_high, status.mxcsr, status.flags,
+                             double_precision, double_precision ? 2 : 4);
+            lsx_fp_apply_daz(src2_high, status.mxcsr, status.flags,
+                             double_precision, double_precision ? 2 : 4);
+        }
+    }
     tr_inst(result_low, src1_low, src2_low);
+    if (track_fp_status) {
+        lsx_fp_apply_fz(result_low, status.mxcsr, status.flags,
+                        double_precision, double_precision ? 2 : 4);
+    }
 
     if (ymm) {
         IR2_OPND result_high = ra_alloc_ftemp();
 
         tr_inst(result_high, src1_high, src2_high);
+        if (track_fp_status) {
+            lsx_fp_apply_fz(result_high, status.mxcsr, status.flags,
+                            double_precision, double_precision ? 2 : 4);
+            lsx_fp_status_finish(pir1, &status);
+        }
         store_avx_lsx_result(opnd0, result_low, result_high);
     } else {
+        if (track_fp_status) {
+            lsx_fp_status_finish(pir1, &status);
+        }
         store_avx_lsx_result(opnd0, result_low, result_low);
     }
     return true;
@@ -9147,7 +9329,8 @@ static bool translate_avx_fp_binary_lsx(IR1_INST *pir1,
 
 static bool translate_avx_fp_scalar_lsx(IR1_INST *pir1,
                                         avx_lsx_fp_binary_fn tr_inst,
-                                        bool is_double)
+                                        bool is_double,
+                                        bool track_fp_status)
 {
     IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
     IR1_OPND *opnd1 = ir1_get_opnd(pir1, 1);
@@ -9156,17 +9339,31 @@ static bool translate_avx_fp_scalar_lsx(IR1_INST *pir1,
     IR2_OPND src1;
     IR2_OPND src2;
     IR2_OPND temp = ra_alloc_ftemp();
+    LsxFpStatus status;
 
     lsassert(ir1_opnd_is_xmm(opnd0) && ir1_opnd_is_xmm(opnd1));
     dest = load_freg128_from_ir1(opnd0);
     src1 = load_freg128_from_ir1(opnd1);
     src2 = load_freg128_from_ir1(opnd2);
+    if (track_fp_status) {
+        lsx_fp_status_begin(&status);
+        lsx_fp_apply_daz(src1, status.mxcsr, status.flags,
+                         is_double, 1);
+        lsx_fp_apply_daz(src2, status.mxcsr, status.flags,
+                         is_double, 1);
+    }
     tr_inst(temp, src1, src2);
+    if (track_fp_status) {
+        lsx_fp_apply_fz(temp, status.mxcsr, status.flags, is_double, 1);
+    }
     la_vori_b(dest, src1, 0);
     if (is_double) {
         la_vextrins_d(dest, temp, 0);
     } else {
         la_vextrins_w(dest, temp, 0);
+    }
+    if (track_fp_status) {
+        lsx_fp_status_finish(pir1, &status);
     }
     store_avx_lsx_result(opnd0, dest, dest);
     return true;
@@ -9174,107 +9371,107 @@ static bool translate_avx_fp_scalar_lsx(IR1_INST *pir1,
 
 bool translate_vaddpd_lsx(IR1_INST *pir1)
 {
-    return translate_avx_fp_binary_lsx(pir1, la_vfadd_d);
+    return translate_avx_fp_binary_lsx(pir1, la_vfadd_d, true, true);
 }
 
 bool translate_vaddps_lsx(IR1_INST *pir1)
 {
-    return translate_avx_fp_binary_lsx(pir1, la_vfadd_s);
+    return translate_avx_fp_binary_lsx(pir1, la_vfadd_s, false, true);
 }
 
 bool translate_vaddsd_lsx(IR1_INST *pir1)
 {
-    return translate_avx_fp_scalar_lsx(pir1, la_vfadd_d, true);
+    return translate_avx_fp_scalar_lsx(pir1, la_vfadd_d, true, true);
 }
 
 bool translate_vaddss_lsx(IR1_INST *pir1)
 {
-    return translate_avx_fp_scalar_lsx(pir1, la_vfadd_s, false);
+    return translate_avx_fp_scalar_lsx(pir1, la_vfadd_s, false, true);
 }
 
 bool translate_vsubpd_lsx(IR1_INST *pir1)
 {
-    return translate_avx_fp_binary_lsx(pir1, la_vfsub_d);
+    return translate_avx_fp_binary_lsx(pir1, la_vfsub_d, true, true);
 }
 
 bool translate_vsubps_lsx(IR1_INST *pir1)
 {
-    return translate_avx_fp_binary_lsx(pir1, la_vfsub_s);
+    return translate_avx_fp_binary_lsx(pir1, la_vfsub_s, false, true);
 }
 
 bool translate_vsubsd_lsx(IR1_INST *pir1)
 {
-    return translate_avx_fp_scalar_lsx(pir1, la_vfsub_d, true);
+    return translate_avx_fp_scalar_lsx(pir1, la_vfsub_d, true, true);
 }
 
 bool translate_vsubss_lsx(IR1_INST *pir1)
 {
-    return translate_avx_fp_scalar_lsx(pir1, la_vfsub_s, false);
+    return translate_avx_fp_scalar_lsx(pir1, la_vfsub_s, false, true);
 }
 
 bool translate_vmulpd_lsx(IR1_INST *pir1)
 {
-    return translate_avx_fp_binary_lsx(pir1, la_vfmul_d);
+    return translate_avx_fp_binary_lsx(pir1, la_vfmul_d, true, true);
 }
 
 bool translate_vmulps_lsx(IR1_INST *pir1)
 {
-    return translate_avx_fp_binary_lsx(pir1, la_vfmul_s);
+    return translate_avx_fp_binary_lsx(pir1, la_vfmul_s, false, true);
 }
 
 bool translate_vmulss_lsx(IR1_INST *pir1)
 {
-    return translate_avx_fp_scalar_lsx(pir1, la_vfmul_s, false);
+    return translate_avx_fp_scalar_lsx(pir1, la_vfmul_s, false, true);
 }
 
 bool translate_vdivpd_lsx(IR1_INST *pir1)
 {
-    return translate_avx_fp_binary_lsx(pir1, la_vfdiv_d);
+    return translate_avx_fp_binary_lsx(pir1, la_vfdiv_d, true, true);
 }
 
 bool translate_vdivps_lsx(IR1_INST *pir1)
 {
-    return translate_avx_fp_binary_lsx(pir1, la_vfdiv_s);
+    return translate_avx_fp_binary_lsx(pir1, la_vfdiv_s, false, true);
 }
 
 bool translate_vdivss_lsx(IR1_INST *pir1)
 {
-    return translate_avx_fp_scalar_lsx(pir1, la_vfdiv_s, false);
+    return translate_avx_fp_scalar_lsx(pir1, la_vfdiv_s, false, true);
 }
 
 bool translate_vandnpd_lsx(IR1_INST *pir1)
 {
-    return translate_avx_fp_binary_lsx(pir1, la_vandn_v);
+    return translate_avx_fp_binary_lsx(pir1, la_vandn_v, true, false);
 }
 
 bool translate_vandnps_lsx(IR1_INST *pir1)
 {
-    return translate_avx_fp_binary_lsx(pir1, la_vandn_v);
+    return translate_avx_fp_binary_lsx(pir1, la_vandn_v, false, false);
 }
 
 bool translate_vandpd_lsx(IR1_INST *pir1)
 {
-    return translate_avx_fp_binary_lsx(pir1, la_vand_v);
+    return translate_avx_fp_binary_lsx(pir1, la_vand_v, true, false);
 }
 
 bool translate_vandps_lsx(IR1_INST *pir1)
 {
-    return translate_avx_fp_binary_lsx(pir1, la_vand_v);
+    return translate_avx_fp_binary_lsx(pir1, la_vand_v, false, false);
 }
 
 bool translate_vorpd_lsx(IR1_INST *pir1)
 {
-    return translate_avx_fp_binary_lsx(pir1, la_vor_v);
+    return translate_avx_fp_binary_lsx(pir1, la_vor_v, true, false);
 }
 
 bool translate_vorps_lsx(IR1_INST *pir1)
 {
-    return translate_avx_fp_binary_lsx(pir1, la_vor_v);
+    return translate_avx_fp_binary_lsx(pir1, la_vor_v, false, false);
 }
 
 bool translate_vxorps_lsx(IR1_INST *pir1)
 {
-    return translate_avx_fp_binary_lsx(pir1, la_vxor_v);
+    return translate_avx_fp_binary_lsx(pir1, la_vxor_v, false, false);
 }
 
 typedef void (*avx_lsx_lane_fn)(IR2_OPND, IR2_OPND, IR2_OPND);
@@ -9337,7 +9534,8 @@ static void translate_avx_hadd_lane_lsx(IR2_OPND result,
 }
 
 static bool translate_avx_pairwise_lsx(IR1_INST *pir1,
-                                       avx_lsx_lane_fn tr_inst)
+                                       avx_lsx_lane_fn tr_inst,
+                                       bool double_precision)
 {
     IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
     IR1_OPND *opnd1 = ir1_get_opnd(pir1, 1);
@@ -9345,16 +9543,32 @@ static bool translate_avx_pairwise_lsx(IR1_INST *pir1,
     bool ymm = ir1_opnd_is_ymm(opnd0);
     IR2_OPND src1_low, src1_high, src2_low, src2_high;
     IR2_OPND result_low = ra_alloc_ftemp();
+    LsxFpStatus status;
 
     load_avx_lsx_operand(opnd1, ymm, &src1_low, &src1_high);
     load_avx_lsx_operand(opnd2, ymm, &src2_low, &src2_high);
+    lsx_fp_status_begin(&status);
+    lsx_fp_apply_daz(src1_low, status.mxcsr, status.flags,
+                     double_precision, double_precision ? 2 : 4);
+    lsx_fp_apply_daz(src2_low, status.mxcsr, status.flags,
+                     double_precision, double_precision ? 2 : 4);
     tr_inst(result_low, src1_low, src2_low);
+    lsx_fp_apply_fz(result_low, status.mxcsr, status.flags,
+                    double_precision, double_precision ? 2 : 4);
     if (ymm) {
         IR2_OPND result_high = ra_alloc_ftemp();
 
+        lsx_fp_apply_daz(src1_high, status.mxcsr, status.flags,
+                         double_precision, double_precision ? 2 : 4);
+        lsx_fp_apply_daz(src2_high, status.mxcsr, status.flags,
+                         double_precision, double_precision ? 2 : 4);
         tr_inst(result_high, src1_high, src2_high);
+        lsx_fp_apply_fz(result_high, status.mxcsr, status.flags,
+                        double_precision, double_precision ? 2 : 4);
+        lsx_fp_status_finish(pir1, &status);
         store_avx_lsx_result(opnd0, result_low, result_high);
     } else {
+        lsx_fp_status_finish(pir1, &status);
         store_avx_lsx_result(opnd0, result_low, result_low);
     }
     return true;
@@ -9404,32 +9618,38 @@ static void translate_avx_hsubps_lane_lsx(IR2_OPND result,
 
 bool translate_vaddsubpd_lsx(IR1_INST *pir1)
 {
-    return translate_avx_pairwise_lsx(pir1, translate_avx_addsubpd_lane_lsx);
+    return translate_avx_pairwise_lsx(pir1, translate_avx_addsubpd_lane_lsx,
+                                      true);
 }
 
 bool translate_vaddsubps_lsx(IR1_INST *pir1)
 {
-    return translate_avx_pairwise_lsx(pir1, translate_avx_addsubps_lane_lsx);
+    return translate_avx_pairwise_lsx(pir1, translate_avx_addsubps_lane_lsx,
+                                      false);
 }
 
 bool translate_vhaddpd_lsx(IR1_INST *pir1)
 {
-    return translate_avx_pairwise_lsx(pir1, translate_avx_haddpd_lane_lsx);
+    return translate_avx_pairwise_lsx(pir1, translate_avx_haddpd_lane_lsx,
+                                      true);
 }
 
 bool translate_vhaddps_lsx(IR1_INST *pir1)
 {
-    return translate_avx_pairwise_lsx(pir1, translate_avx_haddps_lane_lsx);
+    return translate_avx_pairwise_lsx(pir1, translate_avx_haddps_lane_lsx,
+                                      false);
 }
 
 bool translate_vhsubpd_lsx(IR1_INST *pir1)
 {
-    return translate_avx_pairwise_lsx(pir1, translate_avx_hsubpd_lane_lsx);
+    return translate_avx_pairwise_lsx(pir1, translate_avx_hsubpd_lane_lsx,
+                                      true);
 }
 
 bool translate_vhsubps_lsx(IR1_INST *pir1)
 {
-    return translate_avx_pairwise_lsx(pir1, translate_avx_hsubps_lane_lsx);
+    return translate_avx_pairwise_lsx(pir1, translate_avx_hsubps_lane_lsx,
+                                      false);
 }
 
 static void translate_avx_minmax_lane_lsx(IR2_OPND result,
@@ -9469,6 +9689,7 @@ static bool translate_avx_minmax_lsx(IR1_INST *pir1,
     IR2_OPND src1;
     IR2_OPND src2;
     IR2_OPND result;
+    LsxFpStatus status;
 
     if (scalar) {
         IR2_OPND dest = load_freg128_from_ir1(opnd0);
@@ -9476,14 +9697,22 @@ static bool translate_avx_minmax_lsx(IR1_INST *pir1,
         src1 = load_freg128_from_ir1(opnd1);
         src2 = load_freg128_from_ir1(opnd2);
         result = ra_alloc_ftemp();
+        lsx_fp_status_begin(&status);
+        lsx_fp_apply_daz(src1, status.mxcsr, status.flags,
+                         is_double, 1);
+        lsx_fp_apply_daz(src2, status.mxcsr, status.flags,
+                         is_double, 1);
         translate_avx_minmax_lane_lsx(result, src1, src2,
                                       is_double, is_max);
+        lsx_fp_apply_fz(result, status.mxcsr, status.flags,
+                        is_double, 1);
         la_vori_b(dest, src1, 0);
         if (is_double) {
             la_vextrins_d(dest, result, 0);
         } else {
             la_vextrins_w(dest, result, 0);
         }
+        lsx_fp_status_finish(pir1, &status);
         store_avx_lsx_result(opnd0, dest, dest);
         return true;
     }
@@ -9494,15 +9723,30 @@ static bool translate_avx_minmax_lsx(IR1_INST *pir1,
 
     load_avx_lsx_operand(opnd1, ymm, &src1_low, &src1_high);
     load_avx_lsx_operand(opnd2, ymm, &src2_low, &src2_high);
+    lsx_fp_status_begin(&status);
+    lsx_fp_apply_daz(src1_low, status.mxcsr, status.flags,
+                     is_double, is_double ? 2 : 4);
+    lsx_fp_apply_daz(src2_low, status.mxcsr, status.flags,
+                     is_double, is_double ? 2 : 4);
     translate_avx_minmax_lane_lsx(result_low, src1_low, src2_low,
                                   is_double, is_max);
+    lsx_fp_apply_fz(result_low, status.mxcsr, status.flags,
+                    is_double, is_double ? 2 : 4);
     if (ymm) {
         IR2_OPND result_high = ra_alloc_ftemp();
 
+        lsx_fp_apply_daz(src1_high, status.mxcsr, status.flags,
+                         is_double, is_double ? 2 : 4);
+        lsx_fp_apply_daz(src2_high, status.mxcsr, status.flags,
+                         is_double, is_double ? 2 : 4);
         translate_avx_minmax_lane_lsx(result_high, src1_high, src2_high,
                                       is_double, is_max);
+        lsx_fp_apply_fz(result_high, status.mxcsr, status.flags,
+                        is_double, is_double ? 2 : 4);
+        lsx_fp_status_finish(pir1, &status);
         store_avx_lsx_result(opnd0, result_low, result_high);
     } else {
+        lsx_fp_status_finish(pir1, &status);
         store_avx_lsx_result(opnd0, result_low, result_low);
     }
     return true;
@@ -9551,22 +9795,35 @@ bool translate_vminss_lsx(IR1_INST *pir1)
 typedef IR2_INST *(*avx_lsx_fp_unary_fn)(IR2_OPND, IR2_OPND);
 
 static bool translate_avx_fp_unary_lsx(IR1_INST *pir1,
-                                       avx_lsx_fp_unary_fn tr_inst)
+                                       avx_lsx_fp_unary_fn tr_inst,
+                                       bool double_precision)
 {
     IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
     IR1_OPND *opnd1 = ir1_get_opnd(pir1, 1);
     bool ymm = ir1_opnd_is_ymm(opnd0);
     IR2_OPND src_low, src_high;
     IR2_OPND result_low = ra_alloc_ftemp();
+    LsxFpStatus status;
 
     load_avx_lsx_operand(opnd1, ymm, &src_low, &src_high);
+    lsx_fp_status_begin(&status);
+    lsx_fp_apply_daz(src_low, status.mxcsr, status.flags,
+                     double_precision, double_precision ? 2 : 4);
     tr_inst(result_low, src_low);
+    lsx_fp_apply_fz(result_low, status.mxcsr, status.flags,
+                    double_precision, double_precision ? 2 : 4);
     if (ymm) {
         IR2_OPND result_high = ra_alloc_ftemp();
 
+        lsx_fp_apply_daz(src_high, status.mxcsr, status.flags,
+                         double_precision, double_precision ? 2 : 4);
         tr_inst(result_high, src_high);
+        lsx_fp_apply_fz(result_high, status.mxcsr, status.flags,
+                        double_precision, double_precision ? 2 : 4);
+        lsx_fp_status_finish(pir1, &status);
         store_avx_lsx_result(opnd0, result_low, result_high);
     } else {
+        lsx_fp_status_finish(pir1, &status);
         store_avx_lsx_result(opnd0, result_low, result_low);
     }
     return true;
@@ -9583,26 +9840,31 @@ static bool translate_avx_fp_scalar_unary_lsx(IR1_INST *pir1,
     IR2_OPND src1 = load_freg128_from_ir1(opnd1);
     IR2_OPND src2 = load_freg128_from_ir1(opnd2);
     IR2_OPND temp = ra_alloc_ftemp();
+    LsxFpStatus status;
 
+    lsx_fp_status_begin(&status);
+    lsx_fp_apply_daz(src2, status.mxcsr, status.flags, is_double, 1);
     tr_inst(temp, src2);
+    lsx_fp_apply_fz(temp, status.mxcsr, status.flags, is_double, 1);
     la_vori_b(dest, src1, 0);
     if (is_double) {
         la_vextrins_d(dest, temp, 0);
     } else {
         la_vextrins_w(dest, temp, 0);
     }
+    lsx_fp_status_finish(pir1, &status);
     store_avx_lsx_result(opnd0, dest, dest);
     return true;
 }
 
 bool translate_vsqrtpd_lsx(IR1_INST *pir1)
 {
-    return translate_avx_fp_unary_lsx(pir1, la_vfsqrt_d);
+    return translate_avx_fp_unary_lsx(pir1, la_vfsqrt_d, true);
 }
 
 bool translate_vsqrtps_lsx(IR1_INST *pir1)
 {
-    return translate_avx_fp_unary_lsx(pir1, la_vfsqrt_s);
+    return translate_avx_fp_unary_lsx(pir1, la_vfsqrt_s, false);
 }
 
 bool translate_vsqrtsd_lsx(IR1_INST *pir1)
@@ -9617,7 +9879,7 @@ bool translate_vsqrtss_lsx(IR1_INST *pir1)
 
 bool translate_vrcpps_lsx(IR1_INST *pir1)
 {
-    return translate_avx_fp_unary_lsx(pir1, la_vfrecip_s);
+    return translate_avx_fp_unary_lsx(pir1, la_vfrecip_s, false);
 }
 
 bool translate_vrcpss_lsx(IR1_INST *pir1)
@@ -9627,7 +9889,7 @@ bool translate_vrcpss_lsx(IR1_INST *pir1)
 
 bool translate_vrsqrtps_lsx(IR1_INST *pir1)
 {
-    return translate_avx_fp_unary_lsx(pir1, la_vfrsqrt_s);
+    return translate_avx_fp_unary_lsx(pir1, la_vfrsqrt_s, false);
 }
 
 bool translate_vrsqrtss_lsx(IR1_INST *pir1)
@@ -9731,9 +9993,15 @@ bool translate_vdppd_lsx(IR1_INST *pir1)
     IR2_OPND src1 = load_freg128_from_ir1(opnd1);
     IR2_OPND src2 = load_freg128_from_ir1(opnd2);
     IR2_OPND result = ra_alloc_ftemp();
+    LsxFpStatus status;
 
     lsassert(ir1_opnd_is_xmm(opnd0) && ir1_opnd_is_xmm(opnd1));
+    lsx_fp_status_begin(&status);
+    lsx_fp_apply_daz(src1, status.mxcsr, status.flags, true, 2);
+    lsx_fp_apply_daz(src2, status.mxcsr, status.flags, true, 2);
     translate_avx_dppd_lane_lsx(result, src1, src2, imm);
+    lsx_fp_apply_fz(result, status.mxcsr, status.flags, true, 2);
+    lsx_fp_status_finish(pir1, &status);
     store_avx_lsx_result(opnd0, result, result);
     return true;
 }
@@ -9747,16 +10015,26 @@ bool translate_vdpps_lsx(IR1_INST *pir1)
     bool ymm = ir1_opnd_is_ymm(opnd0);
     IR2_OPND src1_low, src1_high, src2_low, src2_high;
     IR2_OPND result_low = ra_alloc_ftemp();
+    LsxFpStatus status;
 
     load_avx_lsx_operand(opnd1, ymm, &src1_low, &src1_high);
     load_avx_lsx_operand(opnd2, ymm, &src2_low, &src2_high);
+    lsx_fp_status_begin(&status);
+    lsx_fp_apply_daz(src1_low, status.mxcsr, status.flags, false, 4);
+    lsx_fp_apply_daz(src2_low, status.mxcsr, status.flags, false, 4);
     translate_avx_dpps_lane_lsx(result_low, src1_low, src2_low, imm);
+    lsx_fp_apply_fz(result_low, status.mxcsr, status.flags, false, 4);
     if (ymm) {
         IR2_OPND result_high = ra_alloc_ftemp();
 
+        lsx_fp_apply_daz(src1_high, status.mxcsr, status.flags, false, 4);
+        lsx_fp_apply_daz(src2_high, status.mxcsr, status.flags, false, 4);
         translate_avx_dpps_lane_lsx(result_high, src1_high, src2_high, imm);
+        lsx_fp_apply_fz(result_high, status.mxcsr, status.flags, false, 4);
+        lsx_fp_status_finish(pir1, &status);
         store_avx_lsx_result(opnd0, result_low, result_high);
     } else {
+        lsx_fp_status_finish(pir1, &status);
         store_avx_lsx_result(opnd0, result_low, result_low);
     }
     return true;
