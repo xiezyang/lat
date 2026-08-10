@@ -12,6 +12,8 @@ expected=$3
 output=$4
 script_dir=$(cd "$(dirname "$0")" && pwd)
 source_file=$(cd "$script_dir/../.." && pwd)/target/i386/latx/translator/tr-avx-cvt.c
+dispatch_file=$(cd "$script_dir/../.." && pwd)/target/i386/latx/translator/translate.c
+signal_file=$(cd "$script_dir/../.." && pwd)/linux-user/i386/signal.c
 mkdir -p "$output"
 
 marker() { nm -n "$1" | awk '$3 == "latx_avx_single_vcvtsi2sd_observe_marker" { sub(/^0+/, "", $1); print "0x" $1 }'; }
@@ -34,6 +36,32 @@ if printf '%s\n' "$source_body" | grep -Eq '\bla_xv'; then
     echo "FAIL VCVTSI2SD LSX source contains LASX generator" >&2
     exit 1
 fi
+
+for registration in \
+    'translate_register_lsx(dt_X86_INS_VPSIGNB' \
+    'translate_register_lsx(dt_X86_INS_VPSIGND' \
+    'translate_register_lsx(dt_X86_INS_VPSIGNW'; do
+    grep -Fq "$registration" "$dispatch_file" || {
+        echo "FAIL missing explicit VPSIGN LSX registration: $registration" >&2
+        exit 1
+    }
+done
+for function in translate_vpsignb_lsx translate_vpsignd_lsx translate_vpsignw_lsx; do
+    sign_body=$(awk -v name="$function" '$0 ~ "bool " name "\\(" {f=1} f {print} f&&/^}/ {exit}' \
+        "$script_dir/../../target/i386/latx/translator/tr-avx.c")
+    if printf '%s\n' "$sign_body" | grep -Eq '\bla_xvsigncov'; then
+        echo "FAIL $function LSX source contains LASX generator" >&2
+        exit 1
+    fi
+done
+grep -Fq 'IR2_OPND fault_addr = zero_ir2_opnd;' "$dispatch_file" || {
+    echo "FAIL LSX page-fault bridge does not use the synthetic zero-base access" >&2
+    exit 1
+}
+grep -Fq 'if (xstate_size < TARGET_FXSAVE_SIZE)' "$signal_file" || {
+    echo "FAIL signal frame does not reserve the FXSAVE minimum" >&2
+    exit 1
+}
 
 lasx_diff=0
 lsx_diff=0

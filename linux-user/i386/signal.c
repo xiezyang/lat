@@ -559,8 +559,11 @@ get_sigframe(struct target_sigaction *ka, CPUX86State *env, size_t fxsave_offset
     } else if (!(env->features[FEAT_1_ECX] & CPUID_EXT_XSAVE)) {
         return ((esp - TARGET_FXSAVE_SIZE) & -16ul) - fxsave_offset;
     } else {
-        size_t xstate_size =
-               xsave_area_size(env->xcr0) + TARGET_FP_XSTATE_MAGIC2_SIZE;
+        size_t xstate_size = xsave_area_size(env->xcr0);
+        if (xstate_size < TARGET_FXSAVE_SIZE) {
+            xstate_size = TARGET_FXSAVE_SIZE;
+        }
+        xstate_size += TARGET_FP_XSTATE_MAGIC2_SIZE;
         return ((esp - xstate_size) & -64ul) - fxsave_offset;
     }
 }

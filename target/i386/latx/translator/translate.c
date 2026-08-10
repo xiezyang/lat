@@ -2256,9 +2256,14 @@ void translate_context_init(void)
         LATX_AVX_INTEGER_REMAINING_3OP_LSX_TABLE(
             LATX_AVX_INTEGER_REMAINING_3OP_LSX_REGISTER)
 #undef LATX_AVX_INTEGER_REMAINING_3OP_LSX_REGISTER
-        translate_register_lsx(dt_X86_INS_VPSIGNB, translate_vpsignb_lsx);
-        translate_register_lsx(dt_X86_INS_VPSIGND, translate_vpsignd_lsx);
-        translate_register_lsx(dt_X86_INS_VPSIGNW, translate_vpsignw_lsx);
+        if (!option_enable_lasx) {
+            translate_register_lsx(dt_X86_INS_VPSIGNB,
+                                   translate_vpsignb_lsx);
+            translate_register_lsx(dt_X86_INS_VPSIGND,
+                                   translate_vpsignd_lsx);
+            translate_register_lsx(dt_X86_INS_VPSIGNW,
+                                   translate_vpsignw_lsx);
+        }
         translate_register_lsx(dt_X86_INS_VPABSB, translate_vpabsx_lsx);
         translate_register_lsx(dt_X86_INS_VPABSD, translate_vpabsx_lsx);
         translate_register_lsx(dt_X86_INS_VPABSW, translate_vpabsx_lsx);
