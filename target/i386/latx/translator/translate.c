@@ -4219,6 +4219,8 @@ void tr_load_xmm64_from_env(uint8 xmm_to_load)
 
 static void tr_save_ymm_to_env_lsx(uint16 ymm_to_save)
 {
+    helper_save_reg(a1_ir2_opnd);
+    helper_save_reg(a2_ir2_opnd);
     tr_save_xmm_to_env((uint8_t)ymm_to_save);
 #ifdef TARGET_X86_64
     tr_save_xmm64_to_env((uint8_t)(ymm_to_save >> 8));
