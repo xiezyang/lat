@@ -1,0 +1,46 @@
+{
+  "work_item": "WI-1875",
+  "mnemonic": "VCVTSD2SS",
+  "baseline": "xzy86 native x86",
+  "forms": ["XMM register", "m64 memory", "XMM aliases"],
+  "normal_records": 18,
+  "normal_record_size": 64,
+  "masked_cases": {
+    "underflow": "normal record: VCVTSD2SS_REG target=15 value=min_subnormal mxcsr=0x1f80",
+    "overflow": "normal record: VCVTSD2SS_REG target=15 value=max_normal mxcsr=0x1f80"
+  },
+  "unmasked_cases": {
+    "invalid": {"argument": "fpe-invalid", "expected_exit": 136, "signal": "SIGFPE"},
+    "precision": {"argument": "fpe-precision", "expected_exit": 136, "signal": "SIGFPE"},
+    "overflow": {"argument": "fpe-overflow", "expected_exit": 136, "signal": "SIGFPE"},
+    "underflow": {"argument": "fpe-underflow", "expected_exit": 136, "signal": "SIGFPE"}
+  },
+  "daz": {
+    "runner_argument": "none",
+    "expected_exit": 0,
+    "record_size": 64
+  },
+  "xzy86_run": {
+    "raw_directory": "/tmp/wi1875-x86-final-20260807-r3",
+    "normal_exit": 0,
+    "normal_bytes": 1152,
+    "daz_exit": 0,
+    "daz_bytes": 64,
+    "unmasked_signal": "SIGFPE",
+    "unmasked_exit": 136,
+    "unmasked_cases": {
+      "invalid": {"si_code": 7, "mxcsr": "0x1f01"},
+      "precision": {"si_code": 6, "mxcsr": "0x0fa0"},
+      "overflow": {"si_code": 4, "mxcsr": "0x1ba8"},
+      "underflow": {"si_code": 5, "mxcsr": "0x1792"}
+    },
+    "ymmh15_hex": "887766554433221100ffeeddccbbaa99"
+  },
+  "coverage": [
+    "NaN and infinity",
+    "double subnormal and DAZ",
+    "masked overflow/underflow flags and MXCSR",
+    "unmasked invalid/precision/overflow/underflow signal records",
+    "XMM high-half clearing and YMMH state"
+  ]
+}

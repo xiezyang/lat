@@ -38,5 +38,13 @@ grep -Fq 'translate_register_lsx(dt_X86_INS_VCVTSD2SS, translate_vcvtsd2ss_lsx)'
 grep -Fq 'tr_save_ymm_to_env(UINT16_MAX)' "$cvt"
 grep -Fq 'fpe-overflow' "$repo/tests/integration/latx-avx-single-vcvtsd2ss.c"
 grep -Fq 'fpe-underflow' "$repo/tests/integration/latx-avx-single-vcvtsd2ss.c"
+grep -Fq 'VCVTSD2SS_REG 15, vcvtsd2ss_min_subnormal, 0x1f80' \
+    "$repo/tests/integration/latx-avx-single-vcvtsd2ss.S"
+grep -Fq 'VCVTSD2SS_REG 15, vcvtsd2ss_max_normal, 0x1f80' \
+    "$repo/tests/integration/latx-avx-single-vcvtsd2ss.S"
+grep -Fq 'VCVTSD2SS_SET_MXCSR 0x1b80' \
+    "$repo/tests/integration/latx-avx-single-vcvtsd2ss.S"
+grep -Fq 'VCVTSD2SS_SET_MXCSR 0x1780' \
+    "$repo/tests/integration/latx-avx-single-vcvtsd2ss.S"
 
 echo 'PASS WI-1875 VCVTSD2SS LSX source audit'

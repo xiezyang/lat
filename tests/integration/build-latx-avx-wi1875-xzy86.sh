@@ -72,8 +72,13 @@ docker run --rm -v "$remote_dir:/work" -w /work "$image" bash -ceu '
         probe=$2
         name=$3
         set +e
-        "/work/$probe" "$name" > "/work/$dir/$name.bin" \
-            2> "/work/$dir/$name.stderr"
+        if [ "$dir" = x86-vcvtsd2ss-daz ]; then
+            "/work/$probe" > "/work/$dir/$name.bin" \
+                2> "/work/$dir/$name.stderr"
+        else
+            "/work/$probe" "$name" > "/work/$dir/$name.bin" \
+                2> "/work/$dir/$name.stderr"
+        fi
         rc=$?
         set -e
         printf "%s\n" "$rc" > "/work/$dir/$name.status"
@@ -92,7 +97,7 @@ docker run --rm -v "$remote_dir:/work" -w /work "$image" bash -ceu '
 ' 
 REMOTE
 
-mkdir -p "$local_output/vcvtsd2ss" "$local_output/vcvtsd2ss-daz"
+mkdir -p "$local_output/x86-vcvtsd2ss" "$local_output/x86-vcvtsd2ss-daz"
 for file in \
     source-and-probe.sha256 x86-commands.txt \
     x86-vcvtsd2ss/reference.bin x86-vcvtsd2ss/reference.stderr \
