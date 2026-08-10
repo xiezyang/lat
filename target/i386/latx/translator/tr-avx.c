@@ -2967,7 +2967,7 @@ bool translate_vpabsx_lsx(IR1_INST *pir1)
     IR1_OPND *dest_opnd = ir1_get_opnd(pir1, 0);
     IR1_OPND *src_opnd = ir1_get_opnd(pir1, 1);
     IR2_INST *(*abs_op)(IR2_OPND, IR2_OPND, IR2_OPND);
-    IR2_OPND src_low;
+    IR2_OPND src_low = ra_alloc_ftemp();
     IR2_OPND zero_low = ra_alloc_ftemp();
     int dest_index = ir1_opnd_base_reg_num(dest_opnd);
 
