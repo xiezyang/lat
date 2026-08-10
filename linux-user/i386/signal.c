@@ -407,6 +407,17 @@ static void xsave_sigcontext(CPUX86State *env, struct target_fpstate_fxsave *fxs
         __put_user(0, &fxsave->sw_reserved.magic1);
     } else {
         uint32_t xstate_size = xsave_area_size(env->xcr0);
+
+        /*
+         * A guest can expose XSAVE while its current XCR0 has no
+         * save-area components enabled.  Do not form the extended-state
+         * trailer offset from an underflowed xstate_size in that state.
+         */
+        if (xstate_size < TARGET_FXSAVE_SIZE) {
+            cpu_x86_fxsave(env, fxsave_addr);
+            __put_user(0, &fxsave->sw_reserved.magic1);
+            return;
+        }
         uint32_t xfeatures_size = xstate_size - TARGET_FXSAVE_SIZE;
 
         /*
