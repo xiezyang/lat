@@ -13,6 +13,9 @@
 #include "profile.h"
 #include "translate.h"
 #include "runtime-trace.h"
+#ifdef CONFIG_LATX_AVX_OPT
+#include "avx-trace.h"
+#endif
 #include "exec/translate-all.h"
 #include "ir2-relocate.h"
 #include "tu.h"
@@ -704,7 +707,19 @@ void restore_h128_of_ymm(IR1_INST *ir1, IR2_OPND temp)
     la_xvpermi_q(opnd2, temp, 0x12);
 }
 
-static bool (*translate_functions[])(IR1_INST *) = {
+typedef struct LatxTranslateEntry {
+    bool (*translate)(IR1_INST *);
+    bool avx_opt_only;
+    bool avx_isa;
+} LatxTranslateEntry;
+
+#define LATX_AVX_OPT_ENTRY false
+#undef TRANS_FUNC_GEN_REAL
+#define TRANS_FUNC_GEN_REAL(opcode, function) \
+    [glue(dt_X86_INS_, opcode)] = \
+        { function, LATX_AVX_OPT_ENTRY, LATX_AVX_OPT_ENTRY }
+
+static LatxTranslateEntry translate_functions[] = {
     TRANS_FUNC_GEN(INVALID, invalid),
 
     TRANS_FUNC_GEN(AAA, aaa),
@@ -848,7 +863,11 @@ static bool (*translate_functions[])(IR1_INST *) = {
     TRANS_FUNC_GEN(LDDQU, lddqu),
     TRANS_FUNC_GEN(LDMXCSR, ldmxcsr),
 #ifdef CONFIG_LATX_AVX_OPT
+#undef LATX_AVX_OPT_ENTRY
+#define LATX_AVX_OPT_ENTRY true
     TRANS_FUNC_GEN(VLDMXCSR, ldmxcsr),
+#undef LATX_AVX_OPT_ENTRY
+#define LATX_AVX_OPT_ENTRY false
 #endif
     TRANS_FUNC_GEN(LEA, lea),
     TRANS_FUNC_GEN(LEAVE, leave),
@@ -1068,7 +1087,11 @@ static bool (*translate_functions[])(IR1_INST *) = {
     TRANS_FUNC_GEN(STD, std),
     TRANS_FUNC_GEN(STMXCSR, stmxcsr),
 #ifdef CONFIG_LATX_AVX_OPT
+#undef LATX_AVX_OPT_ENTRY
+#define LATX_AVX_OPT_ENTRY true
     TRANS_FUNC_GEN(VSTMXCSR, stmxcsr),
+#undef LATX_AVX_OPT_ENTRY
+#define LATX_AVX_OPT_ENTRY false
 #endif
     TRANS_FUNC_GEN(STOSB, stos),
     TRANS_FUNC_GEN(STOSD, stos),
@@ -1322,6 +1345,8 @@ static bool (*translate_functions[])(IR1_INST *) = {
     TRANS_FUNC_GEN(SHA256RNDS2, sha256rnds2),
 
 #ifdef CONFIG_LATX_AVX_OPT
+#undef LATX_AVX_OPT_ENTRY
+#define LATX_AVX_OPT_ENTRY true
     /* f16c */
     TRANS_FUNC_GEN(VCVTPH2PS, vcvtph2ps),
     TRANS_FUNC_GEN(VCVTPS2PH, vcvtps2ph),
@@ -1362,7 +1387,7 @@ static bool (*translate_functions[])(IR1_INST *) = {
     TRANS_FUNC_GEN(VPINSRB, vpinsrx),
     TRANS_FUNC_GEN(VPINSRW, vpinsrx),
     TRANS_FUNC_GEN(VPINSRD, vpinsrx),
-    TRANS_FUNC_GEN(VPINSRQ, vpinsrx),
+    TRANS_FUNC_GEN(VPINSRQ, vpinsrq),
     TRANS_FUNC_GEN(VPMINSD, vpminxx),
     TRANS_FUNC_GEN(VPMINSW, vpminxx),
     TRANS_FUNC_GEN(VPMINSB, vpminxx),
@@ -1760,21 +1785,27 @@ static bool (*translate_functions[])(IR1_INST *) = {
     TRANS_FUNC_GEN(VPADDQ, vpaddq),
     TRANS_FUNC_GEN(VZEROUPPER, vzeroupper),
     //TRANS_FUNC_GEN(VPINSRB, vpinsrb),
-    //TRANS_FUNC_GEN(VPINSRQ, vpinsrq),
     TRANS_FUNC_GEN(XGETBV, xgetbv_wrap),
     TRANS_FUNC_GEN(XSETBV, xsetbv_wrap),
     TRANS_FUNC_GEN(XSAVE, xsave_wrap),
+    TRANS_FUNC_GEN(XSAVE64, xsave_wrap),
     TRANS_FUNC_GEN(XSAVEOPT, xsaveopt_wrap),
+    TRANS_FUNC_GEN(XSAVEOPT64, xsaveopt_wrap),
     TRANS_FUNC_GEN(XRSTOR, xrstor_wrap),
+    TRANS_FUNC_GEN(XRSTOR64, xrstor_wrap),
     TRANS_FUNC_GEN(VPBROADCASTD, vpbroadcastd),
     //TRANS_FUNC_GEN(VPMAXSD, vpmaxsd),
     //TRANS_FUNC_GEN(VPMINSD, vpminsd),
+#undef LATX_AVX_OPT_ENTRY
+#define LATX_AVX_OPT_ENTRY false
 #endif
     TRANS_FUNC_GEN(ANDN, andn),
     TRANS_FUNC_GEN(MOVBE, movbe),
     TRANS_FUNC_GEN(RORX, rorx),
     TRANS_FUNC_GEN(BLSI, blsi),
 #ifdef CONFIG_LATX_AVX_OPT
+#undef LATX_AVX_OPT_ENTRY
+#define LATX_AVX_OPT_ENTRY true
     TRANS_FUNC_GEN(VPADDSB, vpaddx),
     TRANS_FUNC_GEN(VPADDSW, vpaddx),
     TRANS_FUNC_GEN(VPADDUSB, vpaddx),
@@ -1799,6 +1830,8 @@ static bool (*translate_functions[])(IR1_INST *) = {
     TRANS_FUNC_GEN(VROUNDSS, vroundss),
     TRANS_FUNC_GEN(VROUNDPD, vroundpd),
     TRANS_FUNC_GEN(VROUNDSD, vroundsd),
+#undef LATX_AVX_OPT_ENTRY
+#define LATX_AVX_OPT_ENTRY false
 #endif
 
 #ifndef CONFIG_LATX_AVX_OPT
@@ -1814,10 +1847,14 @@ static bool (*translate_functions[])(IR1_INST *) = {
 #endif
     TRANS_FUNC_GEN(PCMPISTRM, pcmpistrm),
 #ifdef CONFIG_LATX_AVX_OPT
+#undef LATX_AVX_OPT_ENTRY
+#define LATX_AVX_OPT_ENTRY true
     TRANS_FUNC_GEN(VPCMPESTRI, vpcmpestri),
     TRANS_FUNC_GEN(VPCMPESTRM, vpcmpestrm),
     TRANS_FUNC_GEN(VPCMPISTRI, vpcmpistri),
     TRANS_FUNC_GEN(VPCMPISTRM, vpcmpistrm),
+#undef LATX_AVX_OPT_ENTRY
+#define LATX_AVX_OPT_ENTRY false
 #endif
 
     TRANS_FUNC_GEN(AESDEC, aesdec),
@@ -1828,6 +1865,8 @@ static bool (*translate_functions[])(IR1_INST *) = {
     TRANS_FUNC_GEN(AESKEYGENASSIST, aeskeygenassist),
 
 #ifdef CONFIG_LATX_AVX_OPT
+#undef LATX_AVX_OPT_ENTRY
+#define LATX_AVX_OPT_ENTRY true
     TRANS_FUNC_GEN(VAESDEC, vaesdec),
     TRANS_FUNC_GEN(VAESDECLAST, vaesdeclast),
     TRANS_FUNC_GEN(VAESENC, vaesenc),
@@ -1844,6 +1883,8 @@ static bool (*translate_functions[])(IR1_INST *) = {
     TRANS_FUNC_GEN(VGATHERQPD, vpgatherqq),
     TRANS_FUNC_GEN(VGATHERDPS, vpgatherdd),
     TRANS_FUNC_GEN(VGATHERQPS, vpgatherqd),
+#undef LATX_AVX_OPT_ENTRY
+#define LATX_AVX_OPT_ENTRY false
 #endif
 
     TRANS_FUNC_GEN(PEXT, pext),
@@ -1855,8 +1896,12 @@ static bool (*translate_functions[])(IR1_INST *) = {
     TRANS_FUNC_GEN(ADCX, adcx),
     TRANS_FUNC_GEN(ADOX, adox),
 #ifdef CONFIG_LATX_AVX_OPT
+#undef LATX_AVX_OPT_ENTRY
+#define LATX_AVX_OPT_ENTRY true
     TRANS_FUNC_GEN(VPBROADCASTB, vpbroadcastb),
     TRANS_FUNC_GEN(VPBROADCASTW, vpbroadcastw),
+#undef LATX_AVX_OPT_ENTRY
+#define LATX_AVX_OPT_ENTRY false
 #endif
     TRANS_FUNC_GEN(CRC32, crc32),
     TRANS_FUNC_GEN(PCLMULQDQ, pclmulqdq),
@@ -1865,8 +1910,217 @@ static bool (*translate_functions[])(IR1_INST *) = {
     TRANS_FUNC_GEN_REAL(ENDING, NULL),
 };
 
+#ifdef CONFIG_LATX_AVX_OPT
+static void translate_register_lsx(IR1_OPCODE opcode,
+                                   bool (*translate)(IR1_INST *))
+{
+    LatxTranslateEntry *entry =
+        &translate_functions[opcode - dt_X86_INS_INVALID];
+
+    entry->translate = translate;
+    entry->avx_opt_only = false;
+}
+
+void translate_context_init(void)
+{
+    static bool initialized;
+
+    if (initialized) {
+        return;
+    }
+
+    if (!option_enable_lasx || !option_avx_cpuid) {
+        if (!option_enable_lasx) {
+            translate_register_lsx(dt_X86_INS_VMOVHPD,
+                                   translate_vmovhpd_lsx);
+            translate_register_lsx(dt_X86_INS_VMOVHPS,
+                                   translate_vmovhps_lsx);
+            translate_register_lsx(dt_X86_INS_VMOVLPD,
+                                   translate_vmovlpd_lsx);
+            translate_register_lsx(dt_X86_INS_VMOVLPS,
+                                   translate_vmovlps_lsx);
+            translate_register_lsx(dt_X86_INS_VMOVHLPS,
+                                   translate_vmovhlps_lsx);
+            translate_register_lsx(dt_X86_INS_VMOVLHPS,
+                                   translate_vmovlhps_lsx);
+            translate_register_lsx(dt_X86_INS_VPACKSSDW,
+                                   translate_vpackssxx_lsx);
+            translate_register_lsx(dt_X86_INS_VPACKSSWB,
+                                   translate_vpackssxx_lsx);
+            translate_register_lsx(dt_X86_INS_VPACKUSDW,
+                                   translate_vpackusxx_lsx);
+            translate_register_lsx(dt_X86_INS_VPACKUSWB,
+                                   translate_vpackusxx_lsx);
+            translate_register_lsx(dt_X86_INS_VPUNPCKHBW,
+                                   translate_vpunpckhxx_lsx);
+            translate_register_lsx(dt_X86_INS_VPUNPCKHWD,
+                                   translate_vpunpckhxx_lsx);
+            translate_register_lsx(dt_X86_INS_VPUNPCKHDQ,
+                                   translate_vpunpckhxx_lsx);
+            translate_register_lsx(dt_X86_INS_VPUNPCKHQDQ,
+                                   translate_vpunpckhxx_lsx);
+            translate_register_lsx(dt_X86_INS_VPUNPCKLBW,
+                                   translate_vpunpcklxx_lsx);
+            translate_register_lsx(dt_X86_INS_VPUNPCKLDQ,
+                                   translate_vpunpcklxx_lsx);
+            translate_register_lsx(dt_X86_INS_VPUNPCKLQDQ,
+                                   translate_vpunpcklqdq_lsx);
+            translate_register_lsx(dt_X86_INS_VPUNPCKLWD,
+                                   translate_vpunpcklxx_lsx);
+            translate_register_lsx(dt_X86_INS_VSHUFPD,
+                                   translate_vshufpd_lsx);
+            translate_register_lsx(dt_X86_INS_VSHUFPS,
+                                   translate_vshufps_lsx);
+        }
+        translate_register_lsx(dt_X86_INS_VMOVDQA, translate_vmovdqa_lsx);
+        translate_register_lsx(dt_X86_INS_VMOVDQU, translate_vmovdqu_lsx);
+        translate_register_lsx(dt_X86_INS_VMOVUPD, translate_vmovupd_lsx);
+        translate_register_lsx(dt_X86_INS_VMOVUPS, translate_vmovups_lsx);
+        translate_register_lsx(dt_X86_INS_VMOVAPD, translate_vmovapd_lsx);
+        translate_register_lsx(dt_X86_INS_VMOVAPS, translate_vmovaps_lsx);
+        translate_register_lsx(dt_X86_INS_VMOVDDUP, translate_vmovddup_lsx);
+        translate_register_lsx(dt_X86_INS_VMOVSHDUP,
+                               translate_vmovshdup_lsx);
+        translate_register_lsx(dt_X86_INS_VMOVSLDUP,
+                               translate_vmovsldup_lsx);
+        translate_register_lsx(dt_X86_INS_VMOVSS, translate_vmovss_lsx);
+        translate_register_lsx(dt_X86_INS_VMOVD, translate_vmovd_lsx);
+        translate_register_lsx(dt_X86_INS_VMOVQ, translate_vmovq_lsx);
+        translate_register_lsx(dt_X86_INS_VMOVSD, translate_vmovsd_lsx);
+        translate_register_lsx(dt_X86_INS_VMOVMSKPD,
+                               translate_vmovmskpd_lsx);
+        translate_register_lsx(dt_X86_INS_VMOVMSKPS,
+                               translate_vmovmskps_lsx);
+        translate_register_lsx(dt_X86_INS_VLDDQU, translate_vlddqu_lsx);
+        translate_register_lsx(dt_X86_INS_VMASKMOVPD,
+                               translate_vmaskmovpx_lsx);
+        translate_register_lsx(dt_X86_INS_VMASKMOVPS,
+                               translate_vmaskmovpx_lsx);
+        if (!option_enable_lasx) {
+            translate_register_lsx(dt_X86_INS_VMASKMOVDQU,
+                                   translate_maskmovdqu_lsx);
+        }
+        translate_register_lsx(dt_X86_INS_VMOVNTDQA,
+                               translate_vmovntdqa_lsx);
+        translate_register_lsx(dt_X86_INS_VMULSD, translate_vmulsd_lsx);
+        translate_register_lsx(dt_X86_INS_VDIVSD, translate_vdivsd_lsx);
+        translate_register_lsx(dt_X86_INS_VXORPD, translate_vxorpd_lsx);
+        translate_register_lsx(dt_X86_INS_VPBLENDVB, translate_vpblendvb_lsx);
+        translate_register_lsx(dt_X86_INS_VCVTSD2SS, translate_vcvtsd2ss_lsx);
+        translate_register_lsx(dt_X86_INS_VCVTSI2SD, translate_vcvtsi2sd_lsx);
+#define LATX_AVX_INTEGER_CMP_LSX_REGISTER(opcode, name, cmp, reverse) \
+        translate_register_lsx(dt_X86_INS_##opcode, \
+                               translate_v##name##_lsx);
+        LATX_AVX_INTEGER_CMP_LSX_TABLE(
+            LATX_AVX_INTEGER_CMP_LSX_REGISTER)
+#undef LATX_AVX_INTEGER_CMP_LSX_REGISTER
+        translate_register_lsx(dt_X86_INS_VCVTTSD2SI,
+                               translate_vcvttsd2si_lsx);
+#define LATX_AVX_INTEGER_SHIFT_LSX_REGISTER(opcode, function) \
+        translate_register_lsx(dt_X86_INS_##opcode, translate_##function);
+        LATX_AVX_INTEGER_SHIFT_LSX_TABLE(
+            LATX_AVX_INTEGER_SHIFT_LSX_REGISTER)
+#undef LATX_AVX_INTEGER_SHIFT_LSX_REGISTER
+#define LATX_AVX_INTEGER_3OP_LSX_REGISTER(opcode, name, lsx_op) \
+        translate_register_lsx(dt_X86_INS_##opcode, \
+                               translate_v##name##_lsx);
+        LATX_AVX_INTEGER_3OP_LSX_TABLE(
+            LATX_AVX_INTEGER_3OP_LSX_REGISTER)
+#undef LATX_AVX_INTEGER_3OP_LSX_REGISTER
+        translate_register_lsx(dt_X86_INS_VPAND, translate_vpand_lsx);
+        translate_register_lsx(dt_X86_INS_VPOR, translate_vpor_lsx);
+        translate_register_lsx(dt_X86_INS_VPXOR, translate_vpxor_lsx);
+        translate_register_lsx(dt_X86_INS_VEXTRACTI128,
+                               translate_vextracti128_lsx);
+        translate_register_lsx(dt_X86_INS_VINSERTI128,
+                               translate_vinserti128_lsx);
+        translate_register_lsx(dt_X86_INS_VPBROADCASTQ,
+                               translate_vpbroadcastq_lsx);
+        translate_register_lsx(dt_X86_INS_VCOMISD, translate_vcomisd_lsx);
+        translate_register_lsx(dt_X86_INS_VCOMISS, translate_vcomiss_lsx);
+        translate_register_lsx(dt_X86_INS_VUCOMISD, translate_vucomisd_lsx);
+        translate_register_lsx(dt_X86_INS_VUCOMISS, translate_vucomiss_lsx);
+        translate_register_lsx(dt_X86_INS_VZEROUPPER, translate_vzeroupper_lsx);
+        translate_register_lsx(dt_X86_INS_VPINSRQ, translate_vpinsrq_lsx);
+#define LATX_AVX_FMA_LSX_REGISTER(opcode, name) \
+        translate_register_lsx(dt_X86_INS_##opcode, translate_##name##_lsx);
+        LATX_AVX_FMA_LSX_REGISTER(VFMADD132PD, vfmaddxxxpd)
+        LATX_AVX_FMA_LSX_REGISTER(VFMADD132PS, vfmaddxxxps)
+        LATX_AVX_FMA_LSX_REGISTER(VFMADD132SD, vfmaddxxxsd)
+        LATX_AVX_FMA_LSX_REGISTER(VFMADD132SS, vfmaddxxxss)
+        LATX_AVX_FMA_LSX_REGISTER(VFMADD213PD, vfmaddxxxpd)
+        LATX_AVX_FMA_LSX_REGISTER(VFMADD213PS, vfmaddxxxps)
+        LATX_AVX_FMA_LSX_REGISTER(VFMADD213SD, vfmaddxxxsd)
+        LATX_AVX_FMA_LSX_REGISTER(VFMADD213SS, vfmaddxxxss)
+        LATX_AVX_FMA_LSX_REGISTER(VFMADD231PD, vfmaddxxxpd)
+        LATX_AVX_FMA_LSX_REGISTER(VFMADD231PS, vfmaddxxxps)
+        LATX_AVX_FMA_LSX_REGISTER(VFMADD231SD, vfmaddxxxsd)
+        LATX_AVX_FMA_LSX_REGISTER(VFMADD231SS, vfmaddxxxss)
+        LATX_AVX_FMA_LSX_REGISTER(VFMSUB132PD, vfmsubxxxpd)
+        LATX_AVX_FMA_LSX_REGISTER(VFMSUB132PS, vfmsubxxxps)
+        LATX_AVX_FMA_LSX_REGISTER(VFMSUB132SD, vfmsubxxxsd)
+        LATX_AVX_FMA_LSX_REGISTER(VFMSUB132SS, vfmsubxxxss)
+        LATX_AVX_FMA_LSX_REGISTER(VFMSUB213PD, vfmsubxxxpd)
+        LATX_AVX_FMA_LSX_REGISTER(VFMSUB213PS, vfmsubxxxps)
+        LATX_AVX_FMA_LSX_REGISTER(VFMSUB213SD, vfmsubxxxsd)
+        LATX_AVX_FMA_LSX_REGISTER(VFMSUB213SS, vfmsubxxxss)
+        LATX_AVX_FMA_LSX_REGISTER(VFMSUB231PD, vfmsubxxxpd)
+        LATX_AVX_FMA_LSX_REGISTER(VFMSUB231PS, vfmsubxxxps)
+        LATX_AVX_FMA_LSX_REGISTER(VFMSUB231SD, vfmsubxxxsd)
+        LATX_AVX_FMA_LSX_REGISTER(VFMSUB231SS, vfmsubxxxss)
+        LATX_AVX_FMA_LSX_REGISTER(VFNMADD132PD, vfnmaddxxxpd)
+        LATX_AVX_FMA_LSX_REGISTER(VFNMADD132PS, vfnmaddxxxps)
+        LATX_AVX_FMA_LSX_REGISTER(VFNMADD132SD, vfnmaddxxxsd)
+        LATX_AVX_FMA_LSX_REGISTER(VFNMADD132SS, vfnmaddxxxss)
+        LATX_AVX_FMA_LSX_REGISTER(VFNMADD213PD, vfnmaddxxxpd)
+        LATX_AVX_FMA_LSX_REGISTER(VFNMADD213PS, vfnmaddxxxps)
+        LATX_AVX_FMA_LSX_REGISTER(VFNMADD213SD, vfnmaddxxxsd)
+        LATX_AVX_FMA_LSX_REGISTER(VFNMADD213SS, vfnmaddxxxss)
+        LATX_AVX_FMA_LSX_REGISTER(VFNMADD231PD, vfnmaddxxxpd)
+        LATX_AVX_FMA_LSX_REGISTER(VFNMADD231PS, vfnmaddxxxps)
+        LATX_AVX_FMA_LSX_REGISTER(VFNMADD231SD, vfnmaddxxxsd)
+        LATX_AVX_FMA_LSX_REGISTER(VFNMADD231SS, vfnmaddxxxss)
+        LATX_AVX_FMA_LSX_REGISTER(VFNMSUB132PD, vfnmsubxxxpd)
+        LATX_AVX_FMA_LSX_REGISTER(VFNMSUB132PS, vfnmsubxxxps)
+        LATX_AVX_FMA_LSX_REGISTER(VFNMSUB132SD, vfnmsubxxxsd)
+        LATX_AVX_FMA_LSX_REGISTER(VFNMSUB132SS, vfnmsubxxxss)
+        LATX_AVX_FMA_LSX_REGISTER(VFNMSUB213PD, vfnmsubxxxpd)
+        LATX_AVX_FMA_LSX_REGISTER(VFNMSUB213PS, vfnmsubxxxps)
+        LATX_AVX_FMA_LSX_REGISTER(VFNMSUB213SD, vfnmsubxxxsd)
+        LATX_AVX_FMA_LSX_REGISTER(VFNMSUB213SS, vfnmsubxxxss)
+        LATX_AVX_FMA_LSX_REGISTER(VFNMSUB231PD, vfnmsubxxxpd)
+        LATX_AVX_FMA_LSX_REGISTER(VFNMSUB231PS, vfnmsubxxxps)
+        LATX_AVX_FMA_LSX_REGISTER(VFNMSUB231SD, vfnmsubxxxsd)
+        LATX_AVX_FMA_LSX_REGISTER(VFNMSUB231SS, vfnmsubxxxss)
+        LATX_AVX_FMA_LSX_REGISTER(VFMADDSUB132PD, vfmaddsubxxxpd)
+        LATX_AVX_FMA_LSX_REGISTER(VFMADDSUB132PS, vfmaddsubxxxps)
+        LATX_AVX_FMA_LSX_REGISTER(VFMADDSUB213PD, vfmaddsubxxxpd)
+        LATX_AVX_FMA_LSX_REGISTER(VFMADDSUB213PS, vfmaddsubxxxps)
+        LATX_AVX_FMA_LSX_REGISTER(VFMADDSUB231PD, vfmaddsubxxxpd)
+        LATX_AVX_FMA_LSX_REGISTER(VFMADDSUB231PS, vfmaddsubxxxps)
+        LATX_AVX_FMA_LSX_REGISTER(VFMSUBADD132PD, vfmsubaddxxxpd)
+        LATX_AVX_FMA_LSX_REGISTER(VFMSUBADD132PS, vfmsubaddxxxps)
+        LATX_AVX_FMA_LSX_REGISTER(VFMSUBADD213PD, vfmsubaddxxxpd)
+        LATX_AVX_FMA_LSX_REGISTER(VFMSUBADD213PS, vfmsubaddxxxps)
+        LATX_AVX_FMA_LSX_REGISTER(VFMSUBADD231PD, vfmsubaddxxxpd)
+        LATX_AVX_FMA_LSX_REGISTER(VFMSUBADD231PS, vfmsubaddxxxps)
+#undef LATX_AVX_FMA_LSX_REGISTER
+    }
+    initialized = true;
+}
+#endif
+
 bool ir1_translate(IR1_INST *ir1)
 {
+    int tr_func_idx = ir1_opcode(ir1) - dt_X86_INS_INVALID;
+#ifdef CONFIG_LATX_AVX_OPT
+    if (!option_avx_cpuid && translate_functions[tr_func_idx].avx_isa) {
+        return translate_invalid(ir1);
+    }
+    if (translate_functions[tr_func_idx].avx_opt_only) {
+        latx_avx_trace_instrument(ir1);
+    }
+#endif
 #ifdef CONFIG_LATX_INSTS_PATTERN
     if (try_translate_instptn(ir1)) {
         ra_free_all();
@@ -1875,8 +2129,6 @@ bool ir1_translate(IR1_INST *ir1)
 #endif
 
     /* 2. call translate_xx function */
-    int tr_func_idx = ir1_opcode(ir1) - dt_X86_INS_INVALID;
-
     bool translation_success = false;
 
 #ifdef CONFIG_LATX_DEBUG
@@ -1936,7 +2188,7 @@ bool ir1_translate(IR1_INST *ir1)
             ir1_opcode_dump(ir1);
         }
     } else {
-        if (translate_functions[tr_func_idx] == NULL) {
+        if (translate_functions[tr_func_idx].translate == NULL) {
             ir1_opcode_dump(ir1);
 #ifndef CONFIG_LATX_TU
             lsassertm(0, "%s %s %d error : this ins %d not implemented: %s\n",
@@ -1949,7 +2201,8 @@ bool ir1_translate(IR1_INST *ir1)
             return 0;
 #endif
         } else {
-            translation_success = translate_functions[tr_func_idx](ir1); /* TODO */
+            translation_success =
+                translate_functions[tr_func_idx].translate(ir1); /* TODO */
         }
     }
 
@@ -3673,6 +3926,50 @@ void tr_load_xmm64_from_env(uint8 xmm_to_load)
 }
 #endif
 
+void tr_save_ymm_to_env(uint16 ymm_to_save)
+{
+    tr_save_xmm_to_env((uint8_t)ymm_to_save);
+#ifdef TARGET_X86_64
+    tr_save_xmm64_to_env((uint8_t)(ymm_to_save >> 8));
+#endif
+
+    for (int i = 0; i < CPU_NB_REGS; ++i) {
+        IR2_OPND address;
+        IR2_OPND high;
+
+        if (!(ymm_to_save & (UINT16_C(1) << i))) {
+            continue;
+        }
+        high = load_ymm_high128_shadow(i);
+        address = ra_alloc_itemp();
+        li_d(address, lsenv_offset_of_xmm(lsenv, i) + 16);
+        la_add_d(address, env_ir2_opnd, address);
+        la_vst(high, address, 0);
+        ra_free_temp(address);
+        ra_free_temp(high);
+    }
+}
+
+void tr_load_ymm_high_from_env(uint16 ymm_to_load)
+{
+    for (int i = 0; i < CPU_NB_REGS; ++i) {
+        IR2_OPND address;
+        IR2_OPND high;
+
+        if (!(ymm_to_load & (UINT16_C(1) << i))) {
+            continue;
+        }
+        address = ra_alloc_itemp();
+        high = ra_alloc_ftemp();
+        li_d(address, lsenv_offset_of_xmm(lsenv, i) + 16);
+        la_add_d(address, env_ir2_opnd, address);
+        la_vld(high, address, 0);
+        store_ymm_high128_shadow(high, i);
+        ra_free_temp(address);
+        ra_free_temp(high);
+    }
+}
+
 void tr_save_registers_to_env(uint8 gpr_to_save, uint8 fpr_to_save,
                               uint8 xmm_to_save, uint8 vreg_to_save)
 {
@@ -4015,11 +4312,9 @@ static inline void helper_restore_reg(IR2_OPND opnd)
             lsenv_offset_of_all_gpr(lsenv, ir2_opnd_base_reg_num(&opnd)));
 }
 
-void gen_test_page_flag(IR2_OPND mem_opnd, int mem_imm, uint32_t flag)
+static void gen_test_page_flag_internal(IR2_OPND mem_opnd, int mem_imm,
+                                        uint32_t flag)
 {
-    if (!option_mem_test) {
-        return;
-    }
     TranslationBlock *tb __attribute__((unused)) = NULL;
     if (option_aot) {
         tb = (TranslationBlock *)lsenv->tr_data->curr_tb;
@@ -4093,6 +4388,8 @@ void gen_test_page_flag(IR2_OPND mem_opnd, int mem_imm, uint32_t flag)
     if (need_restore1) {
         helper_restore_reg(itemp1);
     }
+    /* Signal frames export YMM high halves from env->xmm_regs. */
+    tr_save_ymm_to_env(UINT16_MAX);
     /* Raise a SIGSEGV. */
     if (flag & PAGE_WRITE) {
         la_st_w(a1_ir2_opnd, zero_ir2_opnd, 0);
@@ -4119,8 +4416,21 @@ void gen_test_page_flag(IR2_OPND mem_opnd, int mem_imm, uint32_t flag)
     }
 }
 
-void tr_gen_call_to_helper_vfll(ADDR func, IR2_OPND arg1, IR2_OPND arg2, int use_fp,
-        enum aot_rel_kind REL_KIND)
+void gen_test_page_flag(IR2_OPND mem_opnd, int mem_imm, uint32_t flag)
+{
+    if (!option_mem_test) {
+        return;
+    }
+    gen_test_page_flag_internal(mem_opnd, mem_imm, flag);
+}
+
+void gen_test_page_flag_force(IR2_OPND mem_opnd, int mem_imm, uint32_t flag)
+{
+    gen_test_page_flag_internal(mem_opnd, mem_imm, flag);
+}
+
+void tr_gen_call_to_helper_vfll(ADDR func, IR2_OPND arg1, IR2_OPND arg2,
+        int use_fp, bool sync_ymm, enum aot_rel_kind REL_KIND)
 {
     /* aot relocation requires the tb struct */
     TranslationBlock *tb __attribute__((unused)) = NULL;
@@ -4131,6 +4441,9 @@ void tr_gen_call_to_helper_vfll(ADDR func, IR2_OPND arg1, IR2_OPND arg2, int use
     helper_save_reg(arg2);
     /* prologue */
     tr_gen_call_to_helper_prologue(use_fp);
+    if (sync_ymm) {
+        tr_save_ymm_to_env(UINT16_MAX);
+    }
 
     helper_restore_reg(arg1);
     helper_restore_reg(arg2);

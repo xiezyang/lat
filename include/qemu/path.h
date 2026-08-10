@@ -3,8 +3,6 @@
 
 void init_paths(const char *prefix);
 const char *path(const char *pathname);
-/* The caller owns the returned configured path. */
-char *path_get_prefixed(const char *pathname);
 void path_fork_start(void);
 void path_fork_end(int child);
 

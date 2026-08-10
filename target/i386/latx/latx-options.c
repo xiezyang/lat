@@ -9,8 +9,6 @@
 #include "qemu/cutils.h"
 #include "reg-alloc.h"
 #include "latx-debug.h"
-#include "latx-runtime.h"
-#include "latx-string-utils.h"
 #include "translate.h"
 
 #if defined(CONFIG_LATX_KZT)
@@ -19,6 +17,9 @@ int option_kzt = 0;
 
 #ifdef CONFIG_LATX_AVX_OPT
 int option_avx_cpuid = 0;
+int option_avx_trace = 0;
+int option_avx_trace_ymm = -1;
+int option_avx_trace_ymm_init = 0;
 #endif
 
 #ifdef CONFIG_LATX_FLAG_REDUCTION
@@ -112,25 +113,42 @@ unsigned long long counter_tb_tr;
 unsigned long long counter_ir1_tr;
 unsigned long long counter_mips_tr;
 
-void load_conf_file(const char *file, const char *program,
-                    LatxRuntimeSource runtime_source)
+char* trim(char *s)
+{
+    while (isspace((unsigned char)*s)) s++;
+    char *end = s + strlen(s) - 1;
+    while (isspace((unsigned char)*end)) end--;
+    end[1] = '\0';
+    return s;
+}
+
+// find env var and value
+int option_line_init(char *line, char **name, char **value)
+{
+    while (isspace((unsigned char)*line)) line++;
+    if (*line == '#' || *line == '\0') { return false; }
+    char *eq = strchr(line, '=');
+    if (eq == NULL) { return false; }
+    *eq = '\0';
+    *name = trim(line);
+    *value = trim(eq + 1);
+    return true;
+}
+
+void load_conf_file(const char *file, char *program)
 {
     FILE *fp = fopen(file, "r");
+    if (!program || !fp)
+        return;
+
     char *line = NULL;
     size_t len = 0;
     int flag = 0;
 
-    if (!fp) {
-        return;
-    }
-
-    latx_runtime_option_source_set(runtime_source);
-
     while(getline(&line, &len, fp) != -1) {
         char *option_name, *option_value;
         // env var
-        if (flag != 1 &&
-            latx_option_line_init(line, &option_name, &option_value)) {
+        if(flag != 1 && option_line_init(line, &option_name, &option_value)) {
             find_option(option_name, option_value);
         }
         // guest name
@@ -139,11 +157,6 @@ void load_conf_file(const char *file, const char *program,
             if(!end) continue;
             if (flag == 2)
                 break;
-            if (!program) {
-                /* Without a guest name, only global options apply. */
-                flag = 1;
-                continue;
-            }
             size_t size = end - line;
             line[size] = '\0';
             if (!strcmp(line + 1, program)) {
@@ -197,18 +210,21 @@ void conf_init(char **argv)
     char *program = guest_program(argv);
     const char *home_path = getenv("HOME");
 
+#ifdef TARGET_X86_64
     /* load /etc/latx-*.conf */
-    load_conf_file(LATX_SYSTEM_CONFIG_FILE, program,
-                   LATX_RUNTIME_SOURCE_SYSTEM_CONFIG);
-    if (latx_user_config_path(path, sizeof(path), home_path,
-                              LATX_USER_CONFIG_FILE)) {
-        load_conf_file(path, program, LATX_RUNTIME_SOURCE_USER_CONFIG);
-    }
+    load_conf_file("/etc/latx-x86_64.conf", program);
+    snprintf(path, PATH_MAX, "%s/.config/latx-x86_64.conf", home_path);
+#else
+    load_conf_file("/etc/latx-i386.conf", program);
+    snprintf(path, PATH_MAX, "%s/.config/latx-i386.conf", home_path);
+#endif
+
+    /* load ~/.config/latx-*.conf */
+    load_conf_file(path, program);
 }
 
 void options_init(void)
 {
-    latx_runtime_reset();
     option_debug_lative = 0;
     option_save_xmm = 0xff;
     option_dump_host = 0;
@@ -229,6 +245,9 @@ void options_init(void)
 
 #ifdef CONFIG_LATX_AVX_OPT
     option_avx_cpuid = 1;
+    option_avx_trace = 0;
+    option_avx_trace_ymm = -1;
+    option_avx_trace_ymm_init = 0;
 #endif /*CONFIG_LATX_AVX_OPT*/
 
 #ifdef CONFIG_LATX_AOT

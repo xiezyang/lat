@@ -40,6 +40,7 @@ void ht_pc_thunk_insert(uint32_t thunk_addr, int reg_index);
 int ht_pc_thunk_lookup(uint32_t thunk_addr);
 void ht_pc_thunk_invalidate(uint32_t start, uint32_t end);
 void latx_handle_args(char *filename);
+void translate_context_init(void);
 
 #ifdef CONFIG_LATX_TU
 void target_disasm(struct TranslationBlock *tb, int max_insns);

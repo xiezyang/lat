@@ -1381,6 +1381,210 @@ bool translate_cvtsx2si(IR1_INST *pir1)
  * @return true
  * @return false
  */
+static IR2_OPND vcvttsd2si_load_scalar(IR1_OPND *opnd)
+{
+    if (ir1_opnd_is_mem(opnd)) {
+        return load_u64_from_ir1_mem_exact(opnd);
+    }
+
+    lsassert(ir1_opnd_is_xmm(opnd));
+    IR2_OPND value = ra_alloc_itemp();
+    la_vpickve2gr_du(value,
+                     ra_alloc_xmm(ir1_opnd_base_reg_num(opnd)), 0);
+    return value;
+}
+
+static void vcvttsd2si_convert_bits(IR2_OPND raw, IR2_OPND mxcsr,
+                                    IR2_OPND flags, IR2_OPND result,
+                                    int dest_size)
+{
+    IR2_OPND field = ra_alloc_itemp();
+    IR2_OPND mask = ra_alloc_itemp();
+    IR2_OPND discarded = ra_alloc_itemp();
+    IR2_OPND zero_or_subnormal = ra_alloc_label();
+    IR2_OPND less_than_one = ra_alloc_label();
+    IR2_OPND boundary = ra_alloc_label();
+    IR2_OPND build_magnitude = ra_alloc_label();
+    IR2_OPND shift_right = ra_alloc_label();
+    IR2_OPND no_precision = ra_alloc_label();
+    IR2_OPND apply_sign = ra_alloc_label();
+    IR2_OPND invalid = ra_alloc_label();
+    IR2_OPND done = ra_alloc_label();
+    int limit = dest_size == 32 ? 31 : 63;
+
+    la_or(result, zero_ir2_opnd, zero_ir2_opnd);
+    la_srli_d(field, raw, 52);
+    la_andi(field, field, 0x7ff);
+    la_beq(field, zero_ir2_opnd, zero_or_subnormal);
+    li_d(mask, 0x7ff);
+    la_beq(field, mask, invalid);
+
+    li_d(mask, 1023);
+    la_bltu(field, mask, less_than_one);
+    la_addi_d(field, field, -1023);
+    li_d(mask, limit);
+    la_bltu(field, mask, build_magnitude);
+    la_beq(field, mask, boundary);
+    la_b(invalid);
+
+    la_label(boundary);
+    la_srli_d(mask, raw, 63);
+    la_beq(mask, zero_ir2_opnd, invalid);
+    li_d(mask, UINT64_C(0x000fffffffffffff));
+    la_and(field, raw, mask);
+    li_d(result, dest_size == 32 ? UINT64_C(0x80000000) :
+                                  UINT64_C(0x8000000000000000));
+    if (dest_size == 32) {
+        IR2_OPND boundary_valid = ra_alloc_label();
+
+        li_d(mask, UINT64_C(1) << 21);
+        la_bltu(field, mask, boundary_valid);
+        la_b(invalid);
+        la_label(boundary_valid);
+        la_beq(field, zero_ir2_opnd, done);
+        la_ori(flags, flags, 0x20);
+    } else {
+        la_bne(field, zero_ir2_opnd, invalid);
+    }
+    la_b(done);
+
+    la_label(build_magnitude);
+    li_d(mask, UINT64_C(0x000fffffffffffff));
+    la_and(result, raw, mask);
+    li_d(mask, UINT64_C(0x0010000000000000));
+    la_or(result, result, mask);
+    li_d(mask, 52);
+    la_bltu(field, mask, shift_right);
+    la_sub_d(field, field, mask);
+    la_sll_d(result, result, field);
+    la_b(apply_sign);
+
+    la_label(shift_right);
+    la_sub_d(field, mask, field);
+    li_d(discarded, 1);
+    la_sll_d(discarded, discarded, field);
+    la_addi_d(discarded, discarded, -1);
+    la_and(discarded, raw, discarded);
+    la_beq(discarded, zero_ir2_opnd, no_precision);
+    la_ori(flags, flags, 0x20);
+    la_label(no_precision);
+    la_srl_d(result, result, field);
+
+    la_label(apply_sign);
+    la_srli_d(mask, raw, 63);
+    la_beq(mask, zero_ir2_opnd, done);
+    la_sub_d(result, zero_ir2_opnd, result);
+    la_b(done);
+
+    la_label(less_than_one);
+    la_ori(flags, flags, 0x20);
+    la_b(done);
+
+    la_label(zero_or_subnormal);
+    li_d(mask, UINT64_C(0x000fffffffffffff));
+    la_and(field, raw, mask);
+    la_beq(field, zero_ir2_opnd, done);
+    la_andi(field, mxcsr, 0x40);
+    la_bne(field, zero_ir2_opnd, done);
+    la_ori(flags, flags, 0x20);
+    la_b(done);
+
+    la_label(invalid);
+    la_ori(flags, flags, 0x1);
+    li_d(result, dest_size == 32 ? UINT64_C(0x80000000) :
+                                  UINT64_C(0x8000000000000000));
+    la_label(done);
+
+    ra_free_temp(discarded);
+    ra_free_temp(mask);
+    ra_free_temp(field);
+}
+
+__attribute__((noinline)) bool translate_vcvttsd2si_lsx(IR1_INST *pir1)
+{
+    IR1_OPND *dest_opnd = ir1_get_opnd(pir1, 0);
+    IR1_OPND *src_opnd = ir1_get_opnd(pir1, 1);
+    int dest_size = ir1_opnd_size(dest_opnd);
+    IR2_OPND raw;
+    IR2_OPND mxcsr;
+    IR2_OPND flags;
+    IR2_OPND result;
+    IR2_OPND masks;
+    IR2_OPND unmasked;
+    IR2_OPND raise_exception;
+    IR2_OPND check_precision;
+    IR2_OPND store_and_raise;
+    IR2_OPND done;
+
+    lsassert(ir1_opnd_num(pir1) == 2 && ir1_opnd_is_gpr(dest_opnd));
+    lsassert(dest_size == 32 || dest_size == 64);
+    lsassert(ir1_opnd_is_xmm(src_opnd) ||
+             (ir1_opnd_is_mem(src_opnd) &&
+              ir1_opnd_size(src_opnd) == 64));
+
+    raw = vcvttsd2si_load_scalar(src_opnd);
+    mxcsr = ra_alloc_itemp();
+    flags = ra_alloc_itemp();
+    result = ra_alloc_itemp();
+    la_ld_wu(mxcsr, env_ir2_opnd, lsenv_offset_of_mxcsr(lsenv));
+    la_or(flags, zero_ir2_opnd, zero_ir2_opnd);
+    vcvttsd2si_convert_bits(raw, mxcsr, flags, result, dest_size);
+    ra_free_temp(raw);
+
+    masks = ra_alloc_itemp();
+    unmasked = ra_alloc_itemp();
+    raise_exception = ra_alloc_label();
+    check_precision = ra_alloc_label();
+    store_and_raise = ra_alloc_label();
+    done = ra_alloc_label();
+
+    la_srli_w(masks, mxcsr, 7);
+    la_xori(masks, masks, 0x3f);
+    la_and(unmasked, flags, masks);
+    ra_free_temp(masks);
+    la_bne(unmasked, zero_ir2_opnd, raise_exception);
+
+    la_or(mxcsr, mxcsr, flags);
+    la_st_w(mxcsr, env_ir2_opnd, lsenv_offset_of_mxcsr(lsenv));
+    store_ireg_to_ir1(result, dest_opnd, false);
+    la_b(done);
+
+    la_label(raise_exception);
+    IR2_OPND test = ra_alloc_itemp();
+    la_andi(test, unmasked, 0x1);
+    la_beq(test, zero_ir2_opnd, check_precision);
+    la_andi(flags, flags, 0x1);
+    la_b(store_and_raise);
+    la_label(check_precision);
+    la_andi(flags, flags, 0x3f);
+    la_label(store_and_raise);
+    la_or(mxcsr, mxcsr, flags);
+    la_st_w(mxcsr, env_ir2_opnd, lsenv_offset_of_mxcsr(lsenv));
+
+    ra_free_temp(test);
+    ra_free_temp(result);
+    ra_free_temp(flags);
+    ra_free_temp(mxcsr);
+
+    IR2_OPND eip = ra_alloc_dbt_arg2();
+    IR2_OPND helper = ra_alloc_itemp();
+    li_d(eip, ir1_addr(pir1));
+    la_store_addrx(eip, env_ir2_opnd, lsenv_offset_of_eip(lsenv));
+    tr_save_registers_to_env(0xff, 0xff, option_save_xmm,
+                             options_to_save());
+#ifdef TARGET_X86_64
+    tr_save_x64_8_registers_to_env(0xff, option_save_xmm);
+#endif
+    aot_load_host_addr(helper, (ADDR)helper_raise_simd_exception,
+                       LOAD_HELPER_RAISE_SIMD_EXCEPTION, 0);
+    la_mov64(a0_ir2_opnd, unmasked);
+    la_jirl(zero_ir2_opnd, helper, 0);
+    ra_free_temp(helper);
+    la_label(done);
+    ra_free_temp(unmasked);
+    return true;
+}
+
 static bool translate_cvttsx2si_opt(IR1_INST *pir1)
 {
     IR1_OPND *opnd1 = ir1_get_opnd(pir1, 0);
@@ -1472,7 +1676,7 @@ static bool translate_cvttsx2si_opt(IR1_INST *pir1)
     return true;
 }
 
-bool translate_cvttsx2si(IR1_INST *pir1)
+static bool translate_cvttsx2si_original(IR1_INST *pir1)
 {
     if (option_cvt_opt) {
         return translate_cvttsx2si_opt(pir1);
@@ -1526,4 +1730,14 @@ bool translate_cvttsx2si(IR1_INST *pir1)
     ra_free_temp(dest);
 
     return true;
+}
+
+bool translate_cvttsx2si(IR1_INST *pir1)
+{
+#ifdef CONFIG_LATX_AVX_OPT
+    if (ir1_opcode(pir1) == dt_X86_INS_VCVTTSD2SI) {
+        return translate_vcvttsd2si_lsx(pir1);
+    }
+#endif
+    return translate_cvttsx2si_original(pir1);
 }

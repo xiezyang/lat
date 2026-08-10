@@ -1,11 +1,7 @@
 project('latx', ['c'], meson_version: '>=0.55.0',
         default_options: ['warning_level=1', 'c_std=gnu99', 'cpp_std=gnu++11', 'b_colorout=auto'] +
                          (meson.version().version_compare('>=0.56.0') ? [ 'b_staticpic=false' ] : []),
-        version: run_command('head', meson.current_source_dir() / 'VERSION',
-                             check: true).stdout().strip())
-
-project_source_root = meson.current_source_dir()
-project_build_root = meson.current_build_dir()
+        version: run_command('head', meson.source_root() / 'VERSION').stdout().strip())
 
 not_found = dependency('', required: false)
 if meson.version().version_compare('>=0.56.0')
@@ -331,21 +327,21 @@ genh += configure_file(output: 'config-host.h', configuration: config_host_data)
 
 hxtool = find_program('scripts/hxtool')
 qapi_gen = find_program('scripts/qapi-gen.py')
-qapi_gen_depends = [ project_source_root / 'scripts/qapi/__init__.py',
-                     project_source_root / 'scripts/qapi/commands.py',
-                     project_source_root / 'scripts/qapi/common.py',
-                     project_source_root / 'scripts/qapi/error.py',
-                     project_source_root / 'scripts/qapi/events.py',
-                     project_source_root / 'scripts/qapi/expr.py',
-                     project_source_root / 'scripts/qapi/gen.py',
-                     project_source_root / 'scripts/qapi/introspect.py',
-                     project_source_root / 'scripts/qapi/parser.py',
-                     project_source_root / 'scripts/qapi/schema.py',
-                     project_source_root / 'scripts/qapi/source.py',
-                     project_source_root / 'scripts/qapi/types.py',
-                     project_source_root / 'scripts/qapi/visit.py',
-                     project_source_root / 'scripts/qapi/common.py',
-                     project_source_root / 'scripts/qapi-gen.py'
+qapi_gen_depends = [ meson.source_root() / 'scripts/qapi/__init__.py',
+                     meson.source_root() / 'scripts/qapi/commands.py',
+                     meson.source_root() / 'scripts/qapi/common.py',
+                     meson.source_root() / 'scripts/qapi/error.py',
+                     meson.source_root() / 'scripts/qapi/events.py',
+                     meson.source_root() / 'scripts/qapi/expr.py',
+                     meson.source_root() / 'scripts/qapi/gen.py',
+                     meson.source_root() / 'scripts/qapi/introspect.py',
+                     meson.source_root() / 'scripts/qapi/parser.py',
+                     meson.source_root() / 'scripts/qapi/schema.py',
+                     meson.source_root() / 'scripts/qapi/source.py',
+                     meson.source_root() / 'scripts/qapi/types.py',
+                     meson.source_root() / 'scripts/qapi/visit.py',
+                     meson.source_root() / 'scripts/qapi/common.py',
+                     meson.source_root() / 'scripts/qapi-gen.py'
 ]
 
 tracetool = [
@@ -530,7 +526,6 @@ foreach target : target_dirs
   arch = config_target['TARGET_BASE_ARCH']
   arch_srcs = [config_target_h[target]]
   arch_deps = []
-  syscall_nr_generated = []
   c_args = ['-DNEED_CPU_H',
             '-DCONFIG_TARGET="@0@-config-target.h"'.format(target),
             '-DCONFIG_DEVICES="@0@-config-devices.h"'.format(target)]
@@ -551,12 +546,9 @@ foreach target : target_dirs
       dir = base_dir / abi
       arch_srcs += files(dir / 'signal.c', dir / 'cpu_loop.c')
       if config_target.has_key('TARGET_SYSTBL_ABI')
-        syscall_nr_generated = \
-          syscall_nr_generators[abi].process(
-            base_dir / abi / config_target['TARGET_SYSTBL'],
-            extra_args : config_target['TARGET_SYSTBL_ABI']
-          )
-        arch_srcs += syscall_nr_generated
+        arch_srcs += \
+          syscall_nr_generators[abi].process(base_dir / abi / config_target['TARGET_SYSTBL'],
+                                             extra_args : config_target['TARGET_SYSTBL_ABI'])
       endif
     if 'CONFIG_LATX' in config_host
       if config_host['ARCH'] in ['loongarch64', 'loongarch']
@@ -586,26 +578,6 @@ foreach target : target_dirs
                  name_suffix: 'fa')
 
   if get_option('tests').enabled() and \
-     target in ['x86_64-linux-user', 'i386-linux-user'] and \
-     'CONFIG_LATX_O1' in config_host
-    latx_config_regression_test = executable(
-      'test-' + target + '-latx-config-regression',
-      files('tests/latx/latx-config-regression.c'),
-      objects: lib.extract_objects(latx_string_utils, latx_runtime),
-      c_args: c_args,
-      dependencies: [glib],
-      include_directories: target_inc,
-    )
-    test(
-      target + '-latx-config-regression',
-      latx_config_regression_test,
-      suite: 'lat-pr-fast',
-      env: ['ASAN_OPTIONS=detect_leaks=0'],
-      timeout: 30,
-    )
-  endif
-
-  if get_option('tests').enabled() and \
      target == 'x86_64-linux-user' and \
      'CONFIG_LATX_O1' in config_host
     smc_reload_test_c_args = c_args + [
@@ -626,17 +598,13 @@ foreach target : target_dirs
         'target/i386/latx/sbt/smc_reload.c',
         'target/i386/latx/sbt/aot_smc_reload.c',
         'accel/tcg/tb-jump.c'
-      ) + genh + tcg_trace_genh + [syscall_nr_generated],
+      ),
       c_args: smc_reload_test_c_args,
       dependencies: [glib],
       include_directories: target_inc,
       link_args: smc_reload_test_link_args
     )
-    test(
-      'latx-smc-reload-tu',
-      smc_reload_tu_test,
-      suite: 'lat-pr-fast',
-    )
+    test('latx-smc-reload-tu', smc_reload_tu_test)
 
     smc_reload_guest_base_test = executable(
       'test-latx-smc-reload-guest-base',
@@ -646,17 +614,13 @@ foreach target : target_dirs
         'target/i386/latx/sbt/aot_smc_reload.c',
         'accel/tcg/tb-jump.c',
         'util/pagesize.c'
-      ) + genh + tcg_trace_genh + [syscall_nr_generated],
+      ),
       c_args: smc_reload_test_c_args,
       dependencies: [glib],
       include_directories: target_inc,
       link_args: smc_reload_test_link_args + ['-Wl,--wrap=mprotect']
     )
-    test(
-      'latx-smc-reload-guest-base',
-      smc_reload_guest_base_test,
-      suite: 'lat-pr-fast',
-    )
+    test('latx-smc-reload-guest-base', smc_reload_guest_base_test)
 
     smc_reload_async_flush_test = executable(
       'test-latx-tb-flush-smc-reload-async',
@@ -664,24 +628,20 @@ foreach target : target_dirs
         'target/i386/latx/sbt/tests/tb-flush-smc-reload-async-test.c',
         'target/i386/latx/sbt/smc_reload.c',
         'accel/tcg/tb-flush.c'
-      ) + genh + tcg_trace_genh + [syscall_nr_generated],
+      ),
       c_args: smc_reload_test_c_args,
       dependencies: [glib],
       include_directories: target_inc,
       link_args: smc_reload_test_link_args
     )
-    test(
-      'latx-tb-flush-smc-reload-async',
-      smc_reload_async_flush_test,
-      suite: 'lat-pr-fast',
-    )
+    test('latx-tb-flush-smc-reload-async', smc_reload_async_flush_test)
 
     aot_file_publish_test = executable(
       'test-latx-aot-file-publish',
       files(
         'target/i386/latx/sbt/tests/aot-file-publish-test.c',
         'target/i386/latx/sbt/file_ctx.c'
-      ) + genh + tcg_trace_genh + [syscall_nr_generated],
+      ),
       c_args: smc_reload_test_c_args,
       dependencies: [glib],
       include_directories: target_inc,
@@ -690,27 +650,7 @@ foreach target : target_dirs
         '-Wl,--wrap=rename'
       ]
     )
-    test(
-      'latx-aot-file-publish',
-      aot_file_publish_test,
-      suite: 'lat-pr-fast',
-    )
-
-    aot_exit_worker_test = executable(
-      'test-latx-aot-exit-worker',
-      files(
-        'target/i386/latx/sbt/tests/aot-exit-worker-test.c'
-      ) + genh + tcg_trace_genh + [syscall_nr_generated],
-      c_args: smc_reload_test_c_args,
-      dependencies: [glib],
-      include_directories: target_inc,
-      link_args: smc_reload_test_link_args
-    )
-    test(
-      'latx-aot-exit-worker',
-      aot_exit_worker_test,
-      suite: 'lat-pr-fast',
-    )
+    test('latx-aot-file-publish', aot_file_publish_test)
 
     aot_pe_load_address_test = executable(
       'test-latx-aot-pe-load-address',
@@ -718,21 +658,18 @@ foreach target : target_dirs
         'target/i386/latx/sbt/tests/aot-pe-load-address-test.c',
         'target/i386/latx/sbt/segment.c',
         'target/i386/latx/sbt/aot_lib.c'
-      ) + genh + tcg_trace_genh + [syscall_nr_generated],
+      ),
       c_args: smc_reload_test_c_args,
       dependencies: [glib],
       include_directories: target_inc,
       link_args: smc_reload_test_link_args
     )
-    test(
-      'latx-aot-pe-load-address',
-      aot_pe_load_address_test,
-      suite: 'lat-pr-fast',
-    )
+    test('latx-aot-pe-load-address', aot_pe_load_address_test)
   endif
 
     execs = [{
       'name': 'latx-' + target_name,
+      'gui': false,
       'sources': [],
       'dependencies': []
     }]
@@ -746,22 +683,10 @@ foreach target : target_dirs
                objects: lib.extract_all_objects(recursive: true),
                link_language: link_language,
                link_depends: exe.get('link_depends', []),
-               link_args: link_args)
+               link_args: link_args,
+               gui_app: exe['gui'])
 
     emulators += {exe['name']: emulator}
-
-    if get_option('tests').enabled() and \
-       'CONFIG_LATX' in config_target
-      test(
-        target + '-latx-runtime-info',
-        find_program('tests/runtime/test-latx-runtime-info.sh'),
-        args: [python.full_path(), emulator.full_path(), target_name],
-        depends: emulator,
-        protocol: 'exitcode',
-        suite: 'lat-pr-fast',
-        timeout: 300,
-      )
-    endif
 
   endforeach
 endforeach
@@ -774,7 +699,6 @@ endif
 
 subdir('scripts')
 subdir('docs')
-subdir('runtime')
 subdir('tests')
 
 #########################

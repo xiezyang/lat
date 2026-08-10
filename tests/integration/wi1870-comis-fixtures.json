@@ -1,0 +1,27 @@
+{
+  "work_item": "WI-1870",
+  "instruction_scope": ["VCOMISD", "VCOMISS", "VUCOMISS"],
+  "excluded_instruction": "VUCOMISD is covered by WI-1852",
+  "source": [
+    "tests/integration/latx-avx-wi1870-comis.S",
+    "tests/integration/latx-avx-wi1870-comis.c"
+  ],
+  "build_defines": {
+    "vcomisd": "WI1870_VCOMISD",
+    "vcomiss": "WI1870_VCOMISS",
+    "vucomiss": "WI1870_VUCOMISS"
+  },
+  "cases": [
+    "reference",
+    "fpe-invalid",
+    "fpe-denormal"
+  ],
+  "observations": [
+    "EFLAGS ZF/PF/CF",
+    "MXCSR sticky and mask behavior",
+    "ordered and unordered NaN comparisons",
+    "DAZ subnormal handling",
+    "SIGFPE signal/code and saved XMM state"
+  ],
+  "baseline": "xzy86 native x86 only"
+}

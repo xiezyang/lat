@@ -13,7 +13,6 @@
 #include "qemu-def.h"
 #include "segment.h"
 #include "aot.h"
-#include "aot_exit.h"
 #include <stdlib.h>
 #include <math.h>
 #include "latx-options.h"
@@ -30,6 +29,9 @@
 #include<sys/syscall.h>
 #include "exec/translate-all.h"
 #include "latx-smc.h"
+#ifdef CONFIG_LATX_AVX_OPT
+#include "avx-trace.h"
+#endif
 #ifdef CONFIG_LATX_AOT
 /* Tbs vector with @tb_num@ elements. */
 static TranslationBlock **tb_vector;
@@ -1393,6 +1395,9 @@ static void* relkind_to_fixup_addr[] = {
     [LOAD_VPAES_ENC_TABLES_XV] = (void *)latx_vpaes_enc_tables_xv,
     [LOAD_VPAES_DEC_TABLES_XV] = (void *)latx_vpaes_dec_tables_xv,
     [LOAD_HELPER_TRACE_SESSION_BEGIN] = trace_session_begin,
+#ifdef CONFIG_LATX_AVX_OPT
+    [LOAD_HELPER_AVX_TRACE_HIT] = latx_avx_trace_hit,
+#endif
     [LOAD_HELPER_UPDATE_MXCSR_STATUS] = update_mxcsr_status,
     [LOAD_HELPER_FPATAN] = helper_fpatan,
     [LOAD_HELPER_FPTAN] = helper_fptan,
@@ -1422,6 +1427,9 @@ static void* relkind_to_fixup_addr[] = {
     [LOAD_HELPER_RAISE_BOUND] = helper_raise_bound,
 #ifdef TARGET_X86_64
     [LOAD_HELPER_RAISE_SYSCALL] = helper_raise_syscall,
+#endif
+#ifdef CONFIG_LATX_AVX_OPT
+    [LOAD_HELPER_RAISE_SIMD_EXCEPTION] = helper_raise_simd_exception,
 #endif
 
     [LOAD_HELPER_SMC_ST] = smc_store_helper_st,
@@ -1849,10 +1857,6 @@ static void creat_daemon(bool is_end)
 
 void aot_exit_entry(CPUState *cpu, AOTExitReason reason)
 {
-    TaskState *ts = cpu->opaque;
-    bool daemonize = aot_exit_worker_should_daemonize(
-        ts && ts->ipc_namespace_isolated);
-
     if (!option_aot) {
         return;
     }
@@ -1936,11 +1940,7 @@ parent_exit:
         return;
     }
 
-    if (daemonize) {
-        creat_daemon(reason == AOT_EXIT_FINAL);
-    } else {
-        close_all_fd();
-    }
+    creat_daemon(reason == AOT_EXIT_FINAL);
 
     aot_generate(cpu);
     _exit(EXIT_SUCCESS);

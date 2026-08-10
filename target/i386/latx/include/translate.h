@@ -34,6 +34,69 @@ bool TRANS_FUNC(name)(IR1_INST * pir1)
 #define TRANS_FUNC_GEN(opcode, function) \
 TRANS_FUNC_GEN_REAL(opcode, TRANS_FUNC(function))
 
+/*
+ * AVX integer operations that can be evaluated independently in each 128-bit
+ * half. The operation token is also used by the LSX implementation generator.
+ */
+#define LATX_AVX_INTEGER_3OP_LSX_TABLE(X) \
+    X(VPADDB, paddb, la_vadd_b) \
+    X(VPADDW, paddw, la_vadd_h) \
+    X(VPADDD, paddd, la_vadd_w) \
+    X(VPADDQ, paddq, la_vadd_d) \
+    X(VPADDSB, paddsb, la_vsadd_b) \
+    X(VPADDSW, paddsw, la_vsadd_h) \
+    X(VPADDUSB, paddusb, la_vsadd_bu) \
+    X(VPADDUSW, paddusw, la_vsadd_hu) \
+    X(VPSUBB, psubb, la_vsub_b) \
+    X(VPSUBW, psubw, la_vsub_h) \
+    X(VPSUBD, psubd, la_vsub_w) \
+    X(VPSUBQ, psubq, la_vsub_d) \
+    X(VPSUBSB, psubsb, la_vssub_b) \
+    X(VPSUBSW, psubsw, la_vssub_h) \
+    X(VPSUBUSB, psubusb, la_vssub_bu) \
+    X(VPSUBUSW, psubusw, la_vssub_hu) \
+    X(VPMINUB, pminub, la_vmin_bu) \
+    X(VPMINUW, pminuw, la_vmin_hu) \
+    X(VPMINUD, pminud, la_vmin_wu) \
+    X(VPMINSB, pminsb, la_vmin_b) \
+    X(VPMINSW, pminsw, la_vmin_h) \
+    X(VPMINSD, pminsd, la_vmin_w) \
+    X(VPMAXUB, pmaxub, la_vmax_bu) \
+    X(VPMAXUW, pmaxuw, la_vmax_hu) \
+    X(VPMAXUD, pmaxud, la_vmax_wu) \
+    X(VPMAXSB, pmaxsb, la_vmax_b) \
+    X(VPMAXSW, pmaxsw, la_vmax_h) \
+    X(VPMAXSD, pmaxsd, la_vmax_w)
+
+/* AVX integer comparisons whose two 128-bit halves can be translated alone. */
+#define LATX_AVX_INTEGER_CMP_LSX_TABLE(X) \
+    X(VPCMPEQB, pcmpeqb, la_vseq_b, false) \
+    X(VPCMPEQW, pcmpeqw, la_vseq_h, false) \
+    X(VPCMPEQD, pcmpeqd, la_vseq_w, false) \
+    X(VPCMPEQQ, pcmpeqq, la_vseq_d, false) \
+    X(VPCMPGTB, pcmpgtb, la_vslt_b, true) \
+    X(VPCMPGTW, pcmpgtw, la_vslt_h, true) \
+    X(VPCMPGTD, pcmpgtd, la_vslt_w, true) \
+    X(VPCMPGTQ, pcmpgtq, la_vslt_d, true)
+
+/* AVX integer shifts that operate independently in each 128-bit half. */
+#define LATX_AVX_INTEGER_SHIFT_LSX_TABLE(X) \
+    X(VPSLLDQ, vpslldq_lsx) \
+    X(VPSLLD, vpsllx_lsx) \
+    X(VPSLLQ, vpsllx_lsx) \
+    X(VPSLLVD, vpsllvd_lsx) \
+    X(VPSLLVQ, vpsllvq_lsx) \
+    X(VPSLLW, vpsllx_lsx) \
+    X(VPSRAD, vpsrax_lsx) \
+    X(VPSRAVD, vpsravd_lsx) \
+    X(VPSRAW, vpsrax_lsx) \
+    X(VPSRLD, vpsrlx_lsx) \
+    X(VPSRLDQ, vpsrldq_lsx) \
+    X(VPSRLQ, vpsrlx_lsx) \
+    X(VPSRLVD, vpsrlvd_lsx) \
+    X(VPSRLVQ, vpsrlvq_lsx) \
+    X(VPSRLW, vpsrlx_lsx)
+
 #define TRANS_FPU_WRAP_GEN_NO_PROLOGUE(function)    \
 bool translate_##function##_wrap(IR1_INST *pir1)    \
 {                                                   \
@@ -254,6 +317,7 @@ TRANS_FUNC_DEF(cvtsi2sd);
 TRANS_FUNC_DEF(movntps);
 TRANS_FUNC_DEF(movntpd);
 TRANS_FUNC_DEF(cvttsx2si);
+TRANS_FUNC_DEF(vcvttsd2si_lsx);
 TRANS_FUNC_DEF(cvtps2pi);
 TRANS_FUNC_DEF(cvttps2pi);
 TRANS_FUNC_DEF(cvtpd2pi);
@@ -436,6 +500,7 @@ TRANS_FUNC_DEF(pmaddwd);
 TRANS_FUNC_DEF(psadbw);
 TRANS_FUNC_DEF(maskmovq);
 TRANS_FUNC_DEF(maskmovdqu);
+TRANS_FUNC_DEF(maskmovdqu_lsx);
 TRANS_FUNC_DEF(psubb);
 TRANS_FUNC_DEF(psubw);
 TRANS_FUNC_DEF(psubd);
@@ -776,39 +841,64 @@ TRANS_FUNC_DEF(vpmaskmovx);
 TRANS_FUNC_DEF(vpshufd);
 TRANS_FUNC_DEF(vpmuldq);
 TRANS_FUNC_DEF(vpinsrx);
+TRANS_FUNC_DEF(vpinsrq);
 TRANS_FUNC_DEF(vpminxx);
 TRANS_FUNC_DEF(vpmaxxx);
 TRANS_FUNC_DEF(vpalignr);
 
 TRANS_FUNC_DEF(vmovsd);
+TRANS_FUNC_DEF(vmovsd_lsx);
 TRANS_FUNC_DEF(vmovntdqa);
+TRANS_FUNC_DEF(vmovntdqa_lsx);
 TRANS_FUNC_DEF(vmovlhps);
+TRANS_FUNC_DEF(vmovlhps_lsx);
 TRANS_FUNC_DEF(vmovhpd);
+TRANS_FUNC_DEF(vmovhpd_lsx);
 TRANS_FUNC_DEF(vmovhps);
+TRANS_FUNC_DEF(vmovhps_lsx);
 TRANS_FUNC_DEF(vmovhlps);
+TRANS_FUNC_DEF(vmovhlps_lsx);
 TRANS_FUNC_DEF(vmovlpd);
+TRANS_FUNC_DEF(vmovlpd_lsx);
 TRANS_FUNC_DEF(vmovlps);
+TRANS_FUNC_DEF(vmovlps_lsx);
 TRANS_FUNC_DEF(vmovq);
+TRANS_FUNC_DEF(vmovq_lsx);
 TRANS_FUNC_DEF(vmovapd);
+TRANS_FUNC_DEF(vmovapd_lsx);
 TRANS_FUNC_DEF(vmovaps);
+TRANS_FUNC_DEF(vmovaps_lsx);
 TRANS_FUNC_DEF(vmovddup);
+TRANS_FUNC_DEF(vmovddup_lsx);
 TRANS_FUNC_DEF(vmovdqa);
+TRANS_FUNC_DEF(vmovdqa_lsx);
 TRANS_FUNC_DEF(vmovdqu);
+TRANS_FUNC_DEF(vmovdqu_lsx);
 TRANS_FUNC_DEF(vmovmskpd);
+TRANS_FUNC_DEF(vmovmskpd_lsx);
 TRANS_FUNC_DEF(vmovmskps);
+TRANS_FUNC_DEF(vmovmskps_lsx);
 TRANS_FUNC_DEF(vmovntdq);
 TRANS_FUNC_DEF(vmovntpd);
 TRANS_FUNC_DEF(vmovntps);
 TRANS_FUNC_DEF(vmovshdup);
+TRANS_FUNC_DEF(vmovshdup_lsx);
 TRANS_FUNC_DEF(vmovsldup);
+TRANS_FUNC_DEF(vmovsldup_lsx);
 TRANS_FUNC_DEF(vmovss);
+TRANS_FUNC_DEF(vmovss_lsx);
 //TRANS_FUNC_DEF(vmovsd);
 TRANS_FUNC_DEF(vmovd);
+TRANS_FUNC_DEF(vmovd_lsx);
 //TRANS_FUNC_DEF(vmovq);
 TRANS_FUNC_DEF(vlddqu);
+TRANS_FUNC_DEF(vlddqu_lsx);
 TRANS_FUNC_DEF(vmovupd);
+TRANS_FUNC_DEF(vmovupd_lsx);
 TRANS_FUNC_DEF(vmovups);
+TRANS_FUNC_DEF(vmovups_lsx);
 TRANS_FUNC_DEF(vmaskmovpx);
+TRANS_FUNC_DEF(vmaskmovpx_lsx);
 TRANS_FUNC_DEF(vpmovmskb);
 TRANS_FUNC_DEF(vaddpd);
 TRANS_FUNC_DEF(vaddps);
@@ -821,10 +911,12 @@ TRANS_FUNC_DEF(vsubss);
 TRANS_FUNC_DEF(vmulpd);
 TRANS_FUNC_DEF(vmulps);
 TRANS_FUNC_DEF(vmulsd);
+TRANS_FUNC_DEF(vmulsd_lsx);
 TRANS_FUNC_DEF(vmulss);
 TRANS_FUNC_DEF(vdivpd);
 TRANS_FUNC_DEF(vdivps);
 TRANS_FUNC_DEF(vdivsd);
+TRANS_FUNC_DEF(vdivsd_lsx);
 TRANS_FUNC_DEF(vdivss);
 TRANS_FUNC_DEF(vsqrtpd);
 TRANS_FUNC_DEF(vsqrtps);
@@ -843,6 +935,7 @@ TRANS_FUNC_DEF(vandps);
 TRANS_FUNC_DEF(vorps);
 TRANS_FUNC_DEF(vorpd);
 TRANS_FUNC_DEF(vxorpd);
+TRANS_FUNC_DEF(vxorpd_lsx);
 TRANS_FUNC_DEF(vxorps);
 TRANS_FUNC_DEF(vmaxpx);
 TRANS_FUNC_DEF(vmaxsx);
@@ -858,9 +951,11 @@ TRANS_FUNC_DEF(vbroadcastsd);
 TRANS_FUNC_DEF(vbroadcastss);
 TRANS_FUNC_DEF(vextractf128);
 TRANS_FUNC_DEF(vextracti128);
+TRANS_FUNC_DEF(vextracti128_lsx);
 TRANS_FUNC_DEF(vextractps);
 TRANS_FUNC_DEF(vinsertf128);
 TRANS_FUNC_DEF(vinserti128);
+TRANS_FUNC_DEF(vinserti128_lsx);
 TRANS_FUNC_DEF(vinsertps);
 TRANS_FUNC_DEF(vshufpd);
 TRANS_FUNC_DEF(vshufps);
@@ -873,18 +968,40 @@ TRANS_FUNC_DEF(vpsllx);
 TRANS_FUNC_DEF(vpsrax);
 TRANS_FUNC_DEF(vpsrldq);
 TRANS_FUNC_DEF(vpsrlx);
+TRANS_FUNC_DEF(vpslldq_lsx);
+TRANS_FUNC_DEF(vpsllx_lsx);
+TRANS_FUNC_DEF(vpsllvd_lsx);
+TRANS_FUNC_DEF(vpsllvq_lsx);
+TRANS_FUNC_DEF(vpsrax_lsx);
+TRANS_FUNC_DEF(vpsravd_lsx);
+TRANS_FUNC_DEF(vpsrlx_lsx);
+TRANS_FUNC_DEF(vpsrldq_lsx);
+TRANS_FUNC_DEF(vpsrlvd_lsx);
+TRANS_FUNC_DEF(vpsrlvq_lsx);
 TRANS_FUNC_DEF(vpcmpeqx);
+#define LATX_AVX_INTEGER_CMP_LSX_DECL(opcode, name, cmp, reverse) \
+TRANS_FUNC_DEF(v##name##_lsx);
+LATX_AVX_INTEGER_CMP_LSX_TABLE(LATX_AVX_INTEGER_CMP_LSX_DECL)
+#undef LATX_AVX_INTEGER_CMP_LSX_DECL
 TRANS_FUNC_DEF(vpcmpgtx);
 TRANS_FUNC_DEF(vucomisd);
+TRANS_FUNC_DEF(vucomisd_lsx);
 TRANS_FUNC_DEF(vucomiss);
+TRANS_FUNC_DEF(vucomiss_lsx);
 TRANS_FUNC_DEF(vcomisd);
+TRANS_FUNC_DEF(vcomisd_lsx);
 TRANS_FUNC_DEF(vcomiss);
+TRANS_FUNC_DEF(vcomiss_lsx);
 TRANS_FUNC_DEF(vpabsx);
 TRANS_FUNC_DEF(vpackusxx);
+TRANS_FUNC_DEF(vpackssxx_lsx);
+TRANS_FUNC_DEF(vpackusxx_lsx);
 TRANS_FUNC_DEF(vpand);
+TRANS_FUNC_DEF(vpand_lsx);
 TRANS_FUNC_DEF(vpandn);
 TRANS_FUNC_DEF(vpblendd);
 TRANS_FUNC_DEF(vpblendvb);
+TRANS_FUNC_DEF(vpblendvb_lsx);
 TRANS_FUNC_DEF(vpblendw);
 TRANS_FUNC_DEF(vperm2f128);
 TRANS_FUNC_DEF(vperm2i128);
@@ -896,12 +1013,19 @@ TRANS_FUNC_DEF(vpmovsxxx);
 TRANS_FUNC_DEF(vpmovzxxx);
 TRANS_FUNC_DEF(vpmullx);
 TRANS_FUNC_DEF(vpor);
+TRANS_FUNC_DEF(vpor_lsx);
 TRANS_FUNC_DEF(vpshufb);
 TRANS_FUNC_DEF(vpsubx);
 TRANS_FUNC_DEF(vptest);
 TRANS_FUNC_DEF(vpunpckhxx);
+TRANS_FUNC_DEF(vpunpckhxx_lsx);
 TRANS_FUNC_DEF(vpunpcklxx);
+TRANS_FUNC_DEF(vpunpcklxx_lsx);
+TRANS_FUNC_DEF(vpunpcklqdq_lsx);
+TRANS_FUNC_DEF(vshufpd_lsx);
+TRANS_FUNC_DEF(vshufps_lsx);
 TRANS_FUNC_DEF(vpxor);
+TRANS_FUNC_DEF(vpxor_lsx);
 TRANS_FUNC_DEF(vcvtdq2pd);
 TRANS_FUNC_DEF(vcvtdq2ps);
 TRANS_FUNC_DEF(vcvtpd2dq);
@@ -909,31 +1033,53 @@ TRANS_FUNC_DEF(vcvtpd2ps);
 TRANS_FUNC_DEF(vcvtps2dq);
 TRANS_FUNC_DEF(vcvtps2pd);
 TRANS_FUNC_DEF(vcvtsd2ss);
+TRANS_FUNC_DEF(vcvtsd2ss_lsx);
 TRANS_FUNC_DEF(vcvtsi2sd);
+TRANS_FUNC_DEF(vcvtsi2sd_lsx);
 TRANS_FUNC_DEF(vcvtsi2ss);
 TRANS_FUNC_DEF(vcvtss2sd);
 TRANS_FUNC_DEF(vcvttpd2dq);
 TRANS_FUNC_DEF(vcvttps2dq);
 TRANS_FUNC_DEF(vfmaddxxxpd);
+TRANS_FUNC_DEF(vfmaddxxxpd_lsx);
 TRANS_FUNC_DEF(vfmaddxxxps);
+TRANS_FUNC_DEF(vfmaddxxxps_lsx);
 TRANS_FUNC_DEF(vfmaddxxxsd);
+TRANS_FUNC_DEF(vfmaddxxxsd_lsx);
 TRANS_FUNC_DEF(vfmaddxxxss);
+TRANS_FUNC_DEF(vfmaddxxxss_lsx);
 TRANS_FUNC_DEF(vfmaddsubxxxpd);
+TRANS_FUNC_DEF(vfmaddsubxxxpd_lsx);
 TRANS_FUNC_DEF(vfmaddsubxxxps);
+TRANS_FUNC_DEF(vfmaddsubxxxps_lsx);
 TRANS_FUNC_DEF(vfmsubaddxxxpd);
+TRANS_FUNC_DEF(vfmsubaddxxxpd_lsx);
 TRANS_FUNC_DEF(vfmsubaddxxxps);
+TRANS_FUNC_DEF(vfmsubaddxxxps_lsx);
 TRANS_FUNC_DEF(vfmsubxxxpd);
+TRANS_FUNC_DEF(vfmsubxxxpd_lsx);
 TRANS_FUNC_DEF(vfmsubxxxps);
+TRANS_FUNC_DEF(vfmsubxxxps_lsx);
 TRANS_FUNC_DEF(vfmsubxxxsd);
+TRANS_FUNC_DEF(vfmsubxxxsd_lsx);
 TRANS_FUNC_DEF(vfmsubxxxss);
+TRANS_FUNC_DEF(vfmsubxxxss_lsx);
 TRANS_FUNC_DEF(vfnmaddxxxpd);
+TRANS_FUNC_DEF(vfnmaddxxxpd_lsx);
 TRANS_FUNC_DEF(vfnmaddxxxps);
+TRANS_FUNC_DEF(vfnmaddxxxps_lsx);
 TRANS_FUNC_DEF(vfnmaddxxxsd);
+TRANS_FUNC_DEF(vfnmaddxxxsd_lsx);
 TRANS_FUNC_DEF(vfnmaddxxxss);
+TRANS_FUNC_DEF(vfnmaddxxxss_lsx);
 TRANS_FUNC_DEF(vfnmsubxxxpd);
+TRANS_FUNC_DEF(vfnmsubxxxpd_lsx);
 TRANS_FUNC_DEF(vfnmsubxxxps);
+TRANS_FUNC_DEF(vfnmsubxxxps_lsx);
 TRANS_FUNC_DEF(vfnmsubxxxsd);
+TRANS_FUNC_DEF(vfnmsubxxxsd_lsx);
 TRANS_FUNC_DEF(vfnmsubxxxss);
+TRANS_FUNC_DEF(vfnmsubxxxss_lsx);
 TRANS_FUNC_DEF(vcmppd);
 TRANS_FUNC_DEF(vcmpeqpd);
 TRANS_FUNC_DEF(vcmpltpd);
@@ -1067,11 +1213,17 @@ TRANS_FUNC_DEF(vcmpge_oqss);
 TRANS_FUNC_DEF(vcmpgt_oqss);
 TRANS_FUNC_DEF(vcmptrue_usss);
 TRANS_FUNC_DEF(vpbroadcastq);
+TRANS_FUNC_DEF(vpbroadcastq_lsx);
 TRANS_FUNC_DEF(vpaddq);
+#define LATX_AVX_INTEGER_3OP_LSX_DECL(opcode, name, lsx_op) \
+TRANS_FUNC_DEF(v##name##_lsx);
+LATX_AVX_INTEGER_3OP_LSX_TABLE(LATX_AVX_INTEGER_3OP_LSX_DECL)
+#undef LATX_AVX_INTEGER_3OP_LSX_DECL
 TRANS_FUNC_DEF(vzeroupper);
+TRANS_FUNC_DEF(vzeroupper_lsx);
+TRANS_FUNC_DEF(vpinsrq_lsx);
 
 //TRANS_FUNC_DEF(vpinsrb);
-//TRANS_FUNC_DEF(vpinsrq);
 TRANS_FUNC_DEF(xgetbv);
 TRANS_FUNC_DEF(xsetbv);
 TRANS_FUNC_DEF(xsave);
@@ -1237,6 +1389,8 @@ void tr_save_gpr_to_env(uint8 gpr_to_save);
 void tr_load_gpr_from_env(uint8 gpr_to_load);
 void tr_save_xmm_to_env(uint8 xmm_to_save);
 void tr_load_xmm_from_env(uint8 xmm_to_load);
+void tr_save_ymm_to_env(uint16 ymm_to_save);
+void tr_load_ymm_high_from_env(uint16 ymm_to_load);
 void tr_save_registers_to_env(uint8 gpr_to_save, uint8 fpr_to_save,
                               uint8 xmm_to_save, uint8 vreg_to_save);
 void tr_load_registers_from_env(uint8 gpr_to_load, uint8 fpr_to_load,
@@ -1261,6 +1415,7 @@ void helper_raise_gpf(void);
 void helper_raise_into(void);
 void helper_raise_bound(void);
 void helper_raise_syscall(void);
+void helper_raise_simd_exception(uint32_t flags);
 
 bool si12_overflow(long si12);
 
@@ -1279,6 +1434,22 @@ IR2_OPND load_freg128_from_ir1(IR1_OPND *);
 void load_imm_to_ir1_opnd_gpr(IR1_OPND *opnd0, uint64_t imm);
 IR2_OPND load_freg256_from_ir1(IR1_OPND *opnd1);
 void set_high128_xreg_to_zero(IR2_OPND opnd);
+IR2_OPND load_ymm_high128_shadow(int index);
+void store_ymm_high128_shadow(IR2_OPND src, int index);
+void clear_ymm_high128_shadow(int index);
+void clear_all_ymm_high128_shadows(void);
+IR2_OPND load_u64_from_ir1_mem_exact(IR1_OPND *opnd);
+void store_u64_to_ir1_mem_exact(IR2_OPND value, IR1_OPND *opnd);
+IR2_OPND load_u32_from_ir1_mem_exact(IR1_OPND *opnd);
+void store_u32_to_ir1_mem_exact(IR2_OPND value, IR1_OPND *opnd);
+IR2_OPND load_v128_from_ir1_mem_exact(IR1_OPND *opnd);
+IR2_OPND load_v128_from_guest_addr_exact(IR2_OPND address);
+void store_v128_to_guest_addr_exact(IR2_OPND value, IR2_OPND address);
+void store_v128_to_ir1_mem_exact(IR2_OPND value, IR1_OPND *opnd);
+void load_v256_from_ir1_mem_exact(IR1_OPND *opnd,
+                                  IR2_OPND *low, IR2_OPND *high);
+void store_v256_to_ir1_mem_exact(IR2_OPND low, IR2_OPND high,
+                                 IR1_OPND *opnd);
 void store_freg256_to_ir1_mem(IR2_OPND opnd2,IR1_OPND *opnd1);
 void load_freg256_from_ir1_mem(IR2_OPND opnd2,IR1_OPND *opnd1);
 
@@ -1362,7 +1533,8 @@ void rotate_fpu_to_bias(int bias);
 void tr_gen_call_to_helper1(ADDR func, int use_fp, enum aot_rel_kind);
 void tr_gen_call_to_helper2(ADDR, IR2_OPND, int, enum aot_rel_kind);
 void tr_gen_call_to_helper_xgetbv(void);
-void tr_gen_call_to_helper_vfll(ADDR, IR2_OPND, IR2_OPND, int, enum aot_rel_kind);
+void tr_gen_call_to_helper_vfll(ADDR, IR2_OPND, IR2_OPND, int, bool,
+                                enum aot_rel_kind);
 void tr_gen_call_to_helper_pcmpxstrx(ADDR, int, int, int, enum aot_rel_kind);
 void tr_gen_call_to_helper_cvttpd2pi(ADDR, int, int, enum aot_rel_kind);
 void tr_gen_call_to_helper_pclmulqdq(ADDR, int, int, int, int ,int,
@@ -1382,6 +1554,9 @@ bool ir1_need_reserve_h128(IR1_INST *ir1);
 IR2_OPND save_h128_of_ymm(IR1_INST *ir1);
 void restore_h128_of_ymm(IR1_INST *ir1, IR2_OPND temp);
 void gen_test_page_flag(IR2_OPND mem_opnd, int mem_imm, uint32_t flag);
+void gen_test_page_flag_force(IR2_OPND mem_opnd, int mem_imm, uint32_t flag);
+void gen_test_page_flag_force_range(IR2_OPND mem_opnd, int mem_imm,
+                                    int size, uint32_t flag);
 
 void clear_h32(IR2_OPND *opnd);
 

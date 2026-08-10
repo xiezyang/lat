@@ -19,6 +19,41 @@ la_name_enum_t git_x86_insn_avx_cc[X86_AVX_CC_TRUE_US + 1];
 csh git_handle[2];
 uint8_t dt_gitcatstone_mode[2];
 char git_cap_tmp[IR1_INST_SIZE];
+
+static uint16_t gitcapstone_isa_features(const cs_insn *insn)
+{
+    uint16_t features = 0;
+
+    for (int i = 0; i < insn->detail->groups_count; i++) {
+        switch (insn->detail->groups[i]) {
+        case X86_GRP_AVX:
+            features |= LATX_X86_ISA_AVX;
+            break;
+        case X86_GRP_AVX2:
+            features |= LATX_X86_ISA_AVX2;
+            break;
+        case X86_GRP_AVX512:
+            features |= LATX_X86_ISA_AVX512;
+            break;
+        case X86_GRP_F16C:
+            features |= LATX_X86_ISA_F16C;
+            break;
+        case X86_GRP_FMA:
+            features |= LATX_X86_ISA_FMA;
+            break;
+        case X86_GRP_FMA4:
+            features |= LATX_X86_ISA_FMA4;
+            break;
+        case X86_GRP_XOP:
+            features |= LATX_X86_ISA_XOP;
+            break;
+        default:
+            break;
+        }
+    }
+    return features;
+}
+
 struct la_dt_insn *gitcapstone_get_from_insn(cs_insn *inputinfo,
     int ir1_num, void *pir1_base)
 {
@@ -111,6 +146,7 @@ struct la_dt_insn *gitcapstone_get_from_insn(cs_insn *inputinfo,
         git_x86_insn_avx_cc[inputinfo->detail->x86.avx_cc].id;
     ret->size = inputinfo->size;
     ret->address = inputinfo->address;
+    ret->isa_features = gitcapstone_isa_features(inputinfo);
     return ret; 
 }
 

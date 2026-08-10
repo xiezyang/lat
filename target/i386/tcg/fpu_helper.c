@@ -27,6 +27,9 @@
 #include "fpu/softfloat.h"
 #include "fpu/softfloat-macros.h"
 #include "helper-tcg.h"
+#ifdef CONFIG_LATX_AVX_OPT
+#include "avx-trace.h"
+#endif
 
 #ifdef CONFIG_SOFTMMU
 #include "hw/irq.h"
@@ -3226,6 +3229,10 @@ void cpu_x86_xrstor(CPUX86State *env, target_ulong ptr)
 
 uint64_t helper_xgetbv(CPUX86State *env, uint32_t ecx)
 {
+#ifdef CONFIG_LATX_AVX_OPT
+    latx_avx_trace_record_xgetbv(ecx, env->xcr0,
+                                 env->cr[4] & CR4_OSXSAVE_MASK);
+#endif
     /* The OS must have enabled XSAVE.  */
     if (!(env->cr[4] & CR4_OSXSAVE_MASK)) {
         raise_exception_ra(env, EXCP06_ILLOP, GETPC());
@@ -3310,6 +3317,72 @@ void update_mxcsr_status(CPUX86State *env)
 
     /* set flush to zero */
     set_flush_to_zero((mxcsr & SSE_FZ) ? 1 : 0, &env->sse_status);
+}
+
+static bool lsx_fma_is_denormal(uint64_t value, bool double_precision)
+{
+    if (double_precision) {
+        return (value & UINT64_C(0x7ff0000000000000)) == 0 &&
+               (value & UINT64_C(0x000fffffffffffff)) != 0;
+    }
+
+    value = (uint32_t)value;
+    return (value & UINT32_C(0x7f800000)) == 0 &&
+           (value & UINT32_C(0x007fffff)) != 0;
+}
+
+uint32_t helper_lsx_fma_flags(CPUX86State *env, uint64_t x, uint64_t y,
+                              uint64_t z, int operation_flags,
+                              int double_precision)
+{
+    const uint16_t invalid_flags = float_flag_invalid |
+                                   float_flag_invalid_isi |
+                                   float_flag_invalid_imz |
+                                   float_flag_invalid_snan;
+    uint16_t softfloat_flags;
+    uint32_t mxcsr_flags = 0;
+
+    /* Match the x86 helper setup for this guest operation, then discard
+     * sticky flags so the return value describes only this FMA lane. */
+    update_mxcsr_status(env);
+    set_float_exception_flags(0, &env->sse_status);
+    if (double_precision) {
+        (void)float64_muladd((float64)x, (float64)y, (float64)z,
+                             operation_flags, &env->sse_status);
+    } else {
+        (void)float32_muladd((float32)x, (float32)y, (float32)z,
+                             operation_flags, &env->sse_status);
+    }
+    softfloat_flags = get_float_exception_flags(&env->sse_status);
+
+    if (softfloat_flags & invalid_flags) {
+        mxcsr_flags |= FPUS_IE;
+    }
+    if (softfloat_flags & float_flag_overflow) {
+        mxcsr_flags |= FPUS_OE;
+    }
+    if (softfloat_flags & float_flag_underflow) {
+        mxcsr_flags |= FPUS_UE;
+    }
+    if (softfloat_flags & float_flag_inexact) {
+        mxcsr_flags |= FPUS_PE;
+    }
+    if (softfloat_flags & float_flag_output_denormal) {
+        mxcsr_flags |= FPUS_UE | FPUS_PE;
+    }
+    /* SoftFloat's input-denormal flag describes DAZ flushing. MXCSR's DE
+     * flag has the opposite condition, so classify the raw operands here. */
+    if (!(env->mxcsr & SSE_DAZ) &&
+        (lsx_fma_is_denormal(x, double_precision) ||
+         lsx_fma_is_denormal(z, double_precision) ||
+         lsx_fma_is_denormal(y, double_precision))) {
+        mxcsr_flags |= FPUS_DE;
+    }
+
+    env->mxcsr |= mxcsr_flags;
+    return mxcsr_flags &
+           ~((env->mxcsr >> 7) & (FPUS_IE | FPUS_DE | FPUS_ZE |
+                                  FPUS_OE | FPUS_UE | FPUS_PE));
 }
 
 void update_mxcsr_from_sse_status(CPUX86State *env)

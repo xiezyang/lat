@@ -11,15 +11,6 @@
 #include "optimize-config.h"
 #include "latx-disassemble-trace.h"
 #include "latx-debug.h"
-#include "latx-runtime.h"
-
-#ifdef TARGET_X86_64
-#define LATX_SYSTEM_CONFIG_FILE "/etc/latx-x86_64.conf"
-#define LATX_USER_CONFIG_FILE "latx-x86_64.conf"
-#else
-#define LATX_SYSTEM_CONFIG_FILE "/etc/latx-i386.conf"
-#define LATX_USER_CONFIG_FILE "latx-i386.conf"
-#endif
 
 #ifdef CONFIG_LATX_INSTS_PATTERN
 extern int option_instptn;
@@ -33,6 +24,9 @@ extern int option_tu_link;
 
 #ifdef CONFIG_LATX_AVX_OPT
 extern int option_avx_cpuid;
+extern int option_avx_trace;
+extern int option_avx_trace_ymm;
+extern int option_avx_trace_ymm_init;
 #endif /* CONFIG_LATX_AVX_OPT */
 
 extern int close_latx_parallel;
@@ -140,7 +134,10 @@ extern unsigned long long counter_mips_tr;
 
 #if defined(CONFIG_LATX) && defined(CONFIG_LATX_AVX_OPT)
 #define ENVSUP_AVX \
-    ENVFUN(LATX_AVX_CPUID, handle_arg_latx_avx_cpuid)
+    ENVFUN(LATX_AVX_CPUID, handle_arg_latx_avx_cpuid) \
+    ENVFUN(LATX_AVX_TRACE, handle_arg_latx_avx_trace) \
+    ENVFUN(LATX_AVX_TRACE_YMM, handle_arg_latx_avx_trace_ymm) \
+    ENVFUN(LATX_AVX_TRACE_YMM_INIT, handle_arg_latx_avx_trace_ymm_init)
 #else
 #define ENVSUP_AVX
 #endif
@@ -161,9 +158,6 @@ extern unsigned long long counter_mips_tr;
 #else
 #define ENVSUP_AOT
 #endif
-
-#define ENVSUP_RUNTIME \
-    ENVFUN(LAT_LD_PREFIX, handle_arg_ld_prefix)
 
 #if defined(CONFIG_LATX_DEBUG) || defined(CONFIG_DEBUG_TCG)
 #define ENVSUP_DEBUG \
@@ -186,6 +180,7 @@ extern unsigned long long counter_mips_tr;
     ENVFUN(LAT_STRACE_ERROR, handle_arg_strace_error) \
     ENVFUN(LAT_RAND_SEED, handle_arg_seed) \
     ENVFUN(LAT_TRACE, handle_arg_trace) \
+    ENVFUN(LAT_LD_PREFIX, handle_arg_ld_prefix) \
     ENVFUN(LAT_VERSION, handle_arg_version)
 #else
 #define ENVSUP_DEBUG
@@ -219,7 +214,6 @@ extern unsigned long long counter_mips_tr;
     ENVSUP_AVX \
     ENVSUP_KZT \
     ENVSUP_AOT \
-    ENVSUP_RUNTIME \
     ENVSUP_DEBUG \
     ENVSUP_LATX_DEBUG \
     ENVSUP_PLUGIN
@@ -238,7 +232,8 @@ uint8 options_to_save(void);
 void options_parse_latx_disassemble_trace_cmp(const char *args);
 void conf_init(char **target_argv);
 char* guest_program(char **argv);
-void load_conf_file(const char *file, const char *program,
-                    LatxRuntimeSource runtime_source);
+void load_conf_file(const char *file, char* program);
 void find_option(const char *name, const char *val);
+int option_line_init(char *line, char **name, char **value);
+char* trim(char *s);
 #endif

@@ -2644,20 +2644,18 @@ static bool parse_elf_properties(const ImageSource *src,
  * @info: info collected from the loaded image.
  * @ehdr: the ELF header, not yet bswapped.
  * @pinterp_name: record any PT_INTERP string found.
- * @errp: optionally return an error instead of terminating the process.
  *
- * On success, @info values will be filled in, as necessary or available.
+ * On return: @info values will be filled in, as necessary or available.
  */
 
-static bool load_elf_image(const char *image_name, const ImageSource *src,
+static void load_elf_image(const char *image_name, const ImageSource *src,
                            struct image_info *info, struct elfhdr *ehdr,
-                           char **pinterp_name, Error **errp)
+                           char **pinterp_name)
 {
     g_autofree struct elf_phdr *phdr = NULL;
     g_autofree ElfLoadMapRange *load_segments = NULL;
     abi_ulong load_addr, load_bias, loaddr, hiaddr, error, len;
     int i, prot_exec;
-    bool mmap_locked = false;
     Error *err = NULL;
 
     /*
@@ -2691,7 +2689,6 @@ static bool load_elf_image(const char *image_name, const ImageSource *src,
     info->pt_dynamic_addr = 0;
 
     mmap_lock();
-    mmap_locked = true;
 
     /*
      * Find the maximum size of the image and allocate an appropriate
@@ -2951,104 +2948,36 @@ static bool load_elf_image(const char *image_name, const ImageSource *src,
     }
 
     mmap_unlock();
-    mmap_locked = false;
 
-    return true;
+    return;
 
  exit_mmap:
     error_setg_errno(&err, errno, "Error mapping file");
     goto exit_errmsg;
  exit_errmsg:
-    if (mmap_locked) {
-        mmap_unlock();
-    }
-    if (errp) {
-        error_propagate(errp, err);
-        return false;
-    }
     error_reportf_err(err, "%s: ", image_name);
     exit(-1);
 }
-
-#ifdef CONFIG_LATX
-static void latx_report_runtime_loader_failure(const char *filename,
-                                               const char *configured_path,
-                                               const char *attempted_path,
-                                               const char *reason,
-                                               const char *detail)
-{
-    g_autofree char *escaped_abi = NULL;
-    g_autofree char *escaped_interp = NULL;
-    g_autofree char *escaped_root = NULL;
-    g_autofree char *escaped_configured = NULL;
-    g_autofree char *escaped_attempted = NULL;
-    g_autofree char *escaped_detail = NULL;
-
-    escaped_abi = g_strescape(latx_runtime_guest_abi(), NULL);
-    escaped_interp = g_strescape(filename, NULL);
-    escaped_root = g_strescape(interp_prefix, NULL);
-    escaped_configured = g_strescape(configured_path, NULL);
-    escaped_attempted = g_strescape(attempted_path, NULL);
-    escaped_detail = g_strescape(detail, NULL);
-
-    error_report("LATU: guest runtime loader failure");
-    error_printf("  guest ABI: %s\n"
-                 "  PT_INTERP: %s\n"
-                 "  runtime root: %s\n"
-                 "  runtime source: %s\n"
-                 "  configured loader: %s\n"
-                 "  attempted loader: %s\n"
-                 "  failure reason: %s\n"
-                 "  detail: %s\n"
-                 "  next step: run 'latu-runtime-manager status'\n",
-                 escaped_abi, escaped_interp, escaped_root,
-                 latx_runtime_prefix_source_name(), escaped_configured,
-                 escaped_attempted, reason, escaped_detail);
-}
-#endif
 
 static void load_elf_interp(const char *filename, struct image_info *info,
                             char bprm_buf[BPRM_BUF_SIZE])
 {
     struct elfhdr ehdr;
     ImageSource src;
-    const char *loader_path = path(filename);
     int fd, retval;
     Error *err = NULL;
-#ifdef CONFIG_LATX
-    g_autofree char *configured_path = path_get_prefixed(filename);
-    bool header_valid = false;
-#endif
 
-    fd = open(loader_path, O_RDONLY);
+    fd = open(path(filename), O_RDONLY);
     if (fd < 0) {
-#ifdef CONFIG_LATX
-        int saved_errno = errno;
-
-        latx_report_runtime_loader_failure(
-            filename, configured_path, loader_path,
-            latx_runtime_loader_errno_name(saved_errno),
-            strerror(saved_errno));
-#else
         error_setg_file_open(&err, errno, filename);
         error_report_err(err);
-#endif
         exit(-1);
     }
 
     retval = read(fd, bprm_buf, BPRM_BUF_SIZE);
     if (retval < 0) {
-#ifdef CONFIG_LATX
-        int saved_errno = errno;
-
-        latx_report_runtime_loader_failure(
-            filename, configured_path, loader_path,
-            latx_runtime_loader_errno_name(saved_errno),
-            strerror(saved_errno));
-#else
         error_setg_errno(&err, errno, "Error reading file header");
         error_reportf_err(err, "%s: ", filename);
-#endif
         exit(-1);
     }
 
@@ -3056,29 +2985,7 @@ static void load_elf_interp(const char *filename, struct image_info *info,
     src.cache = bprm_buf;
     src.cache_size = retval;
 
-#ifdef CONFIG_LATX
-    if ((size_t)retval >= sizeof(ehdr)) {
-        memcpy(&ehdr, bprm_buf, sizeof(ehdr));
-        header_valid = elf_check_ident(&ehdr);
-        if (header_valid) {
-            bswap_ehdr(&ehdr);
-            header_valid = elf_check_ehdr(&ehdr);
-        }
-    }
-#endif
-
-    if (!load_elf_image(filename, &src, info, &ehdr, NULL, &err)) {
-#ifdef CONFIG_LATX
-        latx_report_runtime_loader_failure(
-            filename, configured_path, loader_path,
-            header_valid ? "load_error" : "invalid_elf",
-            error_get_pretty(err));
-        error_free(err);
-#else
-        error_reportf_err(err, "%s: ", filename);
-#endif
-        exit(-1);
-    }
+    load_elf_image(filename, &src, info, &ehdr, NULL);
     close(fd);
 }
 
@@ -3099,7 +3006,7 @@ static void load_elf_vdso(struct image_info *info, const VdsoImageInfo *vdso)
     src.cache = vdso->image;
     src.cache_size = vdso->image_size;
 
-    load_elf_image("<internal-vdso>", &src, info, &ehdr, NULL, NULL);
+    load_elf_image("<internal-vdso>", &src, info, &ehdr, NULL);
     load_addr = info->load_addr;
     load_bias = info->load_bias;
 
@@ -3344,8 +3251,7 @@ int load_elf_binary(struct linux_binprm *bprm, struct image_info *info)
 
     info->start_mmap = (abi_ulong)ELF_START_MMAP;
 
-    load_elf_image(bprm->filename, &bprm->src, info, &ehdr,
-                   &elf_interpreter, NULL);
+    load_elf_image(bprm->filename, &bprm->src, info, &ehdr, &elf_interpreter);
 #if !(defined(CONFIG_LATX_KZT) && defined(TARGET_X86_64))
     close(bprm->src.fd);
 #else

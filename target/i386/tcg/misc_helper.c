@@ -25,6 +25,9 @@
 #include "exec/cpu_ldst.h"
 #include "exec/address-spaces.h"
 #include "helper-tcg.h"
+#ifdef CONFIG_LATX_AVX_OPT
+#include "avx-trace.h"
+#endif
 
 /*
  * NOTE: the translator must set DisasContext.cc_op to CC_OP_EFLAGS
@@ -115,6 +118,10 @@ void helper_into(CPUX86State *env, int next_eip_addend)
 void helper_cpuid(CPUX86State *env)
 {
     uint32_t eax, ebx, ecx, edx;
+#ifdef CONFIG_LATX_AVX_OPT
+    uint32_t leaf = env->regs[R_EAX];
+    uint32_t subleaf = env->regs[R_ECX];
+#endif
 
     cpu_svm_check_intercept_param(env, SVM_EXIT_CPUID, 0, GETPC());
 
@@ -124,6 +131,9 @@ void helper_cpuid(CPUX86State *env)
     env->regs[R_EBX] = ebx;
     env->regs[R_ECX] = ecx;
     env->regs[R_EDX] = edx;
+#ifdef CONFIG_LATX_AVX_OPT
+    latx_avx_trace_record_cpuid(leaf, subleaf, eax, ebx, ecx, edx);
+#endif
 }
 
 #if defined(CONFIG_USER_ONLY)

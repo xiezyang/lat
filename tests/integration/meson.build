@@ -8,7 +8,6 @@ if host_machine.cpu_family() == 'loongarch64' and \
       files('cef-userns-nested.S'),
     ],
     protocol: 'exitcode',
-    suite: 'latx-integration',
     timeout: 30,
   )
   test(
@@ -19,52 +18,6 @@ if host_machine.cpu_family() == 'loongarch64' and \
       files('cef-userns-exec.S'),
     ],
     protocol: 'exitcode',
-    suite: 'latx-integration',
-    timeout: 30,
-  )
-  test(
-    'test-proc-readdir',
-    find_program('test-proc-readdir.sh'),
-    args: [
-      emulators['latx-x86_64'],
-      files('proc-readdir.S'),
-    ],
-    protocol: 'exitcode',
-    suite: 'latx-integration',
-    timeout: 30,
-  )
-  test(
-    'test-rcu-thread-visibility',
-    find_program('test-rcu-thread-visibility.sh'),
-    args: [
-      emulators['latx-x86_64'],
-      files('rcu-thread-visibility.S'),
-    ],
-    protocol: 'exitcode',
-    suite: 'latx-integration',
-    timeout: 30,
-  )
-  test(
-    'test-clone-namespaces',
-    find_program('test-clone-namespaces.sh'),
-    args: [
-      emulators['latx-x86_64'],
-      files('clone-namespaces.S'),
-    ],
-    protocol: 'exitcode',
-    suite: 'latx-integration',
-    timeout: 30,
-  )
-  test(
-    'test-setns-ipc-mqueue',
-    find_program('test-setns-ipc-mqueue.sh'),
-    args: [
-      emulators['latx-x86_64'],
-      files('setns-ipc-mqueue.S'),
-      files('exec-with-pidfd.py'),
-    ],
-    protocol: 'exitcode',
-    suite: 'latx-integration',
     timeout: 30,
   )
 endif

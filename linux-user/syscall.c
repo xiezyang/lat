@@ -435,12 +435,10 @@ static void latx_wine_pe_prefer_image_base(int fd, void *buffer, abi_long len)
 
 /* Flags for fork which we can implement within QEMU itself */
 #define CLONE_FORK_NAMESPACE_FLAGS \
-    (CLONE_NEWNS | CLONE_NEWUTS | CLONE_NEWIPC | CLONE_NEWUSER | \
-     CLONE_NEWPID | CLONE_NEWNET)
+    (CLONE_NEWUSER | CLONE_NEWPID | CLONE_NEWNET)
 
 #define CLONE_DIRECT_FORK_FLAGS \
-    (CLONE_NEWNS | CLONE_NEWUTS | CLONE_NEWIPC | CLONE_NEWUSER | \
-     CLONE_NEWPID | CLONE_NEWNET | CLONE_FS)
+    (CLONE_NEWUSER | CLONE_NEWPID | CLONE_NEWNET | CLONE_FS)
 
 #define CLONE_OPTIONAL_FORK_FLAGS               \
     (CLONE_SETTLS | CLONE_PARENT_SETTID |       \
@@ -461,13 +459,13 @@ static void latx_wine_pe_prefer_image_base(int fd, void *buffer, abi_long len)
 
 /* CLONE_VFORK is special cased early in do_fork(). The other flag bits
  * have almost all been allocated. We cannot support any of
- * CLONE_NEWCGROUP, CLONE_PTRACE, CLONE_UNTRACED.
+ * CLONE_NEWNS, CLONE_NEWCGROUP, CLONE_NEWUTS, CLONE_NEWIPC,
+ * CLONE_PTRACE, CLONE_UNTRACED.
  * The checks against the invalid thread masks above will catch these.
  * (The one remaining unallocated bit is 0x1000 which used to be CLONE_PID.)
- * Fork-like CLONE_NEWUSER is applied in the single-threaded child. Mount, UTS,
- * IPC, PID, network, and shared-fs clone flags require a deferred
- * single-thread child and use the libc clone wrapper so the kernel creates the
- * requested state.
+ * Fork-like CLONE_NEWUSER is applied in the single-threaded child. PID,
+ * network, and shared-fs clone flags require a deferred single-thread child
+ * and use the libc clone wrapper so the kernel creates the requested state.
  */
 
 /* Define DEBUG_ERESTARTSYS to force every syscall to be restarted
@@ -9336,7 +9334,7 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
     if (flags & CLONE_VFORK)
         flags &= ~(CLONE_VFORK | CLONE_VM);
 
-    direct_fork_flags = flags & (CLONE_DIRECT_FORK_FLAGS & ~CLONE_NEWUSER);
+    direct_fork_flags = flags & (CLONE_NEWPID | CLONE_NEWNET | CLONE_FS);
     userns_via_unshare = namespace_flags == CLONE_NEWUSER &&
                          !direct_fork_flags;
 
@@ -9379,7 +9377,6 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
         ts->info = parent_ts->info;
         ts->signal_mask = parent_ts->signal_mask;
         ts->seccomp_filter = parent_ts->seccomp_filter;
-        ts->ipc_namespace_isolated = parent_ts->ipc_namespace_isolated;
 
         if (flags & CLONE_CHILD_CLEARTID) {
             ts->child_tidptr = child_tidptr;
@@ -9506,9 +9503,6 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
             if (flags & CLONE_PARENT_SETTID)
                 put_user_u32(sys_gettid(), parent_tidptr);
             ts = (TaskState *)cpu->opaque;
-            if (flags & CLONE_NEWIPC) {
-                ts->ipc_namespace_isolated = true;
-            }
             if (flags & CLONE_SETTLS)
                 cpu_set_tls (env, newtls);
             if (flags & CLONE_CHILD_CLEARTID)
@@ -12261,6 +12255,7 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
             abi_ulong guest_envp;
             abi_ulong addr;
             char **q;
+            int total_size = 0;
             argc = 0;
             guest_argp = arg3;
             for (gp = guest_argp; gp; gp += sizeof(abi_ulong)) {
@@ -12299,6 +12294,7 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
                 if (!(*q)) {
                     goto execveat_efault;
                 }
+                total_size += strlen(*q) + 1;
             }
             *q = NULL;
 
@@ -12314,6 +12310,7 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
                 if (!(*q)) {
                     goto execveat_efault;
                 }
+                total_size += strlen(*q) + 1;
             }
             *q = NULL;
 
@@ -12430,6 +12427,7 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
             abi_ulong guest_envp;
             abi_ulong addr;
             char **q;
+            int total_size = 0;
             argc = 0;
             guest_argp = arg2;
             for (gp = guest_argp; gp; gp += sizeof(abi_ulong)) {
@@ -12460,6 +12458,7 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
                     break;
                 if (!(*q = lock_user_string(addr)))
                     goto execve_efault;
+                total_size += strlen(*q) + 1;
             }
             *q = NULL;
 
@@ -12471,6 +12470,7 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
                     break;
                 if (!(*q = lock_user_string(addr)))
                     goto execve_efault;
+                total_size += strlen(*q) + 1;
             }
             *q = NULL;
 
@@ -17846,23 +17846,7 @@ defined(__loongarch__)
 
 #if defined(TARGET_NR_setns) && defined(CONFIG_SETNS)
     case TARGET_NR_setns:
-        {
-            bool joins_ipc_namespace = (arg2 & CLONE_NEWIPC) != 0;
-
-            if (arg2 == 0) {
-                int namespace_type = ioctl(arg1, NS_GET_NSTYPE);
-
-                if (namespace_type >= 0) {
-                    joins_ipc_namespace = namespace_type == CLONE_NEWIPC;
-                }
-            }
-
-            ret = get_errno(setns(arg1, arg2));
-            if (ret == 0 && joins_ipc_namespace) {
-                ((TaskState *)cpu->opaque)->ipc_namespace_isolated = true;
-            }
-            return ret;
-        }
+        return get_errno(setns(arg1, arg2));
 #endif
 #ifdef TARGET_NR_seccomp
     case TARGET_NR_seccomp:
@@ -17871,9 +17855,6 @@ defined(__loongarch__)
 #if defined(TARGET_NR_unshare) && defined(CONFIG_SETNS)
     case TARGET_NR_unshare:
         ret = get_errno(unshare(arg1));
-        if (ret == 0 && (arg1 & CLONE_NEWIPC)) {
-            ((TaskState *)cpu->opaque)->ipc_namespace_isolated = true;
-        }
         if (arg1 & CLONE_NEWUSER) {
             rcu_start_deferred_thread();
         }

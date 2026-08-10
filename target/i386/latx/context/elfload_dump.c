@@ -375,7 +375,7 @@ void DumpBinary(char* p, int sz)
     // PPPPPPPP XX XX XX ... XX | 0123456789ABCDEF
     unsigned char* d = (unsigned char*)p;
     int delta = ((uintptr_t)p)&0xf;
-    for (; sz;) {
+    for (int i = 0; sz; ++i) {
         printf("%p ", (void*)(((uintptr_t)d)&~0xf));
         int n = 16 - delta;
         if (n>sz) n = sz;

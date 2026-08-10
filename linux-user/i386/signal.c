@@ -358,6 +358,12 @@ static void save_xmm_to_env(CPUX86State *env)
         save_one_xmm(14, XMM14_MAPS);
         save_one_xmm(15, XMM15_MAPS);
 #endif
+        if (!option_enable_lasx) {
+            for (int i = 0; i < CPU_NB_REGS; ++i) {
+                env->xmm_regs[i].ZMM_Q(2) = env->ymmh_regs[i]._q[0];
+                env->xmm_regs[i].ZMM_Q(3) = env->ymmh_regs[i]._q[1];
+            }
+        }
     }
 }
 

@@ -14,32 +14,6 @@ static const char *base;
 static GHashTable *hash;
 static QemuMutex lock;
 
-#ifdef CONFIG_LATX
-static bool path_is_proc_namespace(const char *name)
-{
-    static const char proc_root[] = "/proc";
-    const char *component;
-    size_t length = sizeof(proc_root) - 1;
-
-    if (strncmp(name, proc_root, length) ||
-        (name[length] && name[length] != '/')) {
-        return false;
-    }
-
-    component = name + length;
-    while (*component) {
-        component += strspn(component, "/");
-        if (component[0] == '.' && component[1] == '.' &&
-            (component[2] == '\0' || component[2] == '/')) {
-            return false;
-        }
-        component += strcspn(component, "/");
-    }
-
-    return true;
-}
-#endif
-
 void init_paths(const char *prefix)
 {
     if (prefix[0] == '\0' || !strcmp(prefix, "/")) {
@@ -58,31 +32,6 @@ void init_paths(const char *prefix)
     qemu_mutex_init(&lock);
 }
 
-static bool path_has_prefix(const char *name)
-{
-    if (!base || !name || name[0] != '/' || name[1] == '\0') {
-        return false;
-    }
-
-#ifdef CONFIG_LATX
-    /* Keep live procfs visible even when the runtime contains /proc. */
-    if (path_is_proc_namespace(name)) {
-        return false;
-    }
-#endif
-
-    return true;
-}
-
-char *path_get_prefixed(const char *name)
-{
-    if (!path_has_prefix(name)) {
-        return g_strdup(name);
-    }
-
-    return g_build_filename(base, name, NULL);
-}
-
 /* Look for path in emulation dir, otherwise return name. */
 const char *path(const char *name)
 {
@@ -90,7 +39,8 @@ const char *path(const char *name)
     const char *ret;
 
     /* Only do absolute paths: quick and dirty, but should mostly be OK.  */
-    if (!path_has_prefix(name)) {
+    if (!base || !name || name[0] != '/'
+            || (name[0]  == '/' && name[1] == '\0')) {
         return name;
     }
 
@@ -101,7 +51,7 @@ const char *path(const char *name)
         ret = value ? value : name;
     } else {
         char *save = g_strdup(name);
-        char *full = path_get_prefixed(name);
+        char *full = g_build_filename(base, name, NULL);
 
         /* Look for the path; record the result, pass or fail.  */
         if (access(full, F_OK) == 0) {

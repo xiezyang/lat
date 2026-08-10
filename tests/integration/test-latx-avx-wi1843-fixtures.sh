@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
+output_dir=${1:-/tmp/wi1843-x86-fixtures}
+remote_host=${2:-xzy86}
+remote_dir=${3:-/tmp/latx-avx-wi1843-fixtures}
+script_dir=$root/tests/integration
+generated_mnemonics='vpackssdw vpacksswb vpackusdw vpackuswb vpunpckhbw vpunpckhdq vpunpckhqdq vpunpckhwd vpunpcklbw vpunpckldq vpunpcklwd vshufpd vshufps'
+
+python3 "$script_dir/generate-latx-avx-wi1843-fixtures.py" --output-dir "$script_dir"
+bash "$script_dir/check-latx-avx-wi1843-source.sh" "$root"
+bash -n "$script_dir/check-latx-avx-wi1843-mnemonic.sh" \
+    "$script_dir/build-latx-avx-wi1843-xzy86.sh" \
+    "$script_dir/test-latx-avx-wi1843-fixtures.sh"
+python3 -m json.tool "$root/tests/integration/latx-avx-opt-only-manifest.json" >/dev/null
+mkdir -p "$output_dir"
+for mnemonic in $generated_mnemonics; do
+    bash "$script_dir/build-latx-avx-wi1843-xzy86.sh" "$mnemonic" \
+        "$remote_host" "$remote_dir/$mnemonic" \
+        "$output_dir/latx-avx-single-$mnemonic.static"
+done
+
+manifest=$output_dir/native-manifest.tsv
+{
+    printf 'instruction\tnative_stdout_bytes\tnative_binary_sha256\tnative_stdout_sha256\n'
+    for mnemonic in $mnemonics; do
+        binary=$output_dir/latx-avx-single-$mnemonic.static
+        native=$binary.native
+        printf '%s\t%s\t%s\t%s\n' "$mnemonic" \
+            "$(wc -c < "$native")" \
+            "$(sha256sum "$binary" | awk '{print $1}')" \
+            "$(sha256sum "$native" | awk '{print $1}')"
+    done
+} > "$manifest"
+[[ $(awk 'NR > 1 {count++} END {print count + 0}' "$manifest") -eq 13 ]]
+printf 'PASS WI-1843 xzy86 generated fixture set: count=13 manifest=%s; vpunpcklqdq uses dedicated existing runner\n' "$manifest"

@@ -7,7 +7,6 @@ pkgdate=$(date +%Y%m%d)
 srcdir=$(realpath "$(dirname "$0")/../")
 pkgdir=$srcdir/pkg
 tarballs=$pkgname-$pkgver-$pkgdate.tar.xz
-package_root=$pkgdir/$pkgname-$pkgver
 
 prepare() {
     [ -d $srcdir/build32 ] || mkdir -p $srcdir/build32
@@ -87,8 +86,6 @@ package() {
     mkdir -p $pkgdir/$pkgname-$pkgver/usr/{bin,lib/binfmt.d,lib/sysctl.d}
     install -Dm755 -s $srcdir/build32/latx-i386 $pkgdir/$pkgname-$pkgver/usr/bin/latx-i386
     install -Dm755 -s $srcdir/build64/latx-x86_64 $pkgdir/$pkgname-$pkgver/usr/bin/latx-x86_64
-    install -Dm755 $srcdir/runtime/latu-runtime-manager \
-        $pkgdir/$pkgname-$pkgver/usr/bin/latu-runtime-manager
     cat >$pkgdir/$pkgname-$pkgver/usr/lib/binfmt.d/latx-i386.conf <<EOF
 :latx-i386:M::\x7fELF\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x03\x00:\xff\xff\xff\xff\xff\xfe\xfe\x00\x00\x00\xf4\xff\xff\xff\xff\xff\xfe\xff\xff\xff:/usr/bin/latx-i386:
 EOF
@@ -102,16 +99,6 @@ EOF
     )
 }
 
-report_artifacts() {
-    printf '\n构建和打包完成。\n'
-    printf '编译目录：\n'
-    printf '  32 位：%s（产物：%s）\n' "$srcdir/build32" "latx-i386"
-    printf '  64 位：%s（产物：%s）\n' "$srcdir/build64" "latx-x86_64"
-    printf '打包暂存目录：%s\n' "$package_root"
-    printf '最终压缩包：%s\n' "$srcdir/$tarballs"
-}
-
 prepare
 build
 package
-report_artifacts

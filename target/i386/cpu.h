@@ -1035,6 +1035,7 @@ typedef uint64_t FeatureWordArray[FEATURE_WORDS];
 #define EXCP10_COPR	16
 #define EXCP11_ALGN	17
 #define EXCP12_MCHK	18
+#define EXCP13_XM	19
 
 #define EXCP_VMEXIT     0x100 /* only for system emulation */
 #define EXCP_SYSCALL    0x101 /* only for user emulation */
@@ -2126,6 +2127,9 @@ static inline bool cpu_vmx_maybe_enabled(CPUX86State *env)
 void update_fp_status(CPUX86State *env);
 void update_mxcsr_status(CPUX86State *env);
 void update_mxcsr_from_sse_status(CPUX86State *env);
+uint32_t helper_lsx_fma_flags(CPUX86State *env, uint64_t x, uint64_t y,
+                              uint64_t z, int operation_flags,
+                              int double_precision);
 
 static inline void cpu_set_mxcsr(CPUX86State *env, uint32_t mxcsr)
 {

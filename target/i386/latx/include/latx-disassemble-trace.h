@@ -127,6 +127,18 @@ struct dt_x86 {
     dt_cs_x86_op operands[8];
     dt_x86_avx_cc avx_cc;
 };
+
+enum latx_x86_isa_feature {
+    LATX_X86_ISA_AVX_OPT_ONLY = 1 << 7,
+    LATX_X86_ISA_AVX = 1 << 0,
+    LATX_X86_ISA_AVX2 = 1 << 1,
+    LATX_X86_ISA_AVX512 = 1 << 2,
+    LATX_X86_ISA_F16C = 1 << 3,
+    LATX_X86_ISA_FMA = 1 << 4,
+    LATX_X86_ISA_FMA4 = 1 << 5,
+    LATX_X86_ISA_XOP = 1 << 6,
+};
+
 struct la_dt_insn{
     union {
         struct dt_x86 x86;
@@ -139,6 +151,7 @@ struct la_dt_insn{
     char mnemonic[32];
     char op_str[160];
 #endif
+    uint16_t isa_features;
 };
 typedef struct {
     const char* name;

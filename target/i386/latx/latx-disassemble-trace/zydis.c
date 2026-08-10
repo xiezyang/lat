@@ -70,6 +70,7 @@ static void handle_Operands(struct la_dt_insn *ret,
     const ZydisDecodedInstruction *instruction,
     const ZydisDecodedOperand *operands)
 {
+    ZyanU8 imm_id = 0;
     int opcount = 0;
     uint8_t iopc = instruction->operand_count > 5 ?
          5 : instruction->operand_count;
@@ -116,6 +117,7 @@ static void handle_Operands(struct la_dt_insn *ret,
                 ret->x86.operands[opcount].size = dt_lazydis_mode / 8;
             }
             opcount++;
+            ++imm_id;
             break;
         case ZYDIS_OPERAND_TYPE_UNUSED:
             continue;
@@ -157,6 +159,38 @@ static struct la_dt_insn *lazydis_get_from_insn(int64_t address,
     lsassert(instruction->mnemonic <= ZYDIS_MNEMONIC_MAX_VALUE);
     ret->size = instruction->length;
     ret->id = la_zydis_insn_tr[instruction->mnemonic].id;
+    switch (instruction->meta.isa_ext) {
+    case ZYDIS_ISA_EXT_AVX:
+    case ZYDIS_ISA_EXT_AVXAES:
+    case ZYDIS_ISA_EXT_AVX_VNNI:
+    case ZYDIS_ISA_EXT_VAES:
+    case ZYDIS_ISA_EXT_VPCLMULQDQ:
+        ret->isa_features = LATX_X86_ISA_AVX;
+        break;
+    case ZYDIS_ISA_EXT_AVX2:
+    case ZYDIS_ISA_EXT_AVX2GATHER:
+        ret->isa_features = LATX_X86_ISA_AVX2;
+        break;
+    case ZYDIS_ISA_EXT_AVX512EVEX:
+    case ZYDIS_ISA_EXT_AVX512VEX:
+        ret->isa_features = LATX_X86_ISA_AVX512;
+        break;
+    case ZYDIS_ISA_EXT_F16C:
+        ret->isa_features = LATX_X86_ISA_F16C;
+        break;
+    case ZYDIS_ISA_EXT_FMA:
+        ret->isa_features = LATX_X86_ISA_FMA;
+        break;
+    case ZYDIS_ISA_EXT_FMA4:
+        ret->isa_features = LATX_X86_ISA_FMA4;
+        break;
+    case ZYDIS_ISA_EXT_XOP:
+        ret->isa_features = LATX_X86_ISA_XOP;
+        break;
+    default:
+        ret->isa_features = 0;
+        break;
+    }
     char *mybytes = (char *)(intptr_t)ret->address;
     for (int i = 0; i < ret->size; i++) {
         ret->bytes[i] = mybytes[i];
