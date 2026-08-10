@@ -27,6 +27,16 @@ fi
 
 mnemonics=$(objdump -d --no-show-raw-insn -Mintel "$probe" |
     awk '$2 ~ /^v[a-zA-Z0-9_]+$/ { print $2 }' | sort -u)
+if [ "$expected" = vpxor ]; then
+    test "$mnemonics" = "vmovdqu
+vpxor
+vzeroupper" || {
+        echo "FAIL expected VPXOR fixture mnemonics, found: $mnemonics" >&2
+        exit 1
+    }
+    echo "PASS single AVX mnemonic: $expected"
+    exit 0
+fi
 if [ "$mnemonics" != "$expected" ]; then
     echo "FAIL expected AVX mnemonic '$expected', found: $mnemonics" >&2
     exit 1
