@@ -4733,7 +4733,8 @@ static bool translate_vpermil_lsx(IR1_INST *pir1, bool pd)
     IR2_OPND result_low = ra_alloc_ftemp();
 
     lsassert(ir1_opnd_is_xmm(dest_opnd) || ymm);
-    lsassert(ir1_opnd_is_xmm(src_opnd) == !ymm ||
+    lsassert(ir1_opnd_is_mem(src_opnd) ||
+             ir1_opnd_is_xmm(src_opnd) == !ymm ||
              ir1_opnd_is_ymm(src_opnd) == ymm);
     load_avx_lsx_operand(src_opnd, ymm, &src_low, &src_high);
     if (!immediate) {
@@ -4744,7 +4745,7 @@ static bool translate_vpermil_lsx(IR1_INST *pir1, bool pd)
                                      immediate, imm & 0x3);
     } else {
         translate_vpermilps_lane_lsx(result_low, src_low, control_low,
-                                     immediate, imm & 0xf);
+                                     immediate, imm);
     }
     if (ymm) {
         IR2_OPND result_high = ra_alloc_ftemp();
@@ -4754,7 +4755,7 @@ static bool translate_vpermil_lsx(IR1_INST *pir1, bool pd)
                                          immediate, (imm >> 2) & 0x3);
         } else {
             translate_vpermilps_lane_lsx(result_high, src_high, control_high,
-                                         immediate, imm & 0xf);
+                                         immediate, imm);
         }
         store_avx_lsx_result(dest_opnd, result_low, result_high);
     } else {
@@ -4811,18 +4812,6 @@ static void translate_vpermute_w_dynamic_lsx(IR2_OPND result,
     la_vori_b(result, control, 0);
 }
 
-static void translate_vpermute_q_dynamic_lsx(IR2_OPND result,
-                                             IR2_OPND data_low,
-                                             IR2_OPND data_high,
-                                             IR2_OPND index)
-{
-    IR2_OPND control = ra_alloc_ftemp();
-
-    la_vandi_b(control, index, 3);
-    la_vshuf_d(control, data_high, data_low);
-    la_vori_b(result, control, 0);
-}
-
 bool translate_vpermd_lsx(IR1_INST *pir1)
 {
     IR1_OPND *dest_opnd = ir1_get_opnd(pir1, 0);
@@ -4857,31 +4846,22 @@ bool translate_vpermpx_lsx(IR1_INST *pir1)
 
     lsassert(ir1_opnd_is_ymm(dest_opnd));
     if (ir1_opcode(pir1) == dt_X86_INS_VPERMPD) {
+        lsassert(ir1_opnd_is_imm(index_or_imm));
         load_avx_lsx_operand(ir1_get_opnd(pir1, 1), true,
                              &data_low, &data_high);
-        if (ir1_opnd_is_imm(index_or_imm)) {
-            translate_vpermute_q_imm_lsx(result_low, result_high,
-                                         data_low, data_high,
-                                         ir1_opnd_uimm(index_or_imm));
-        } else {
-            IR2_OPND index_low;
-            IR2_OPND index_high;
-
-            load_avx_lsx_operand(index_or_imm, true,
-                                 &index_low, &index_high);
-            translate_vpermute_q_dynamic_lsx(result_low, data_low, data_high,
-                                             index_low);
-            translate_vpermute_q_dynamic_lsx(result_high, data_low, data_high,
-                                             index_high);
-        }
+        translate_vpermute_q_imm_lsx(result_low, result_high,
+                                     data_low, data_high,
+                                     ir1_opnd_uimm(index_or_imm));
         store_avx_lsx_result(dest_opnd, result_low, result_high);
     } else {
+        IR1_OPND *index_opnd = ir1_get_opnd(pir1, 1);
+        IR1_OPND *data_opnd = ir1_get_opnd(pir1, 2);
         IR2_OPND index_low;
         IR2_OPND index_high;
 
-        load_avx_lsx_operand(ir1_get_opnd(pir1, 2), true,
+        load_avx_lsx_operand(data_opnd, true,
                              &data_low, &data_high);
-        load_avx_lsx_operand(index_or_imm, true, &index_low, &index_high);
+        load_avx_lsx_operand(index_opnd, true, &index_low, &index_high);
         translate_vpermute_w_dynamic_lsx(result_low, data_low, data_high,
                                          index_low);
         translate_vpermute_w_dynamic_lsx(result_high, data_low, data_high,
@@ -4901,21 +4881,10 @@ bool translate_vpermq_lsx(IR1_INST *pir1)
     IR2_OPND result_low = ra_alloc_ftemp();
     IR2_OPND result_high = ra_alloc_ftemp();
 
-    lsassert(ir1_opnd_is_ymm(dest_opnd));
+    lsassert(ir1_opnd_is_ymm(dest_opnd) && ir1_opnd_is_imm(imm_opnd));
     load_avx_lsx_operand(src_opnd, true, &src_low, &src_high);
-    if (ir1_opnd_is_imm(imm_opnd)) {
-        translate_vpermute_q_imm_lsx(result_low, result_high, src_low, src_high,
-                                     ir1_opnd_uimm(imm_opnd));
-    } else {
-        IR2_OPND index_low;
-        IR2_OPND index_high;
-
-        load_avx_lsx_operand(imm_opnd, true, &index_low, &index_high);
-        translate_vpermute_q_dynamic_lsx(result_low, src_low, src_high,
-                                         index_low);
-        translate_vpermute_q_dynamic_lsx(result_high, src_low, src_high,
-                                         index_high);
-    }
+    translate_vpermute_q_imm_lsx(result_low, result_high, src_low, src_high,
+                                 ir1_opnd_uimm(imm_opnd));
     store_avx_lsx_result(dest_opnd, result_low, result_high);
     return true;
 }

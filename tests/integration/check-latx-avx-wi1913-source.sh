@@ -58,9 +58,14 @@ grep -Fq 'element_bits == 16 ? imm : imm >> elements' "$translator"
 grep -Fq 'la_vori_b(result, src, 0)' "$translator"
 grep -Fq 'la_vshuf_w(control, src, src)' "$translator"
 grep -Fq 'la_vshuf_w(control, data_high, data_low)' "$translator"
-grep -Fq 'translate_vpermute_q_dynamic_lsx' "$translator"
-grep -Fq 'la_vshuf_d(control, data_high, data_low)' "$translator"
 grep -Fq 'la_vshuf4i_w(result, src, imm)' "$translator"
+grep -Fq 'ir1_opnd_is_mem(src_opnd)' "$translator"
+grep -Fq 'lsassert(ir1_opnd_is_imm(index_or_imm))' "$translator"
+grep -Fq 'lsassert(ir1_opnd_is_ymm(dest_opnd) && ir1_opnd_is_imm(imm_opnd))' "$translator"
+grep -Fq 'IR1_OPND *index_opnd = ir1_get_opnd(pir1, 1)' "$translator"
+grep -Fq 'IR1_OPND *data_opnd = ir1_get_opnd(pir1, 2)' "$translator"
+grep -Fq 'load_avx_lsx_operand(data_opnd, true' "$translator"
+grep -Fq 'load_avx_lsx_operand(index_opnd, true' "$translator"
 
 fixture_dir=$(python3 "$root/tests/integration/generate-latx-avx-wi1913-fixtures.py")
 trap 'rm -rf "$fixture_dir"' EXIT
