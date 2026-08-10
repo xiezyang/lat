@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "mnemonics": [
+    "vpmaskmovd",
+    "vpmaskmovq"
+  ],
+  "normal": {
+    "status": 0,
+    "stdout_bytes": 768,
+    "records": 12
+  },
+  "mask_zero_cross_page": {
+    "cases": [
+      "load-xmm-zero",
+      "load-ymm-zero",
+      "store-xmm-zero",
+      "store-ymm-zero"
+    ],
+    "status": 0,
+    "stdout_bytes": 16
+  },
+  "mask_on_cross_page": {
+    "cases": [
+      "load-xmm-one",
+      "load-ymm-mix",
+      "store-xmm-one",
+      "store-ymm-mix"
+    ],
+    "status": 139,
+    "signal": "SIGSEGV",
+    "stdout_bytes": 16
+  },
+  "addressing": {
+    "base_displacement": true,
+    "base_index_scale": [
+      4,
+      8
+    ],
+    "guest_index_operand": false
+  }
+}

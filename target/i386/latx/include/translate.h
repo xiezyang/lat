@@ -854,6 +854,7 @@ TRANS_FUNC_DEF(vpsravd);
 TRANS_FUNC_DEF(vpsllvq);
 TRANS_FUNC_DEF(vpsllvd);
 TRANS_FUNC_DEF(vpmaskmovx);
+TRANS_FUNC_DEF(vpmaskmovx_lsx);
 TRANS_FUNC_DEF(vpshufd);
 TRANS_FUNC_DEF(vpshufd_lsx);
 TRANS_FUNC_DEF(vpmuldq);
@@ -1417,6 +1418,14 @@ TRANS_FUNC_DEF(vpgatherdd);
 TRANS_FUNC_DEF(vpgatherqd);
 TRANS_FUNC_DEF(vpgatherdq);
 TRANS_FUNC_DEF(vpgatherqq);
+TRANS_FUNC_DEF(vpgatherdd_lsx);
+TRANS_FUNC_DEF(vpgatherqd_lsx);
+TRANS_FUNC_DEF(vpgatherdq_lsx);
+TRANS_FUNC_DEF(vpgatherqq_lsx);
+TRANS_FUNC_DEF(vgatherdps_lsx);
+TRANS_FUNC_DEF(vgatherqps_lsx);
+TRANS_FUNC_DEF(vgatherdpd_lsx);
+TRANS_FUNC_DEF(vgatherqpd_lsx);
 #endif
 
 TRANS_FUNC_DEF(pext);

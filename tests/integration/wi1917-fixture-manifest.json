@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "work_item": "WI-1917",
+  "mnemonic_count": 8,
+  "mnemonics": ["vpgatherdd", "vpgatherdq", "vpgatherqd", "vpgatherqq", "vgatherdps", "vgatherdpd", "vgatherqps", "vgatherqpd"],
+  "xmm_only": ["vpgatherqd", "vgatherqps"],
+  "coverage": {
+    "xmm_and_ymm": ["vpgatherdd", "vpgatherdq", "vpgatherqq", "vgatherdps", "vgatherdpd", "vgatherqpd"],
+    "xmm_only_reason": "xzy86 assembler rejects the YMM form with operand size mismatch",
+    "mask": "all lanes enabled and alternating enabled/disabled lanes",
+    "index": "positive and negative scaled indices",
+    "fault": "base at last byte of a mapped page with second page PROT_NONE",
+    "saved_state": "destination and post-gather mask, full XMM/YMM state via XSAVE"
+  },
+  "fresh_x86_run": {
+    "host": "xzy86",
+    "output_dir": "/tmp/wi1917-x86.EdlwAJ",
+    "manifest": "/tmp/wi1917-x86.EdlwAJ/native-manifest.tsv",
+    "command_stdout": "/tmp/wi1917-x86-run6.stdout",
+    "command_stderr": "/tmp/wi1917-x86-run6.stderr",
+    "command_status": "/tmp/wi1917-x86-run6.status",
+    "command_exit": 0,
+    "normal_pass": 8,
+    "fault_sigsegv": 8
+  }
+}

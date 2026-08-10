@@ -2089,6 +2089,10 @@ void translate_context_init(void)
                                    translate_vpshufhw_lsx);
             translate_register_lsx(dt_X86_INS_VPSHUFLW,
                                    translate_vpshuflw_lsx);
+            translate_register_lsx(dt_X86_INS_VPMASKMOVQ,
+                                   translate_vpmaskmovx_lsx);
+            translate_register_lsx(dt_X86_INS_VPMASKMOVD,
+                                   translate_vpmaskmovx_lsx);
             translate_register_lsx(dt_X86_INS_VADDPD,
                                    translate_vaddpd_lsx);
             translate_register_lsx(dt_X86_INS_VADDPS,
@@ -2181,6 +2185,22 @@ void translate_context_init(void)
                                    translate_vdppd_lsx);
             translate_register_lsx(dt_X86_INS_VDPPS,
                                    translate_vdpps_lsx);
+            translate_register_lsx(dt_X86_INS_VPGATHERDD,
+                                   translate_vpgatherdd_lsx);
+            translate_register_lsx(dt_X86_INS_VPGATHERQD,
+                                   translate_vpgatherqd_lsx);
+            translate_register_lsx(dt_X86_INS_VPGATHERDQ,
+                                   translate_vpgatherdq_lsx);
+            translate_register_lsx(dt_X86_INS_VPGATHERQQ,
+                                   translate_vpgatherqq_lsx);
+            translate_register_lsx(dt_X86_INS_VGATHERDPS,
+                                   translate_vgatherdps_lsx);
+            translate_register_lsx(dt_X86_INS_VGATHERQPS,
+                                   translate_vgatherqps_lsx);
+            translate_register_lsx(dt_X86_INS_VGATHERDPD,
+                                   translate_vgatherdpd_lsx);
+            translate_register_lsx(dt_X86_INS_VGATHERQPD,
+                                   translate_vgatherqpd_lsx);
         }
         translate_register_lsx(dt_X86_INS_VMOVNTDQA,
                                translate_vmovntdqa_lsx);

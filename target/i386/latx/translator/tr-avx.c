@@ -6493,6 +6493,138 @@ bool translate_vpshufd(IR1_INST * pir1) {
 }
 
 
+static void vpmaskmov_lsx_lane(IR2_OPND vector, IR2_OPND mask,
+                               IR2_OPND address, int vector_lane,
+                               int memory_lane,
+                               int element_size, bool store)
+{
+    IR2_OPND mask_value = ra_alloc_itemp();
+    IR2_OPND mask_sign = ra_alloc_itemp();
+    IR2_OPND value = ra_alloc_itemp();
+    IR2_OPND skip = ra_alloc_label();
+    int offset = memory_lane * element_size;
+
+    if (element_size == 4) {
+        la_vpickve2gr_wu(mask_value, mask, vector_lane);
+        la_bstrpick_d(mask_sign, mask_value, 31, 31);
+    } else {
+        la_vpickve2gr_du(mask_value, mask, vector_lane);
+        la_bstrpick_d(mask_sign, mask_value, 63, 63);
+    }
+    la_beq(mask_sign, zero_ir2_opnd, skip);
+
+    if (store) {
+        if (element_size == 4) {
+            la_vpickve2gr_wu(value, vector, vector_lane);
+            gen_test_page_flag_force(address, offset,
+                                     PAGE_WRITE | PAGE_WRITE_ORG);
+            la_st_w(value, address, offset);
+        } else {
+            la_vpickve2gr_du(value, vector, vector_lane);
+            gen_test_page_flag_force(address, offset,
+                                     PAGE_WRITE | PAGE_WRITE_ORG);
+            la_st_d(value, address, offset);
+        }
+    } else if (element_size == 4) {
+        gen_test_page_flag_force(address, offset, PAGE_READ);
+        la_ld_w(value, address, offset);
+        la_vinsgr2vr_w(vector, value, vector_lane);
+    } else {
+        gen_test_page_flag_force(address, offset, PAGE_READ);
+        la_ld_d(value, address, offset);
+        la_vinsgr2vr_d(vector, value, vector_lane);
+    }
+
+    la_label(skip);
+    ra_free_temp(value);
+    ra_free_temp(mask_sign);
+    ra_free_temp(mask_value);
+}
+
+bool translate_vpmaskmovx_lsx(IR1_INST *pir1)
+{
+    IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
+    IR1_OPND *opnd1 = ir1_get_opnd(pir1, 1);
+    IR1_OPND *opnd2 = ir1_get_opnd(pir1, 2);
+    bool store = ir1_opnd_is_mem(opnd0);
+    bool ymm = ir1_opnd_is_ymm(opnd1);
+    bool quadword = ir1_opcode(pir1) == dt_X86_INS_VPMASKMOVQ;
+    int element_size = quadword ? 8 : 4;
+    int lane_count = quadword ? 2 : 4;
+
+    lsassert(ir1_opcode(pir1) == dt_X86_INS_VPMASKMOVD ||
+             ir1_opcode(pir1) == dt_X86_INS_VPMASKMOVQ);
+    lsassert(ir1_opnd_is_xmm(opnd1) || ir1_opnd_is_ymm(opnd1));
+    lsassert(ymm ? (ir1_opnd_is_ymm(opnd2) &&
+                    (store || ir1_opnd_is_ymm(opnd0))) :
+                    (ir1_opnd_is_xmm(opnd2) &&
+                     (store || ir1_opnd_is_xmm(opnd0))));
+    lsassert(store ? (ir1_opnd_is_mem(opnd0) &&
+                      (ir1_opnd_is_xmm(opnd2) || ir1_opnd_is_ymm(opnd2))) :
+                    (ir1_opnd_is_mem(opnd2) &&
+                     (ir1_opnd_is_xmm(opnd0) || ir1_opnd_is_ymm(opnd0))));
+
+    if (ymm) {
+        tr_save_ymm_to_env(UINT16_MAX);
+    }
+
+    if (store) {
+        IR2_OPND address = convert_mem_to_itemp(opnd0);
+        int src_index = ir1_opnd_base_reg_num(opnd2);
+        int mask_index = ir1_opnd_base_reg_num(opnd1);
+        IR2_OPND src_low = ra_alloc_xmm(src_index);
+        IR2_OPND mask_low = ra_alloc_xmm(mask_index);
+
+        for (int lane = 0; lane < lane_count; ++lane) {
+            vpmaskmov_lsx_lane(src_low, mask_low, address, lane, lane,
+                               element_size, true);
+        }
+        if (ymm) {
+            IR2_OPND src_high = load_ymm_high128_shadow(src_index);
+            IR2_OPND mask_high = load_ymm_high128_shadow(mask_index);
+
+            for (int lane = 0; lane < lane_count; ++lane) {
+                vpmaskmov_lsx_lane(src_high, mask_high, address, lane,
+                                   lane + lane_count, element_size, true);
+            }
+            ra_free_temp(mask_high);
+            ra_free_temp(src_high);
+        }
+        ra_free_temp(address);
+    } else {
+        IR2_OPND address = convert_mem_to_itemp(opnd2);
+        int dest_index = ir1_opnd_base_reg_num(opnd0);
+        int mask_index = ir1_opnd_base_reg_num(opnd1);
+        IR2_OPND dest_low = ra_alloc_xmm(dest_index);
+        IR2_OPND mask_low = ra_alloc_ftemp();
+
+        /* Copy the mask before writing dest, including the dest/mask alias. */
+        la_vori_b(mask_low, ra_alloc_xmm(mask_index), 0);
+        if (!ymm) {
+            clear_ymm_high128_shadow(dest_index);
+        }
+        for (int lane = 0; lane < lane_count; ++lane) {
+            vpmaskmov_lsx_lane(dest_low, mask_low, address, lane, lane,
+                               element_size, false);
+        }
+        if (ymm) {
+            IR2_OPND dest_high = load_ymm_high128_shadow(dest_index);
+            IR2_OPND mask_high = load_ymm_high128_shadow(mask_index);
+
+            for (int lane = 0; lane < lane_count; ++lane) {
+                vpmaskmov_lsx_lane(dest_high, mask_high, address, lane,
+                                   lane + lane_count, element_size, false);
+            }
+            store_ymm_high128_shadow(dest_high, dest_index);
+            ra_free_temp(mask_high);
+            ra_free_temp(dest_high);
+        }
+        ra_free_temp(mask_low);
+        ra_free_temp(address);
+    }
+    return true;
+}
+
 bool translate_vpmaskmovx(IR1_INST * pir1) {
     IR1_OPND * opnd0 = ir1_get_opnd(pir1, 0);
     IR1_OPND * opnd1 = ir1_get_opnd(pir1, 1);
@@ -9407,5 +9539,197 @@ bool translate_vdpps_lsx(IR1_INST *pir1)
         store_avx_lsx_result(opnd0, result_low, result_low);
     }
     return true;
+}
+
+static void translate_avx_gather_lane_lsx(IR2_OPND dest,
+                                          IR2_OPND mask_values,
+                                          IR2_OPND mask_store,
+                                          IR2_OPND index_values,
+                                          IR2_OPND base_addr,
+                                          IR2_OPND address,
+                                          int scale,
+                                          int lane,
+                                          int index_lane,
+                                          bool index64,
+                                          bool value64,
+                                          bool high_mask,
+                                          int mask_index,
+                                          bool high_dest,
+                                          int dest_index)
+{
+    IR2_OPND mask_value = ra_alloc_itemp();
+    IR2_OPND index_value = ra_alloc_itemp();
+    IR2_OPND loaded = ra_alloc_itemp();
+    IR2_OPND load = ra_alloc_label();
+    IR2_OPND done = ra_alloc_label();
+
+    if (index64) {
+        la_vpickve2gr_d(index_value, index_values, index_lane);
+        la_vpickve2gr_d(mask_value, mask_values, lane);
+    } else {
+        la_vpickve2gr_w(index_value, index_values, index_lane);
+        la_vpickve2gr_w(mask_value, mask_values, lane);
+    }
+
+    /* A clear mask lane must not issue a memory access. */
+    la_blt(mask_value, zero_ir2_opnd, load);
+    if (value64) {
+        la_vinsgr2vr_d(mask_store, zero_ir2_opnd, lane);
+    } else {
+        la_vinsgr2vr_w(mask_store, zero_ir2_opnd, lane);
+    }
+    if (high_mask) {
+        store_ymm_high128_shadow(mask_store, mask_index);
+    }
+    la_b(done);
+
+    la_label(load);
+    adjust_vsib_index(address, base_addr, index_value, scale);
+    if (value64) {
+        la_ld_d(loaded, address, 0);
+        la_vinsgr2vr_d(dest, loaded, lane);
+    } else {
+        la_ld_w(loaded, address, 0);
+        la_vinsgr2vr_w(dest, loaded, lane);
+    }
+    if (high_dest) {
+        store_ymm_high128_shadow(dest, dest_index);
+    }
+    if (value64) {
+        la_vinsgr2vr_d(mask_store, zero_ir2_opnd, lane);
+    } else {
+        la_vinsgr2vr_w(mask_store, zero_ir2_opnd, lane);
+    }
+    if (high_mask) {
+        store_ymm_high128_shadow(mask_store, mask_index);
+    }
+
+    la_label(done);
+}
+
+static bool translate_avx_gather_lsx(IR1_INST *pir1,
+                                     bool index64,
+                                     bool value64,
+                                     bool ymm_allowed)
+{
+    IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
+    IR1_OPND *opnd1 = ir1_get_opnd(pir1, 1);
+    IR1_OPND *opnd2 = ir1_get_opnd(pir1, 2);
+    bool ymm = ir1_opnd_is_ymm(opnd0);
+    int dest_index = ir1_opnd_base_reg_num(opnd0);
+    int mask_index = ir1_opnd_base_reg_num(opnd2);
+    int index_index = ir1_opnd_vsib_index_reg_num(opnd1);
+    bool has_base;
+    longx offset;
+    IR2_OPND base_addr = ra_alloc_itemp();
+    IR2_OPND address = ra_alloc_itemp();
+    IR2_OPND index_low = ra_alloc_ftemp();
+    IR2_OPND index_high_values = ra_alloc_ftemp();
+    IR2_OPND mask_low_values = ra_alloc_ftemp();
+    IR2_OPND mask_high_values = ra_alloc_ftemp();
+    IR2_OPND mask_low_store = ra_alloc_xmm(mask_index);
+    IR2_OPND dest_low = ra_alloc_xmm(dest_index);
+    bool index_ymm;
+
+    lsassert(ir1_opnd_is_mem(opnd1) && ir1_opnd_has_index(opnd1));
+    lsassert((ir1_opnd_is_xmm(opnd0) && ir1_opnd_is_xmm(opnd2)) ||
+             (ir1_opnd_is_ymm(opnd0) && ir1_opnd_is_ymm(opnd2)));
+    lsassert(!ymm || ymm_allowed);
+    if (ymm) {
+        lsassert(ir1_opnd_is_ymm(opnd0) && ir1_opnd_is_ymm(opnd2));
+    }
+    index_ymm = ir1_index_reg_is_ymm(opnd1);
+
+    has_base = ir1_opnd_has_base(opnd1);
+    offset = ir1_opnd_simm(opnd1);
+    li_guest_addr(base_addr, offset);
+    if (has_base) {
+        IR2_OPND base = ra_alloc_gpr(ir1_opnd_base_reg_num(opnd1));
+
+        la_add(base_addr, base_addr, base);
+    }
+    la_vori_b(index_low, ra_alloc_xmm(index_index), 0);
+    la_vori_b(mask_low_values, mask_low_store, 0);
+    if (ymm) {
+        la_vori_b(index_high_values, load_ymm_high128_shadow(index_index), 0);
+        la_vori_b(mask_high_values, load_ymm_high128_shadow(mask_index), 0);
+    }
+
+    int lanes_per_half = value64 ? 2 : 4;
+    int half_count = ymm ? 2 : 1;
+    for (int half = 0; half < half_count; ++half) {
+        IR2_OPND index_values = index_low;
+        IR2_OPND mask_values = mask_low_values;
+        IR2_OPND mask_store = mask_low_store;
+        IR2_OPND dest = dest_low;
+        bool high = half != 0;
+
+        if (high) {
+            index_values = index_ymm ? index_high_values : index_low;
+            mask_values = mask_high_values;
+            mask_store = mask_values;
+            dest = load_ymm_high128_shadow(dest_index);
+        }
+        for (int lane = 0; lane < lanes_per_half; ++lane) {
+            int index_lane = lane;
+
+            if (high && !index_ymm) {
+                index_lane += lanes_per_half;
+            }
+            translate_avx_gather_lane_lsx(
+                dest, mask_values, mask_store, index_values, base_addr,
+                address, ir1_opnd_scale(opnd1), lane, index_lane,
+                index64, value64,
+                high, mask_index, high, dest_index);
+        }
+    }
+
+    if (ymm) {
+        clear_ymm_high128_shadow(mask_index);
+    } else {
+        clear_ymm_high128_shadow(mask_index);
+        clear_ymm_high128_shadow(dest_index);
+    }
+    return true;
+}
+
+bool translate_vpgatherdd_lsx(IR1_INST *pir1)
+{
+    return translate_avx_gather_lsx(pir1, false, false, true);
+}
+
+bool translate_vpgatherqd_lsx(IR1_INST *pir1)
+{
+    return translate_avx_gather_lsx(pir1, true, false, false);
+}
+
+bool translate_vpgatherdq_lsx(IR1_INST *pir1)
+{
+    return translate_avx_gather_lsx(pir1, false, true, true);
+}
+
+bool translate_vpgatherqq_lsx(IR1_INST *pir1)
+{
+    return translate_avx_gather_lsx(pir1, true, true, true);
+}
+
+bool translate_vgatherdps_lsx(IR1_INST *pir1)
+{
+    return translate_vpgatherdd_lsx(pir1);
+}
+
+bool translate_vgatherqps_lsx(IR1_INST *pir1)
+{
+    return translate_vpgatherqd_lsx(pir1);
+}
+
+bool translate_vgatherdpd_lsx(IR1_INST *pir1)
+{
+    return translate_vpgatherdq_lsx(pir1);
+}
+
+bool translate_vgatherqpd_lsx(IR1_INST *pir1)
+{
+    return translate_vpgatherqq_lsx(pir1);
 }
 #endif
