@@ -4224,6 +4224,12 @@ void tr_save_ymm_to_env(uint16 ymm_to_save)
     tr_save_xmm64_to_env((uint8_t)(ymm_to_save >> 8));
 #endif
 
+    IR2_OPND env = env_ir2_opnd;
+    if (!option_enable_lasx) {
+        env = ra_alloc_itemp();
+        la_or(env, env_ir2_opnd, zero_ir2_opnd);
+    }
+
     for (int i = 0; i < CPU_NB_REGS; ++i) {
         IR2_OPND address;
         IR2_OPND high;
@@ -4234,10 +4240,14 @@ void tr_save_ymm_to_env(uint16 ymm_to_save)
         high = load_ymm_high128_shadow(i);
         address = ra_alloc_itemp();
         li_d(address, lsenv_offset_of_xmm(lsenv, i) + 16);
-        la_add_d(address, env_ir2_opnd, address);
+        la_add_d(address, env, address);
         la_vst(high, address, 0);
         ra_free_temp(address);
         ra_free_temp(high);
+    }
+
+    if (!option_enable_lasx) {
+        ra_free_temp(env);
     }
 }
 
