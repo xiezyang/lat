@@ -18,7 +18,7 @@ for mnemonic in "${mnemonics[@]}"; do
     grep -Fq "dt_X86_INS_${mnemonic^^}" "$dispatch"
 done
 
-start=$(rg -n '^        if \(!option_enable_lasx\) \{' "$dispatch" |
+start=$(grep -n '^        if (!option_enable_lasx) {' "$dispatch" |
     head -n 1 | cut -d: -f1)
 end=$(awk -v start="$start" 'NR > start && /^        \}/{print NR; exit}' "$dispatch")
 lsx_block=$(sed -n "${start},${end}p" "$dispatch")
@@ -54,6 +54,13 @@ grep -Fq 'store_avx_lsx_result' "$translator"
 grep -Fq 'la_vbsrl_v' "$translator"
 grep -Fq 'la_vbitsel_v' "$translator"
 grep -Fq 'translate_vpermute_w_dynamic_lsx' "$translator"
+grep -Fq 'element_bits == 16 ? imm : imm >> elements' "$translator"
+grep -Fq 'la_vori_b(result, src, 0)' "$translator"
+grep -Fq 'la_vshuf_w(control, src, src)' "$translator"
+grep -Fq 'la_vshuf_w(control, data_high, data_low)' "$translator"
+grep -Fq 'translate_vpermute_q_dynamic_lsx' "$translator"
+grep -Fq 'la_vshuf_d(control, data_high, data_low)' "$translator"
+grep -Fq 'la_vshuf4i_w(result, src, imm)' "$translator"
 
 fixture_dir=$(python3 "$root/tests/integration/generate-latx-avx-wi1913-fixtures.py")
 trap 'rm -rf "$fixture_dir"' EXIT
