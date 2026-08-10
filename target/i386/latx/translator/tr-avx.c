@@ -2753,7 +2753,7 @@ bool translate_vpsadbw_lsx(IR1_INST *pir1)
         pir1, translate_vpsadbw_lane_lsx);
 }
 
-typedef void (*latx_vpmovx_extend_lsx_fn)(IR2_OPND, IR2_OPND);
+typedef IR2_INST *(*latx_vpmovx_extend_lsx_fn)(IR2_OPND, IR2_OPND);
 
 static void translate_vpmovx_extend_lane_lsx(IR2_OPND dest, IR2_OPND src,
                                              bool is_unsigned, int src_bits,
@@ -2872,6 +2872,7 @@ bool translate_vpmovsxxx_lsx(IR1_INST *pir1)
         return translate_vpmovx_lsx(pir1, false, 32, 64);
     default:
         lsassert(0);
+        return false;
     }
 }
 
@@ -2892,6 +2893,7 @@ bool translate_vpmovzxxx_lsx(IR1_INST *pir1)
         return translate_vpmovx_lsx(pir1, true, 32, 64);
     default:
         lsassert(0);
+        return false;
     }
 }
 
