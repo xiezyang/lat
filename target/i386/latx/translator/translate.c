@@ -4220,6 +4220,8 @@ void tr_load_xmm64_from_env(uint8 xmm_to_load)
 }
 #endif
 
+static inline void helper_save_reg(IR2_OPND opnd);
+
 static void tr_save_ymm_to_env_lsx(uint16 ymm_to_save)
 {
     helper_save_reg(a1_ir2_opnd);
