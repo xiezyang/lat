@@ -77,10 +77,7 @@ TRANS_FUNC_GEN_REAL(opcode, TRANS_FUNC(function))
     X(VPMULHW, pmulhw, la_vmuh_h) \
     X(VPMULLD, pmulld, la_vmul_w) \
     X(VPMULLW, pmullw, la_vmul_h) \
-    X(VPMULUDQ, pmuludq, la_vmulwev_d_wu) \
-    X(VPSIGNB, psignb, la_vsigncov_b) \
-    X(VPSIGND, psignd, la_vsigncov_w) \
-    X(VPSIGNW, psignw, la_vsigncov_h)
+    X(VPMULUDQ, pmuludq, la_vmulwev_d_wu)
 
 /* AVX integer comparisons whose two 128-bit halves can be translated alone. */
 #define LATX_AVX_INTEGER_CMP_LSX_TABLE(X) \
@@ -1320,6 +1317,9 @@ TRANS_FUNC_DEF(v##name##_lsx);
 LATX_AVX_INTEGER_REMAINING_3OP_LSX_TABLE(
     LATX_AVX_INTEGER_REMAINING_3OP_LSX_DECL)
 #undef LATX_AVX_INTEGER_REMAINING_3OP_LSX_DECL
+TRANS_FUNC_DEF(vpsignb_lsx);
+TRANS_FUNC_DEF(vpsignd_lsx);
+TRANS_FUNC_DEF(vpsignw_lsx);
 TRANS_FUNC_DEF(vpabsx_lsx);
 TRANS_FUNC_DEF(vpmaddubsw_lsx);
 TRANS_FUNC_DEF(vpmaddwd_lsx);

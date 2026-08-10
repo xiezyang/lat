@@ -2476,6 +2476,39 @@ LATX_AVX_INTEGER_REMAINING_3OP_LSX_TABLE(
     LATX_AVX_INTEGER_REMAINING_3OP_LSX_DEFINE)
 #undef LATX_AVX_INTEGER_REMAINING_3OP_LSX_DEFINE
 
+static IR2_INST *translate_vpsignb_lane_lsx(IR2_OPND dest, IR2_OPND src1,
+                                            IR2_OPND src2)
+{
+    return la_vsigncov_b(dest, src2, src1);
+}
+
+static IR2_INST *translate_vpsignd_lane_lsx(IR2_OPND dest, IR2_OPND src1,
+                                            IR2_OPND src2)
+{
+    return la_vsigncov_w(dest, src2, src1);
+}
+
+static IR2_INST *translate_vpsignw_lane_lsx(IR2_OPND dest, IR2_OPND src1,
+                                            IR2_OPND src2)
+{
+    return la_vsigncov_h(dest, src2, src1);
+}
+
+bool translate_vpsignb_lsx(IR1_INST *pir1)
+{
+    return translate_avx_integer_3op_lsx(pir1, translate_vpsignb_lane_lsx);
+}
+
+bool translate_vpsignd_lsx(IR1_INST *pir1)
+{
+    return translate_avx_integer_3op_lsx(pir1, translate_vpsignd_lane_lsx);
+}
+
+bool translate_vpsignw_lsx(IR1_INST *pir1)
+{
+    return translate_avx_integer_3op_lsx(pir1, translate_vpsignw_lane_lsx);
+}
+
 typedef void (*latx_avx_integer_3op_lsx_custom_fn)(IR2_OPND, IR2_OPND,
                                                    IR2_OPND);
 
