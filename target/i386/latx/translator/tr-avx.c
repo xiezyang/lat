@@ -3567,7 +3567,21 @@ bool translate_vpextrx_lsx(IR1_INST *pir1)
         if (is_reg) {
             store_ireg_to_ir1(value, dest, false);
         } else {
-            store_u16_to_ir1_mem_exact(value, dest);
+            /* Check each byte separately so a cross-page fault reports the
+             * protected second page as SEGV_ACCERR, matching x86. */
+            IR2_OPND address = convert_mem_to_itemp(dest);
+            IR2_OPND byte = ra_alloc_itemp();
+
+            gen_test_page_flag_force_range(address, 0, 1,
+                                           PAGE_WRITE | PAGE_WRITE_ORG);
+            la_st_b(value, address, 0);
+            la_addi_d(address, address, 1);
+            gen_test_page_flag_force_range(address, 0, 1,
+                                           PAGE_WRITE | PAGE_WRITE_ORG);
+            la_srli_d(byte, value, 8);
+            la_st_b(byte, address, 0);
+            ra_free_temp(byte);
+            ra_free_temp(address);
         }
         break;
     case dt_X86_INS_VPEXTRD:
