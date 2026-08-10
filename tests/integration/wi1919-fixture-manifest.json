@@ -1,0 +1,91 @@
+{
+  "schema": 1,
+  "work_item": "WI-1919",
+  "mnemonics": [
+    "vpshufb",
+    "vpshufd",
+    "vpshufhw",
+    "vpshuflw"
+  ],
+  "fixtures": {
+    "vpshufb": {
+      "assembly": "tests/integration/latx-avx-single-vpshufb.S",
+      "c": "tests/integration/latx-avx-single-vpshufb.c",
+      "runner": "tests/integration/test-latx-avx-wi1919-vpshufb-x86.sh",
+      "normal_records": 8,
+      "fault_case": "cross-page 256-bit memory source",
+      "coverage": [
+        "XMM",
+        "YMM",
+        "register",
+        "memory",
+        "alias",
+        "VEX.128 high-half clear"
+      ],
+      "immediates": [
+        "control-byte high-bit set"
+      ]
+    },
+    "vpshufd": {
+      "assembly": "tests/integration/latx-avx-single-vpshufd.S",
+      "c": "tests/integration/latx-avx-single-vpshufd.c",
+      "runner": "tests/integration/test-latx-avx-wi1919-vpshufd-x86.sh",
+      "normal_records": 8,
+      "fault_case": "cross-page 256-bit memory source",
+      "coverage": [
+        "XMM",
+        "YMM",
+        "register",
+        "memory",
+        "alias",
+        "VEX.128 high-half clear"
+      ],
+      "immediates": [
+        "0x00",
+        "0x1b",
+        "0xff"
+      ]
+    },
+    "vpshufhw": {
+      "assembly": "tests/integration/latx-avx-single-vpshufhw.S",
+      "c": "tests/integration/latx-avx-single-vpshufhw.c",
+      "runner": "tests/integration/test-latx-avx-wi1919-vpshufhw-x86.sh",
+      "normal_records": 8,
+      "fault_case": "cross-page 256-bit memory source",
+      "coverage": [
+        "XMM",
+        "YMM",
+        "register",
+        "memory",
+        "alias",
+        "VEX.128 high-half clear"
+      ],
+      "immediates": [
+        "0x00",
+        "0x1b",
+        "0xff"
+      ]
+    },
+    "vpshuflw": {
+      "assembly": "tests/integration/latx-avx-single-vpshuflw.S",
+      "c": "tests/integration/latx-avx-single-vpshuflw.c",
+      "runner": "tests/integration/test-latx-avx-wi1919-vpshuflw-x86.sh",
+      "normal_records": 8,
+      "fault_case": "cross-page 256-bit memory source",
+      "coverage": [
+        "XMM",
+        "YMM",
+        "register",
+        "memory",
+        "alias",
+        "VEX.128 high-half clear"
+      ],
+      "immediates": [
+        "0x00",
+        "0x1b",
+        "0xff"
+      ]
+    }
+  },
+  "runtime_boundary": "xzy86 native only; no Ninja, build64.sh, configure, LATX, LASX, or LSX"
+}

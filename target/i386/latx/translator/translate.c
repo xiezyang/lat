@@ -1971,6 +1971,80 @@ void translate_context_init(void)
                                    translate_vshufpd_lsx);
             translate_register_lsx(dt_X86_INS_VSHUFPS,
                                    translate_vshufps_lsx);
+            translate_register_lsx(dt_X86_INS_VBROADCASTF128,
+                                   translate_vbroadcastf128_lsx);
+            translate_register_lsx(dt_X86_INS_VBROADCASTI128,
+                                   translate_vbroadcasti128_lsx);
+            translate_register_lsx(dt_X86_INS_VBROADCASTSD,
+                                   translate_vbroadcastsd_lsx);
+            translate_register_lsx(dt_X86_INS_VBROADCASTSS,
+                                   translate_vbroadcastss_lsx);
+            translate_register_lsx(dt_X86_INS_VPBROADCASTB,
+                                   translate_vpbroadcastb_lsx);
+            translate_register_lsx(dt_X86_INS_VPBROADCASTD,
+                                   translate_vpbroadcastd_lsx);
+            translate_register_lsx(dt_X86_INS_VPBROADCASTQ,
+                                   translate_vpbroadcastq_lsx);
+            translate_register_lsx(dt_X86_INS_VPBROADCASTW,
+                                   translate_vpbroadcastw_lsx);
+            translate_register_lsx(dt_X86_INS_VEXTRACTF128,
+                                   translate_vextractf128_lsx);
+            translate_register_lsx(dt_X86_INS_VEXTRACTI128,
+                                   translate_vextracti128_lsx);
+            translate_register_lsx(dt_X86_INS_VEXTRACTPS,
+                                   translate_vextractps_lsx);
+            translate_register_lsx(dt_X86_INS_VINSERTF128,
+                                   translate_vinsertf128_lsx);
+            translate_register_lsx(dt_X86_INS_VINSERTI128,
+                                   translate_vinserti128_lsx);
+            translate_register_lsx(dt_X86_INS_VINSERTPS,
+                                   translate_vinsertps_lsx);
+            translate_register_lsx(dt_X86_INS_VPEXTRB,
+                                   translate_vpextrx_lsx);
+            translate_register_lsx(dt_X86_INS_VPEXTRD,
+                                   translate_vpextrx_lsx);
+            translate_register_lsx(dt_X86_INS_VPEXTRQ,
+                                   translate_vpextrx_lsx);
+            translate_register_lsx(dt_X86_INS_VPEXTRW,
+                                   translate_vpextrx_lsx);
+            translate_register_lsx(dt_X86_INS_VPINSRB,
+                                   translate_vpinsrx_lsx);
+            translate_register_lsx(dt_X86_INS_VPINSRD,
+                                   translate_vpinsrx_lsx);
+            translate_register_lsx(dt_X86_INS_VPINSRW,
+                                   translate_vpinsrx_lsx);
+            translate_register_lsx(dt_X86_INS_VBLENDPD,
+                                   translate_vblendpd_lsx);
+            translate_register_lsx(dt_X86_INS_VBLENDPS,
+                                   translate_vblendps_lsx);
+            translate_register_lsx(dt_X86_INS_VBLENDVPD,
+                                   translate_vblendvpd_lsx);
+            translate_register_lsx(dt_X86_INS_VBLENDVPS,
+                                   translate_vblendvps_lsx);
+            translate_register_lsx(dt_X86_INS_VPALIGNR,
+                                   translate_vpalignr_lsx);
+            translate_register_lsx(dt_X86_INS_VPBLENDD,
+                                   translate_vpblendd_lsx);
+            translate_register_lsx(dt_X86_INS_VPBLENDVB,
+                                   translate_vpblendvb_lsx);
+            translate_register_lsx(dt_X86_INS_VPBLENDW,
+                                   translate_vpblendw_lsx);
+            translate_register_lsx(dt_X86_INS_VPERM2F128,
+                                   translate_vperm2f128_lsx);
+            translate_register_lsx(dt_X86_INS_VPERM2I128,
+                                   translate_vperm2i128_lsx);
+            translate_register_lsx(dt_X86_INS_VPERMD,
+                                   translate_vpermd_lsx);
+            translate_register_lsx(dt_X86_INS_VPERMILPD,
+                                   translate_vpermilpd_lsx);
+            translate_register_lsx(dt_X86_INS_VPERMILPS,
+                                   translate_vpermilps_lsx);
+            translate_register_lsx(dt_X86_INS_VPERMPD,
+                                   translate_vpermpx_lsx);
+            translate_register_lsx(dt_X86_INS_VPERMPS,
+                                   translate_vpermpx_lsx);
+            translate_register_lsx(dt_X86_INS_VPERMQ,
+                                   translate_vpermq_lsx);
         }
         translate_register_lsx(dt_X86_INS_VMOVDQA, translate_vmovdqa_lsx);
         translate_register_lsx(dt_X86_INS_VMOVDQU, translate_vmovdqu_lsx);
@@ -1999,13 +2073,28 @@ void translate_context_init(void)
         if (!option_enable_lasx) {
             translate_register_lsx(dt_X86_INS_VMASKMOVDQU,
                                    translate_maskmovdqu_lsx);
+            translate_register_lsx(dt_X86_INS_VUNPCKHPD,
+                                   translate_vunpckhpd_lsx);
+            translate_register_lsx(dt_X86_INS_VUNPCKHPS,
+                                   translate_vunpckhps_lsx);
+            translate_register_lsx(dt_X86_INS_VUNPCKLPD,
+                                   translate_vunpcklpd_lsx);
+            translate_register_lsx(dt_X86_INS_VUNPCKLPS,
+                                   translate_vunpcklps_lsx);
+            translate_register_lsx(dt_X86_INS_VPSHUFB,
+                                   translate_vpshufb_lsx);
+            translate_register_lsx(dt_X86_INS_VPSHUFD,
+                                   translate_vpshufd_lsx);
+            translate_register_lsx(dt_X86_INS_VPSHUFHW,
+                                   translate_vpshufhw_lsx);
+            translate_register_lsx(dt_X86_INS_VPSHUFLW,
+                                   translate_vpshuflw_lsx);
         }
         translate_register_lsx(dt_X86_INS_VMOVNTDQA,
                                translate_vmovntdqa_lsx);
         translate_register_lsx(dt_X86_INS_VMULSD, translate_vmulsd_lsx);
         translate_register_lsx(dt_X86_INS_VDIVSD, translate_vdivsd_lsx);
         translate_register_lsx(dt_X86_INS_VXORPD, translate_vxorpd_lsx);
-        translate_register_lsx(dt_X86_INS_VPBLENDVB, translate_vpblendvb_lsx);
         translate_register_lsx(dt_X86_INS_VCVTSD2SS, translate_vcvtsd2ss_lsx);
         translate_register_lsx(dt_X86_INS_VCVTSI2SD, translate_vcvtsi2sd_lsx);
 #define LATX_AVX_INTEGER_CMP_LSX_REGISTER(opcode, name, cmp, reverse) \
@@ -2030,12 +2119,6 @@ void translate_context_init(void)
         translate_register_lsx(dt_X86_INS_VPAND, translate_vpand_lsx);
         translate_register_lsx(dt_X86_INS_VPOR, translate_vpor_lsx);
         translate_register_lsx(dt_X86_INS_VPXOR, translate_vpxor_lsx);
-        translate_register_lsx(dt_X86_INS_VEXTRACTI128,
-                               translate_vextracti128_lsx);
-        translate_register_lsx(dt_X86_INS_VINSERTI128,
-                               translate_vinserti128_lsx);
-        translate_register_lsx(dt_X86_INS_VPBROADCASTQ,
-                               translate_vpbroadcastq_lsx);
         translate_register_lsx(dt_X86_INS_VCOMISD, translate_vcomisd_lsx);
         translate_register_lsx(dt_X86_INS_VCOMISS, translate_vcomiss_lsx);
         translate_register_lsx(dt_X86_INS_VUCOMISD, translate_vucomisd_lsx);

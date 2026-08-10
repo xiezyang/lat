@@ -40,7 +40,8 @@ for mnemonic in mnemonics:
     assert "xmmword ptr [rip + input_b]" in assembly
     assert "ymmword ptr [rip + input_b]" in assembly
     if mnemonic in {"vshufpd", "vshufps"}:
-        assert ", 0" in assembly and ", 255" in assembly
+        for imm in ("0", "85", "170", "255"):
+            assert f", {imm}" in assembly
     else:
         assert "xmm0, xmm0, xmm0" in assembly
         assert "ymm0, ymm0, ymm0" in assembly
@@ -56,8 +57,7 @@ assert "la_xv" in translator
 vshufps_lsx = translator.split(
     "static void translate_vshufps_lane_lsx", 1)[1].split(
     "bool translate_vshufps_lsx", 1)[0]
-assert "la_vpickod_d(src2_odd, src2_shuffled, src2_shuffled)" in vshufps_lsx
-assert "la_vpickev_d(result, src2_odd, src1_shuffled)" in vshufps_lsx
-assert "la_vpickev_d(result, src2_shuffled, src1_shuffled)" not in vshufps_lsx
+assert "la_vpickev_d(result, src2_shuffled, src1_shuffled)" in vshufps_lsx
+assert "la_vpickod_d" not in vshufps_lsx
 print("PASS WI-1843 source audit: 14 mnemonic fixture registration, legal reg/mem forms, alias/boundary coverage, LASX preserved")
 PY

@@ -1,0 +1,27 @@
+{
+  "work_item": "WI-1920",
+  "mnemonics": [
+    "vunpckhpd",
+    "vunpckhps",
+    "vunpcklpd",
+    "vunpcklps"
+  ],
+  "baseline": "xzy86 native x86",
+  "cases_per_mnemonic": 12,
+  "record_size": 32,
+  "normal_output_size": 384,
+  "fault_cases": [
+    "xmm-cross-8",
+    "ymm-cross-16"
+  ],
+  "coverage": [
+    "XMM and YMM register sources",
+    "XMM and YMM legal memory source",
+    "destination/src1/src2 aliases",
+    "both 128-bit lanes for YMM",
+    "qNaN sNaN Inf subnormal +0 -0 bit patterns",
+    "VEX.128 high half clear",
+    "unaligned legal memory source",
+    "cross-page XMM/YMM source fault"
+  ]
+}
