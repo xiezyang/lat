@@ -522,6 +522,73 @@ static bool translate_vaes_round(IR1_INST *pir1, int enc, int last)
     return true;
 }
 
+static bool translate_vaes_round_lsx(IR1_INST *pir1, int enc, int last)
+{
+    IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
+    IR1_OPND *opnd1 = ir1_get_opnd(pir1, 1);
+    IR1_OPND *opnd2 = ir1_get_opnd(pir1, 2);
+    int d = ir1_opnd_base_reg_num(opnd0);
+    int s1 = ir1_opnd_base_reg_num(opnd1);
+
+    if (ir1_opnd_is_xmm(opnd0)) {
+        IR2_OPND dst = ra_alloc_xmm(d);
+        IR2_OPND src = ra_alloc_xmm(s1);
+        bool key_aliases_dst = !ir1_opnd_is_mem(opnd2) &&
+                               d == ir1_opnd_base_reg_num(opnd2);
+        IR2_OPND key = load_round_key(opnd2, key_aliases_dst, 0);
+
+        if (d != s1) {
+            la_vor_v(dst, src, src);
+        }
+        vpaes_spill_low_fprs();
+        emit_aes_round_lsx(dst, key, enc, last);
+        vpaes_restore_low_fprs();
+        clear_ymm_high128_shadow(d);
+        return true;
+    }
+
+    IR2_OPND src_low = ra_alloc_xmm(s1);
+    IR2_OPND src_high = load_ymm_high128_shadow(s1);
+    IR2_OPND key_low;
+    IR2_OPND key_high;
+    bool key_copy = false;
+
+    if (ir1_opnd_is_mem(opnd2)) {
+        load_v256_from_ir1_mem_exact(opnd2, &key_low, &key_high);
+    } else {
+        int key_index = ir1_opnd_base_reg_num(opnd2);
+        key_low = ra_alloc_xmm(key_index);
+        key_high = load_ymm_high128_shadow(key_index);
+        if (d == key_index) {
+            IR2_OPND key_low_copy = ra_alloc_ftemp();
+            IR2_OPND key_high_copy = ra_alloc_ftemp();
+            la_vor_v(key_low_copy, key_low, key_low);
+            la_vor_v(key_high_copy, key_high, key_high);
+            key_low = key_low_copy;
+            key_high = key_high_copy;
+            key_copy = true;
+        }
+    }
+
+    IR2_OPND dst = ra_alloc_xmm(d);
+    IR2_OPND dst_high = ra_alloc_ftemp();
+    if (d != s1) {
+        la_vor_v(dst, src_low, src_low);
+    }
+    la_vor_v(dst_high, src_high, src_high);
+
+    vpaes_spill_low_fprs();
+    emit_aes_round_lsx(dst, key_low, enc, last);
+    emit_aes_round_lsx(dst_high, key_high, enc, last);
+    vpaes_restore_low_fprs();
+    store_ymm_high128_shadow(dst_high, d);
+    if (key_copy) {
+        ra_free_temp_auto(key_low);
+        ra_free_temp_auto(key_high);
+    }
+    return true;
+}
+
 bool latx_translate_aesenc_vpaes(IR1_INST *pir1) { return translate_aes_round(pir1, 1, 0); }
 bool latx_translate_aesenclast_vpaes(IR1_INST *pir1) { return translate_aes_round(pir1, 1, 1); }
 bool latx_translate_aesdec_vpaes(IR1_INST *pir1) { return translate_aes_round(pir1, 0, 0); }
@@ -530,6 +597,10 @@ bool latx_translate_vaesenc_vpaes(IR1_INST *pir1) { return translate_vaes_round(
 bool latx_translate_vaesenclast_vpaes(IR1_INST *pir1) { return translate_vaes_round(pir1, 1, 1); }
 bool latx_translate_vaesdec_vpaes(IR1_INST *pir1) { return translate_vaes_round(pir1, 0, 0); }
 bool latx_translate_vaesdeclast_vpaes(IR1_INST *pir1) { return translate_vaes_round(pir1, 0, 1); }
+bool latx_translate_vaesenc_lsx(IR1_INST *pir1) { return translate_vaes_round_lsx(pir1, 1, 0); }
+bool latx_translate_vaesenclast_lsx(IR1_INST *pir1) { return translate_vaes_round_lsx(pir1, 1, 1); }
+bool latx_translate_vaesdec_lsx(IR1_INST *pir1) { return translate_vaes_round_lsx(pir1, 0, 0); }
+bool latx_translate_vaesdeclast_lsx(IR1_INST *pir1) { return translate_vaes_round_lsx(pir1, 0, 1); }
 
 bool latx_translate_aesimc_vpaes(IR1_INST *pir1)
 {
@@ -556,7 +627,7 @@ bool latx_translate_aesimc_vpaes(IR1_INST *pir1)
 bool latx_translate_vaesimc_vpaes(IR1_INST *pir1)
 {
     bool ret = latx_translate_aesimc_vpaes(pir1);
-    set_high128_xreg_to_zero(ra_alloc_xmm(ir1_opnd_base_reg_num(ir1_get_opnd(pir1, 0))));
+    clear_ymm_high128_shadow(ir1_opnd_base_reg_num(ir1_get_opnd(pir1, 0)));
     return ret;
 }
 
@@ -588,6 +659,6 @@ bool latx_translate_aeskeygenassist_vpaes(IR1_INST *pir1)
 bool latx_translate_vaeskeygenassist_vpaes(IR1_INST *pir1)
 {
     bool ret = latx_translate_aeskeygenassist_vpaes(pir1);
-    set_high128_xreg_to_zero(ra_alloc_xmm(ir1_opnd_base_reg_num(ir1_get_opnd(pir1, 0))));
+    clear_ymm_high128_shadow(ir1_opnd_base_reg_num(ir1_get_opnd(pir1, 0)));
     return ret;
 }

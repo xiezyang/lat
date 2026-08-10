@@ -1,0 +1,86 @@
+{
+  "schema": 1,
+  "work_item": "WI-1921",
+  "mnemonics": [
+    "vpcmpestri",
+    "vpcmpestrm",
+    "vpcmpistri",
+    "vpcmpistrm"
+  ],
+  "encoding_boundary": "XMM-only VEX.128; no legal YMM form",
+  "fixtures": {
+    "vpcmpestri": {
+      "assembly": "tests/integration/latx-avx-single-vpcmpestri.S",
+      "c": "tests/integration/latx-avx-single-vpcmpestri.c",
+      "runner": "tests/integration/test-latx-avx-wi1921-vpcmpestri-x86.sh",
+      "normal_records": 8,
+      "normal_bytes": 512,
+      "fault": "m128 source crossing page boundary",
+      "coverage": [
+        "imm8 controls",
+        "byte/word",
+        "signed/unsigned",
+        "length zero/max/boundary",
+        "EFLAGS",
+        "ECX index or XMM0 mask",
+        "register/memory",
+        "alias"
+      ]
+    },
+    "vpcmpestrm": {
+      "assembly": "tests/integration/latx-avx-single-vpcmpestrm.S",
+      "c": "tests/integration/latx-avx-single-vpcmpestrm.c",
+      "runner": "tests/integration/test-latx-avx-wi1921-vpcmpestrm-x86.sh",
+      "normal_records": 8,
+      "normal_bytes": 512,
+      "fault": "m128 source crossing page boundary",
+      "coverage": [
+        "imm8 controls",
+        "byte/word",
+        "signed/unsigned",
+        "length zero/max/boundary",
+        "EFLAGS",
+        "ECX index or XMM0 mask",
+        "register/memory",
+        "alias"
+      ]
+    },
+    "vpcmpistri": {
+      "assembly": "tests/integration/latx-avx-single-vpcmpistri.S",
+      "c": "tests/integration/latx-avx-single-vpcmpistri.c",
+      "runner": "tests/integration/test-latx-avx-wi1921-vpcmpistri-x86.sh",
+      "normal_records": 8,
+      "normal_bytes": 512,
+      "fault": "m128 source crossing page boundary",
+      "coverage": [
+        "imm8 controls",
+        "byte/word",
+        "signed/unsigned",
+        "length zero/max/boundary",
+        "EFLAGS",
+        "ECX index or XMM0 mask",
+        "register/memory",
+        "alias"
+      ]
+    },
+    "vpcmpistrm": {
+      "assembly": "tests/integration/latx-avx-single-vpcmpistrm.S",
+      "c": "tests/integration/latx-avx-single-vpcmpistrm.c",
+      "runner": "tests/integration/test-latx-avx-wi1921-vpcmpistrm-x86.sh",
+      "normal_records": 8,
+      "normal_bytes": 512,
+      "fault": "m128 source crossing page boundary",
+      "coverage": [
+        "imm8 controls",
+        "byte/word",
+        "signed/unsigned",
+        "length zero/max/boundary",
+        "EFLAGS",
+        "ECX index or XMM0 mask",
+        "register/memory",
+        "alias"
+      ]
+    }
+  },
+  "runtime_boundary": "xzy86 native only; no build64.sh, configure, Ninja, LATX, LASX, or LSX"
+}

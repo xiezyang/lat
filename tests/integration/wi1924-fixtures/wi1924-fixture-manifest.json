@@ -1,0 +1,50 @@
+{
+  "work_item": "WI-1924",
+  "mnemonic": "vzeroall",
+  "baseline": "xzy86 native x86",
+  "normal_output_size": 2112,
+  "vector_snapshots": {
+    "pre": {
+      "offset": 0,
+      "size": 512
+    },
+    "post_vzeroall": {
+      "offset": 512,
+      "size": 512
+    },
+    "post_vzeroupper": {
+      "offset": 1024,
+      "size": 512
+    }
+  },
+  "scalar_snapshots": {
+    "gpr_vzeroall_before": {
+      "offset": 1536,
+      "size": 128
+    },
+    "gpr_vzeroall_after": {
+      "offset": 1664,
+      "size": 128
+    },
+    "gpr_vzeroupper_before": {
+      "offset": 1792,
+      "size": 128
+    },
+    "gpr_vzeroupper_after": {
+      "offset": 1920,
+      "size": 128
+    },
+    "flags_mxcsr": {
+      "offset": 2048,
+      "size": 48
+    }
+  },
+  "coverage": [
+    "all 16 XMM/YMM registers and low/high 128-bit halves",
+    "pre-state qNaN-like, Inf-like, all-one, and distinct random-like bits",
+    "VZEROALL clears low and high halves",
+    "VZEROUPPER preserves low halves and clears high halves",
+    "GPR, EFLAGS, and MXCSR before/after both instructions",
+    "fault not applicable: no memory operand"
+  ]
+}

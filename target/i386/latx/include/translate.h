@@ -826,9 +826,11 @@ TRANS_FUNC_DEF(vcvtps2ph);
 
 /* avx */
 TRANS_FUNC_DEF(vpclmulqdq);
+TRANS_FUNC_DEF(vpclmulqdq_lsx);
 TRANS_FUNC_DEF(vtestpd);
 TRANS_FUNC_DEF(vtestps);
 TRANS_FUNC_DEF(vzeroall);
+TRANS_FUNC_DEF(vzeroall_lsx);
 TRANS_FUNC_DEF(vpmulhrsw);
 TRANS_FUNC_DEF(vphminposuw);
 TRANS_FUNC_DEF(vphsubsw);
@@ -1397,6 +1399,10 @@ TRANS_FUNC_DEF(pcmpistrm);
 #ifdef CONFIG_LATX_AVX_OPT
 TRANS_FUNC_DEF(vpcmpestrm);
 TRANS_FUNC_DEF(vpcmpistrm);
+TRANS_FUNC_DEF(vpcmpestri_lsx);
+TRANS_FUNC_DEF(vpcmpestrm_lsx);
+TRANS_FUNC_DEF(vpcmpistri_lsx);
+TRANS_FUNC_DEF(vpcmpistrm_lsx);
 #endif
 TRANS_FUNC_DEF(aesdec);
 TRANS_FUNC_DEF(aesdeclast);
@@ -1412,6 +1418,12 @@ TRANS_FUNC_DEF(vaesenc);
 TRANS_FUNC_DEF(vaesenclast);
 TRANS_FUNC_DEF(vaesimc);
 TRANS_FUNC_DEF(vaeskeygenassist);
+TRANS_FUNC_DEF(vaesdec_lsx);
+TRANS_FUNC_DEF(vaesdeclast_lsx);
+TRANS_FUNC_DEF(vaesenc_lsx);
+TRANS_FUNC_DEF(vaesenclast_lsx);
+TRANS_FUNC_DEF(vaesimc_lsx);
+TRANS_FUNC_DEF(vaeskeygenassist_lsx);
 TRANS_FUNC_DEF(vpsrlvd);
 TRANS_FUNC_DEF(vpsrlvq);
 TRANS_FUNC_DEF(vpgatherdd);
