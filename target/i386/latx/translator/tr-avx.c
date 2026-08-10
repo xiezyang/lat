@@ -9247,6 +9247,8 @@ static void lsx_fp_apply_fz(IR2_OPND value, IR2_OPND mxcsr,
 
         la_andi(field, mxcsr, 0x8000);
         la_beq(field, zero_ir2_opnd, done);
+        la_andi(field, mxcsr, 0x800);
+        la_beq(field, zero_ir2_opnd, done);
         pick(bits, value, lane);
         li_d(field, exponent_mask);
         la_and(field, bits, field);
