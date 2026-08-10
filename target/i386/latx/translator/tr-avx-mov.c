@@ -892,6 +892,36 @@ bool translate_vpmovmskb(IR1_INST * pir1) {
     return true;
 }
 
+bool translate_vpmovmskb_lsx(IR1_INST *pir1)
+{
+    IR1_OPND *dest_opnd = ir1_get_opnd(pir1, 0);
+    IR1_OPND *src_opnd = ir1_get_opnd(pir1, 1);
+    int src_index = ir1_opnd_base_reg_num(src_opnd);
+    IR2_OPND dest = ra_alloc_gpr(ir1_opnd_base_reg_num(dest_opnd));
+    IR2_OPND low = ra_alloc_ftemp();
+    IR2_OPND low_mask = ra_alloc_ftemp();
+
+    lsassert(ir1_opnd_is_gpr(dest_opnd));
+    lsassert(ir1_opnd_is_xmm(src_opnd) || ir1_opnd_is_ymm(src_opnd));
+    la_vori_b(low, ra_alloc_xmm(src_index), 0);
+    la_vmskltz_b(low_mask, low);
+    la_movfr2gr_d(dest, low_mask);
+    if (ir1_opnd_is_ymm(src_opnd)) {
+        IR2_OPND high = load_ymm_high128_shadow(src_index);
+        IR2_OPND high_mask = ra_alloc_ftemp();
+        IR2_OPND high_bits = ra_alloc_itemp();
+
+        la_vmskltz_b(high_mask, high);
+        la_movfr2gr_d(high_bits, high_mask);
+        la_slli_d(high_bits, high_bits, 16);
+        la_or(dest, dest, high_bits);
+        la_bstrpick_d(dest, dest, 31, 0);
+    } else {
+        la_bstrpick_d(dest, dest, 15, 0);
+    }
+    return true;
+}
+
 bool translate_vmaskmovpx(IR1_INST * pir1) {
     IR1_OPND * opnd0 = ir1_get_opnd(pir1, 0);
     IR2_OPND src1 = load_freg256_from_ir1(ir1_get_opnd(pir1, 1));

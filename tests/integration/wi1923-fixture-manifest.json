@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "work_item": "WI-1923",
+  "mnemonic": "vptest",
+  "encoding": "VEX.128 and VEX.256",
+  "normal_records": 8,
+  "record_bytes": 72,
+  "faults": [
+    "m128 at page-8",
+    "m256 at page-16"
+  ],
+  "coverage": [
+    "XMM/YMM",
+    "register/memory",
+    "dest/src alias",
+    "CF/ZF boundary combinations",
+    "EFLAGS",
+    "source high-half observation",
+    "unaligned"
+  ],
+  "runtime_boundary": "xzy86 native only; no build64.sh, configure, Ninja, LATX, LASX, LSX"
+}

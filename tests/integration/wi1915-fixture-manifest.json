@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "work_item": "WI-1915",
+  "mnemonic_count": 38,
+  "mnemonics": [
+    "vpabsb", "vpabsd", "vpabsw", "vpavgb", "vpavgw",
+    "vphaddd", "vphaddsw", "vphaddw", "vphminposuw",
+    "vphsubd", "vphsubsw", "vphsubw", "vpmaddubsw", "vpmaddwd",
+    "vpmovmskb", "vpmovsxbd", "vpmovsxbq", "vpmovsxbw", "vpmovsxdq",
+    "vpmovsxwd", "vpmovsxwq", "vpmovzxbd", "vpmovzxbq", "vpmovzxbw",
+    "vpmovzxdq", "vpmovzxwd", "vpmovzxwq", "vpmuldq", "vpmulhrsw",
+    "vpmulhuw", "vpmulhw", "vpmulld", "vpmullw", "vpmuludq", "vpsadbw",
+    "vpsignb", "vpsignd", "vpsignw"
+  ],
+  "fixture_contract": {
+    "three_operand": "XMM/YMM register and legal vector-memory source; non-alias and dest=src1 alias",
+    "unary": "XMM/YMM register and legal vector-memory source; non-alias and dest=src alias",
+    "pmov": "XMM/YMM destination, XMM or exact-width memory source; alias and non-alias",
+    "vphminposuw": "XMM-only register and m128 forms; alias and non-alias",
+    "vpmovmskb": "XMM/YMM register source and r32 destination; memory/fault not applicable",
+    "fault": "mmap two pages, PROT_NONE on the second, source pointer at the last byte of page one",
+    "special_bits": "integer signed boundaries, zero, all-one, and alternating high-bit patterns",
+    "high_half": "nonzero YMM destination high half saved with XSAVE after XMM VEX forms"
+  },
+  "fresh_x86_run": {
+    "host": "xzy86",
+    "output_dir": "/tmp/wi1915-x86.vIj6Gm",
+    "manifest": "/tmp/wi1915-x86.vIj6Gm/native-manifest.tsv",
+    "command_stdout": "/tmp/wi1915-x86-run6.stdout",
+    "command_stderr": "/tmp/wi1915-x86-run6.stderr",
+    "command_status": "/tmp/wi1915-x86-run6.status",
+    "command_exit": 0,
+    "normal_status": 0,
+    "fault_status_139_count": 37,
+    "fault_not_applicable_count": 1
+  }
+}

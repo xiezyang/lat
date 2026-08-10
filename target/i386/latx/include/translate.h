@@ -68,6 +68,20 @@ TRANS_FUNC_GEN_REAL(opcode, TRANS_FUNC(function))
     X(VPMAXSW, pmaxsw, la_vmax_h) \
     X(VPMAXSD, pmaxsd, la_vmax_w)
 
+/* Remaining AVX integer operations with a direct LSX 3-operand form. */
+#define LATX_AVX_INTEGER_REMAINING_3OP_LSX_TABLE(X) \
+    X(VPAVGB, pavgb, la_vavgr_bu) \
+    X(VPAVGW, pavgw, la_vavgr_hu) \
+    X(VPMULDQ, pmuldq, la_vmulwev_d_w) \
+    X(VPMULHUW, pmulhuw, la_vmuh_hu) \
+    X(VPMULHW, pmulhw, la_vmuh_h) \
+    X(VPMULLD, pmulld, la_vmul_w) \
+    X(VPMULLW, pmullw, la_vmul_h) \
+    X(VPMULUDQ, pmuludq, la_vmulwev_d_wu) \
+    X(VPSIGNB, psignb, la_vsigncov_b) \
+    X(VPSIGND, psignd, la_vsigncov_w) \
+    X(VPSIGNW, psignw, la_vsigncov_h)
+
 /* AVX integer comparisons whose two 128-bit halves can be translated alone. */
 #define LATX_AVX_INTEGER_CMP_LSX_TABLE(X) \
     X(VPCMPEQB, pcmpeqb, la_vseq_b, false) \
@@ -1063,6 +1077,7 @@ TRANS_FUNC_DEF(vpackssxx_lsx);
 TRANS_FUNC_DEF(vpackusxx_lsx);
 TRANS_FUNC_DEF(vpand);
 TRANS_FUNC_DEF(vpand_lsx);
+TRANS_FUNC_DEF(vpandn_lsx);
 TRANS_FUNC_DEF(vpandn);
 TRANS_FUNC_DEF(vpblendd);
 TRANS_FUNC_DEF(vpblendd_lsx);
@@ -1091,6 +1106,7 @@ TRANS_FUNC_DEF(vpshufb);
 TRANS_FUNC_DEF(vpshufb_lsx);
 TRANS_FUNC_DEF(vpsubx);
 TRANS_FUNC_DEF(vptest);
+TRANS_FUNC_DEF(vptest_lsx);
 TRANS_FUNC_DEF(vpunpckhxx);
 TRANS_FUNC_DEF(vpunpckhxx_lsx);
 TRANS_FUNC_DEF(vpunpcklxx);
@@ -1296,6 +1312,26 @@ TRANS_FUNC_DEF(vpaddq);
 TRANS_FUNC_DEF(v##name##_lsx);
 LATX_AVX_INTEGER_3OP_LSX_TABLE(LATX_AVX_INTEGER_3OP_LSX_DECL)
 #undef LATX_AVX_INTEGER_3OP_LSX_DECL
+#define LATX_AVX_INTEGER_REMAINING_3OP_LSX_DECL(opcode, name, lsx_op) \
+TRANS_FUNC_DEF(v##name##_lsx);
+LATX_AVX_INTEGER_REMAINING_3OP_LSX_TABLE(
+    LATX_AVX_INTEGER_REMAINING_3OP_LSX_DECL)
+#undef LATX_AVX_INTEGER_REMAINING_3OP_LSX_DECL
+TRANS_FUNC_DEF(vpabsx_lsx);
+TRANS_FUNC_DEF(vpmaddubsw_lsx);
+TRANS_FUNC_DEF(vpmaddwd_lsx);
+TRANS_FUNC_DEF(vpmulhrsw_lsx);
+TRANS_FUNC_DEF(vphaddd_lsx);
+TRANS_FUNC_DEF(vphaddsw_lsx);
+TRANS_FUNC_DEF(vphaddw_lsx);
+TRANS_FUNC_DEF(vphsubd_lsx);
+TRANS_FUNC_DEF(vphsubsw_lsx);
+TRANS_FUNC_DEF(vphsubw_lsx);
+TRANS_FUNC_DEF(vpmovmskb_lsx);
+TRANS_FUNC_DEF(vpmovsxxx_lsx);
+TRANS_FUNC_DEF(vpmovzxxx_lsx);
+TRANS_FUNC_DEF(vpsadbw_lsx);
+TRANS_FUNC_DEF(vphminposuw_lsx);
 TRANS_FUNC_DEF(vzeroupper);
 TRANS_FUNC_DEF(vzeroupper_lsx);
 TRANS_FUNC_DEF(vpinsrq_lsx);
@@ -1338,6 +1374,7 @@ TRANS_FUNC_DEF(vpavgw);
 TRANS_FUNC_DEF(vdppd);
 TRANS_FUNC_DEF(vdpps);
 TRANS_FUNC_DEF(vmpsadbw);
+TRANS_FUNC_DEF(vmpsadbw_lsx);
 TRANS_FUNC_DEF(vphaddw);
 TRANS_FUNC_DEF(vphaddd);
 TRANS_FUNC_DEF(vphaddsw);

@@ -1,0 +1,34 @@
+{
+  "work_item": "WI-1922",
+  "mnemonic": "vmpsadbw",
+  "baseline": "xzy86 native x86",
+  "cases": 20,
+  "record_size": 32,
+  "normal_output_size": 640,
+  "imm8_values": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    255
+  ],
+  "fault_cases": [
+    "xmm-cross-8",
+    "ymm-cross-16"
+  ],
+  "coverage": [
+    "XMM and YMM register forms",
+    "XMM and YMM memory-source forms",
+    "destination/src1/src2 register aliases",
+    "byte-pattern SAD results in both YMM lanes",
+    "imm8 selector values 0..7 and high-bit variants 0x08/0xff",
+    "VEX.128 high half clear",
+    "unaligned legal memory source",
+    "XMM and YMM cross-page source faults"
+  ]
+}
