@@ -75,8 +75,8 @@ def cases(mnemonic: str) -> list[tuple[str, str]]:
         return [
             ("ymm", "0, ymm1, 0"),
             ("ymm", "0, ymm1, 27"),
-            ("ymm", "0, ymm0, 255"),
-            ("ymm", "0, ymm1, ymm1"),
+            ("ymm", "0, ymm0, 0xe4"),
+            ("ymm", "0, ymm1, 0xff"),
         ]
     if mnemonic == "vpermps":
         return [
@@ -148,11 +148,16 @@ def main() -> int:
     for mnemonic in MNEMONICS:
         path = output / f"latx-avx-single-{mnemonic}.S"
         path.write_text(assembly(mnemonic), encoding="ascii")
-        manifest["mnemonics"].append({
+        entry = {
             "mnemonic": mnemonic,
             "source": str(path),
             "case_count": len(cases(mnemonic)),
-        })
+        }
+        if mnemonic in {"vpermpd", "vpermq"}:
+            entry["encoding"] = "VEX.256"
+            entry["immediate_operand"] = "imm8"
+            entry["excluded_encoding"] = "EVEX register-index"
+        manifest["mnemonics"].append(entry)
     (output / "manifest.json").write_text(
         json.dumps(manifest, indent=2) + "\n", encoding="ascii"
     )

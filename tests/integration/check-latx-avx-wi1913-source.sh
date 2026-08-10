@@ -87,6 +87,18 @@ for entry in manifest["mnemonics"]:
     if entry["mnemonic"] not in ymm_only:
         assert "xmm" in text
     assert "input_b" in text
+    if entry["mnemonic"] in {"vpermpd", "vpermq"}:
+        assert entry["encoding"] == "VEX.256"
+        assert entry["immediate_operand"] == "imm8"
+        assert entry["excluded_encoding"] == "EVEX register-index"
+        for line in text.splitlines():
+            line = line.strip()
+            if line.startswith(entry["mnemonic"] + " "):
+                operands = line.split(None, 1)[1].split(",")
+                assert len(operands) == 3
+                operand = operands[2].strip().lower()
+                assert operand.startswith("0x") or operand.isdigit()
+                assert not operand.startswith(("xmm", "ymm"))
 print("PASS WI-1913 generated x86 fixture manifest: 16 mnemonics")
 PY
 
