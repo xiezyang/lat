@@ -4717,8 +4717,9 @@ static void gen_test_page_flag_internal(IR2_OPND mem_opnd, int mem_imm,
     }
     /* Signal frames export YMM high halves from env->xmm_regs. */
     tr_save_ymm_to_env(UINT16_MAX);
-    /* LSX must fault at the guest address so siginfo matches x86. */
-    IR2_OPND fault_addr = option_enable_lasx ? zero_ir2_opnd : mem_addr;
+    /* The host signal bridge recognizes the synthetic null access and uses
+     * env->cr[2] as the guest fault address. */
+    IR2_OPND fault_addr = zero_ir2_opnd;
     if (flag & PAGE_WRITE) {
         la_st_w(a1_ir2_opnd, fault_addr, 0);
     } else {
