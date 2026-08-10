@@ -9680,14 +9680,14 @@ static void translate_avx_minmax_lane_lsx(IR2_OPND result,
 
     if (is_double) {
         if (is_max) {
-            la_vfcmp_cond_d(mask, src2, src1, 0x3);
-        } else {
             la_vfcmp_cond_d(mask, src1, src2, 0x3);
+        } else {
+            la_vfcmp_cond_d(mask, src2, src1, 0x3);
         }
     } else if (is_max) {
-        la_vfcmp_cond_s(mask, src2, src1, 0x3);
-    } else {
         la_vfcmp_cond_s(mask, src1, src2, 0x3);
+    } else {
+        la_vfcmp_cond_s(mask, src2, src1, 0x3);
     }
     la_vand_v(selected1, src1, mask);
     la_vandn_v(selected2, mask, src2);
