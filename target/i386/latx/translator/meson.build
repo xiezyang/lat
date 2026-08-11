@@ -26,10 +26,17 @@ i386_ss.add(when: 'CONFIG_LATX', if_true: files(
   'tr-simd-sha.c',
   'tr-simd-f16c.c',
   'tr-avx.c',
+  'tr-avx-lsx.c',
+  'tr-avx-fma-lsx.c',
   'tr-avx-cmp.c',
+  'tr-avx-cmp-lsx.c',
   'tr-avx-cvt.c',
+  'tr-avx-cvt-lsx.c',
   'tr-avx-mov.c',
+  'tr-avx-mov-lsx.c',
   'tr-avx-shift.c',
+  'tr-avx-shift-lsx.c',
+  'tr-vpaes-lsx.c',
   'tr-bmi.c',
   'tr-adx.c',
   'tr-softfpu.c',
@@ -38,4 +45,8 @@ i386_ss.add(when: 'CONFIG_LATX', if_true: files(
   'runtime-trace.c',
   'mem-interface.c',
   'macro-helper.c'
+))
+
+i386_ss.add(when: 'CONFIG_LATX_AVX_OPT', if_true: files(
+  'avx-trace.c',
 ))

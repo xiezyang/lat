@@ -60,35 +60,315 @@ static inline void xcomisx(IR1_INST *pir1, bool is_double, bool qnan_exp)
 }
 
 bool translate_vcomisd(IR1_INST * pir1) {
+    if (!option_enable_lasx) {
+        return translate_vcomisd_lsx(pir1);
+    }
+
     xcomisx(pir1, true, true);
     return true;
 }
 
 bool translate_vcomiss(IR1_INST * pir1) {
+    if (!option_enable_lasx) {
+        return translate_vcomiss_lsx(pir1);
+    }
+
     xcomisx(pir1, false, true);
     return true;
 }
 
+static IR2_OPND avx_comis_load_scalar(IR1_OPND *opnd, bool is_double)
+{
+    if (ir1_opnd_is_mem(opnd)) {
+        return is_double ? load_u64_from_ir1_mem_exact(opnd) :
+                           load_u32_from_ir1_mem_exact(opnd);
+    }
+
+    lsassert(ir1_opnd_is_xmm(opnd));
+    IR2_OPND value = ra_alloc_itemp();
+    if (is_double) {
+        la_vpickve2gr_du(value, ra_alloc_xmm(ir1_opnd_base_reg_num(opnd)), 0);
+    } else {
+        la_vpickve2gr_w(value, ra_alloc_xmm(ir1_opnd_base_reg_num(opnd)), 0);
+    }
+    return value;
+}
+
+static void avx_comis_apply_daz_and_mark_exceptions(IR2_OPND value,
+                                                    IR2_OPND mxcsr,
+                                                    IR2_OPND flags,
+                                                    bool is_double,
+                                                    bool qnan_invalid)
+{
+    uint64_t exponent_mask = is_double ? UINT64_C(0x7ff0000000000000) :
+                                          UINT64_C(0x000000007f800000);
+    uint64_t fraction_mask = is_double ? UINT64_C(0x000fffffffffffff) :
+                                         UINT64_C(0x00000000007fffff);
+    uint64_t quiet_mask = is_double ? UINT64_C(0x0008000000000000) :
+                                      UINT64_C(0x0000000000400000);
+    uint64_t sign_mask = is_double ? UINT64_C(0x8000000000000000) :
+                                    UINT64_C(0x0000000080000000);
+    IR2_OPND mask = ra_alloc_itemp();
+    IR2_OPND field = ra_alloc_itemp();
+    IR2_OPND check_subnormal = ra_alloc_label();
+    IR2_OPND mark_denormal = ra_alloc_label();
+    IR2_OPND done = ra_alloc_label();
+
+    li_d(mask, exponent_mask);
+    la_and(field, value, mask);
+    la_beq(field, zero_ir2_opnd, check_subnormal);
+    la_bne(field, mask, done);
+
+    li_d(mask, fraction_mask);
+    la_and(field, value, mask);
+    la_beq(field, zero_ir2_opnd, done);
+    la_ori(flags, flags, 0x40);
+    if (qnan_invalid) {
+        la_ori(flags, flags, 0x1);
+    } else {
+        li_d(mask, quiet_mask);
+        la_and(field, value, mask);
+        la_bne(field, zero_ir2_opnd, done);
+        la_ori(flags, flags, 0x1);
+    }
+    la_b(done);
+
+    la_label(check_subnormal);
+    li_d(mask, fraction_mask);
+    la_and(field, value, mask);
+    la_beq(field, zero_ir2_opnd, done);
+    la_andi(field, mxcsr, 0x40);
+    la_beq(field, zero_ir2_opnd, mark_denormal);
+    li_d(mask, sign_mask);
+    la_and(value, value, mask);
+    la_b(done);
+
+    la_label(mark_denormal);
+    la_ori(flags, flags, 0x2);
+    la_label(done);
+    ra_free_temp(field);
+    ra_free_temp(mask);
+}
+
+static void vucomisd_raise_unmasked_exception(IR1_INST *pir1,
+                                               IR2_OPND mxcsr,
+                                               IR2_OPND flags)
+{
+    IR2_OPND masks = ra_alloc_itemp();
+    IR2_OPND unmasked = ra_alloc_itemp();
+    IR2_OPND test = ra_alloc_itemp();
+    IR2_OPND invalid_checked = ra_alloc_label();
+    IR2_OPND flags_normalized = ra_alloc_label();
+    IR2_OPND raise_exception = ra_alloc_label();
+    IR2_OPND check_denormal = ra_alloc_label();
+    IR2_OPND store_and_raise = ra_alloc_label();
+    IR2_OPND done = ra_alloc_label();
+
+    /* Any NaN result suppresses the denormal operand exception. */
+    la_andi(test, flags, 0x40);
+    la_beq(test, zero_ir2_opnd, invalid_checked);
+    la_andi(flags, flags, 0x1);
+    la_b(flags_normalized);
+    la_label(invalid_checked);
+    la_andi(flags, flags, 0x3);
+    la_label(flags_normalized);
+
+    la_srli_w(masks, mxcsr, 7);
+    la_xori(masks, masks, 0x3f);
+    la_and(unmasked, flags, masks);
+    ra_free_temp(masks);
+    la_bne(unmasked, zero_ir2_opnd, raise_exception);
+
+    la_or(mxcsr, mxcsr, flags);
+    la_st_w(mxcsr, env_ir2_opnd, lsenv_offset_of_mxcsr(lsenv));
+    la_b(done);
+
+    la_label(raise_exception);
+    la_andi(test, unmasked, 0x1);
+    la_beq(test, zero_ir2_opnd, check_denormal);
+    la_andi(flags, flags, 0x1);
+    la_b(store_and_raise);
+
+    la_label(check_denormal);
+    la_andi(flags, flags, 0x3);
+    la_label(store_and_raise);
+    la_or(mxcsr, mxcsr, flags);
+    la_st_w(mxcsr, env_ir2_opnd, lsenv_offset_of_mxcsr(lsenv));
+    ra_free_temp(test);
+
+    IR2_OPND eip = ra_alloc_dbt_arg2();
+    IR2_OPND helper = ra_alloc_itemp();
+    li_d(eip, ir1_addr(pir1));
+    la_store_addrx(eip, env_ir2_opnd, lsenv_offset_of_eip(lsenv));
+    tr_save_registers_to_env(0xff, 0xff, option_save_xmm,
+                             options_to_save());
+#ifdef TARGET_X86_64
+    tr_save_x64_8_registers_to_env(0xff, option_save_xmm);
+#endif
+    aot_load_host_addr(helper, (ADDR)helper_raise_simd_exception,
+                       LOAD_HELPER_RAISE_SIMD_EXCEPTION, 0);
+    la_mov64(a0_ir2_opnd, unmasked);
+    la_jirl(zero_ir2_opnd, helper, 0);
+    ra_free_temp(helper);
+    la_label(done);
+    ra_free_temp(unmasked);
+}
+
+static void vucomisd_commit_exception_flags(IR2_OPND mxcsr, IR2_OPND flags)
+{
+    IR2_OPND normalized = ra_alloc_itemp();
+    la_andi(normalized, flags, 0x3f);
+    la_or(mxcsr, mxcsr, normalized);
+    la_st_w(mxcsr, env_ir2_opnd, lsenv_offset_of_mxcsr(lsenv));
+    tr_gen_call_to_helper1((ADDR)update_mxcsr_status, 0,
+                           LOAD_HELPER_UPDATE_MXCSR_STATUS);
+    ra_free_temp(normalized);
+}
+
+static void avx_comis_write_flags(IR2_OPND lhs, IR2_OPND rhs, bool is_double)
+{
+    uint64_t exponent_mask = is_double ? UINT64_C(0x7ff0000000000000) :
+                                          UINT64_C(0x000000007f800000);
+    uint64_t fraction_mask = is_double ? UINT64_C(0x000fffffffffffff) :
+                                         UINT64_C(0x00000000007fffff);
+    uint64_t absolute_mask = is_double ? UINT64_C(0x7fffffffffffffff) :
+                                         UINT64_C(0x000000007fffffff);
+    uint64_t sign_mask = is_double ? UINT64_C(0x8000000000000000) :
+                                    UINT64_C(0x0000000080000000);
+    IR2_OPND flag = ra_alloc_itemp();
+    IR2_OPND mask = ra_alloc_itemp();
+    IR2_OPND field = ra_alloc_itemp();
+    IR2_OPND check_rhs_nan = ra_alloc_label();
+    IR2_OPND ordered = ra_alloc_label();
+    IR2_OPND check_exact_equal = ra_alloc_label();
+    IR2_OPND compare_signs = ra_alloc_label();
+    IR2_OPND same_sign = ra_alloc_label();
+    IR2_OPND negative = ra_alloc_label();
+    IR2_OPND unordered = ra_alloc_label();
+    IR2_OPND equal = ra_alloc_label();
+    IR2_OPND less = ra_alloc_label();
+    IR2_OPND greater = ra_alloc_label();
+    IR2_OPND write = ra_alloc_label();
+
+    li_d(mask, exponent_mask);
+    la_and(field, lhs, mask);
+    la_bne(field, mask, check_rhs_nan);
+    li_d(mask, fraction_mask);
+    la_and(field, lhs, mask);
+    la_bne(field, zero_ir2_opnd, unordered);
+
+    la_label(check_rhs_nan);
+    li_d(mask, exponent_mask);
+    la_and(field, rhs, mask);
+    la_bne(field, mask, ordered);
+    li_d(mask, fraction_mask);
+    la_and(field, rhs, mask);
+    la_bne(field, zero_ir2_opnd, unordered);
+
+    la_label(ordered);
+    li_d(mask, absolute_mask);
+    la_and(field, lhs, mask);
+    la_bne(field, zero_ir2_opnd, check_exact_equal);
+    la_and(field, rhs, mask);
+    la_beq(field, zero_ir2_opnd, equal);
+
+    la_label(check_exact_equal);
+    la_beq(lhs, rhs, equal);
+    la_label(compare_signs);
+    li_d(mask, sign_mask);
+    la_and(mask, lhs, mask);
+    li_d(field, sign_mask);
+    la_and(field, rhs, field);
+    la_beq(mask, field, same_sign);
+    la_bne(mask, zero_ir2_opnd, less);
+    la_b(greater);
+
+    la_label(same_sign);
+    la_bne(mask, zero_ir2_opnd, negative);
+    la_bltu(lhs, rhs, less);
+    la_b(greater);
+
+    la_label(negative);
+    la_bltu(rhs, lhs, less);
+    la_b(greater);
+
+    la_label(unordered);
+    li_w(flag, (1 << ZF_BIT_INDEX) | (1 << PF_BIT_INDEX) |
+               (1 << CF_BIT_INDEX));
+    la_b(write);
+
+    la_label(equal);
+    li_w(flag, 1 << ZF_BIT_INDEX);
+    la_b(write);
+
+    la_label(less);
+    li_w(flag, 1 << CF_BIT_INDEX);
+    la_b(write);
+
+    la_label(greater);
+    la_or(flag, zero_ir2_opnd, zero_ir2_opnd);
+    la_label(write);
+    la_x86mtflag(flag, 0x3f);
+
+    ra_free_temp(field);
+    ra_free_temp(mask);
+    ra_free_temp(flag);
+}
+
 bool translate_vucomisd(IR1_INST * pir1) {
-    xcomisx(pir1, true, false);
+    if (!option_enable_lasx) {
+        return translate_vucomisd_lsx(pir1);
+    }
+
+    IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
+    IR1_OPND *opnd1 = ir1_get_opnd(pir1, 1);
+    IR2_OPND lhs = avx_comis_load_scalar(opnd0, true);
+    IR2_OPND rhs = avx_comis_load_scalar(opnd1, true);
+    IR2_OPND mxcsr = ra_alloc_itemp();
+    IR2_OPND flags = ra_alloc_itemp();
+
+    la_ld_wu(mxcsr, env_ir2_opnd, lsenv_offset_of_mxcsr(lsenv));
+    la_or(flags, zero_ir2_opnd, zero_ir2_opnd);
+    avx_comis_apply_daz_and_mark_exceptions(lhs, mxcsr, flags, true, false);
+    avx_comis_apply_daz_and_mark_exceptions(rhs, mxcsr, flags, true, false);
+    vucomisd_raise_unmasked_exception(pir1, mxcsr, flags);
+
+    avx_comis_write_flags(lhs, rhs, true);
+    vucomisd_commit_exception_flags(mxcsr, flags);
+    ra_free_temp(rhs);
+    ra_free_temp(lhs);
+    ra_free_temp(flags);
+    ra_free_temp(mxcsr);
     return true;
 }
 
 bool translate_vucomiss(IR1_INST * pir1) {
+    if (!option_enable_lasx) {
+        return translate_vucomiss_lsx(pir1);
+    }
+
     xcomisx(pir1, false, false);
     return true;
 }
 
+typedef IR2_INST *(*latx_avx_integer_cmp_lsx_fn)(IR2_OPND, IR2_OPND,
+                                                 IR2_OPND);
+
 bool translate_vpcmpeqx(IR1_INST * pir1) {
+    if (!option_enable_lasx) {
+        return translate_vpcmpeqx_lsx(pir1);
+    }
+
     IR1_OPND * opnd0 = ir1_get_opnd(pir1, 0);
     IR1_OPND * opnd1 = ir1_get_opnd(pir1, 1);
     IR1_OPND * opnd2 = ir1_get_opnd(pir1, 2);
     lsassert((ir1_opnd_is_xmm(opnd0) && ir1_opnd_is_xmm(opnd1)) ||
         (ir1_opnd_is_ymm(opnd0) && ir1_opnd_is_ymm(opnd1)));
+    IR1_OPCODE op = ir1_opcode(pir1);
+
     IR2_OPND dest = load_freg256_from_ir1(opnd0);
     IR2_OPND src1 = load_freg256_from_ir1(opnd1);
     IR2_OPND src2 = load_freg256_from_ir1(opnd2);
-    IR1_OPCODE op = ir1_opcode(pir1);
     IR2_INST * ( * tr_inst)(IR2_OPND, IR2_OPND, IR2_OPND);
     switch (op) {
         case dt_X86_INS_VPCMPEQB:
@@ -115,6 +395,10 @@ bool translate_vpcmpeqx(IR1_INST * pir1) {
 }
 
 bool translate_vpcmpgtx(IR1_INST * pir1) {
+    if (!option_enable_lasx) {
+        return translate_vpcmpgtx_lsx(pir1);
+    }
+
     IR1_OPND * opnd0 = ir1_get_opnd(pir1, 0);
     IR1_OPND * opnd1 = ir1_get_opnd(pir1, 1);
     IR1_OPND * opnd2 = ir1_get_opnd(pir1, 2);

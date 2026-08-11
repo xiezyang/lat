@@ -13,6 +13,9 @@
 #include "profile.h"
 #include "translate.h"
 #include "runtime-trace.h"
+#ifdef CONFIG_LATX_AVX_OPT
+#include "avx-trace.h"
+#endif
 #include "exec/translate-all.h"
 #include "ir2-relocate.h"
 #include "tu.h"
@@ -704,7 +707,19 @@ void restore_h128_of_ymm(IR1_INST *ir1, IR2_OPND temp)
     la_xvpermi_q(opnd2, temp, 0x12);
 }
 
-static bool (*translate_functions[])(IR1_INST *) = {
+typedef struct LatxTranslateEntry {
+    bool (*translate)(IR1_INST *);
+    bool avx_opt_only;
+    bool avx_isa;
+} LatxTranslateEntry;
+
+#define LATX_AVX_OPT_ENTRY false
+#undef TRANS_FUNC_GEN_REAL
+#define TRANS_FUNC_GEN_REAL(opcode, function) \
+    [glue(dt_X86_INS_, opcode)] = \
+        { function, LATX_AVX_OPT_ENTRY, LATX_AVX_OPT_ENTRY }
+
+static LatxTranslateEntry translate_functions[] = {
     TRANS_FUNC_GEN(INVALID, invalid),
 
     TRANS_FUNC_GEN(AAA, aaa),
@@ -848,7 +863,11 @@ static bool (*translate_functions[])(IR1_INST *) = {
     TRANS_FUNC_GEN(LDDQU, lddqu),
     TRANS_FUNC_GEN(LDMXCSR, ldmxcsr),
 #ifdef CONFIG_LATX_AVX_OPT
+#undef LATX_AVX_OPT_ENTRY
+#define LATX_AVX_OPT_ENTRY true
     TRANS_FUNC_GEN(VLDMXCSR, ldmxcsr),
+#undef LATX_AVX_OPT_ENTRY
+#define LATX_AVX_OPT_ENTRY false
 #endif
     TRANS_FUNC_GEN(LEA, lea),
     TRANS_FUNC_GEN(LEAVE, leave),
@@ -1068,7 +1087,11 @@ static bool (*translate_functions[])(IR1_INST *) = {
     TRANS_FUNC_GEN(STD, std),
     TRANS_FUNC_GEN(STMXCSR, stmxcsr),
 #ifdef CONFIG_LATX_AVX_OPT
+#undef LATX_AVX_OPT_ENTRY
+#define LATX_AVX_OPT_ENTRY true
     TRANS_FUNC_GEN(VSTMXCSR, stmxcsr),
+#undef LATX_AVX_OPT_ENTRY
+#define LATX_AVX_OPT_ENTRY false
 #endif
     TRANS_FUNC_GEN(STOSB, stos),
     TRANS_FUNC_GEN(STOSD, stos),
@@ -1322,6 +1345,8 @@ static bool (*translate_functions[])(IR1_INST *) = {
     TRANS_FUNC_GEN(SHA256RNDS2, sha256rnds2),
 
 #ifdef CONFIG_LATX_AVX_OPT
+#undef LATX_AVX_OPT_ENTRY
+#define LATX_AVX_OPT_ENTRY true
     /* f16c */
     TRANS_FUNC_GEN(VCVTPH2PS, vcvtph2ps),
     TRANS_FUNC_GEN(VCVTPS2PH, vcvtps2ph),
@@ -1362,7 +1387,7 @@ static bool (*translate_functions[])(IR1_INST *) = {
     TRANS_FUNC_GEN(VPINSRB, vpinsrx),
     TRANS_FUNC_GEN(VPINSRW, vpinsrx),
     TRANS_FUNC_GEN(VPINSRD, vpinsrx),
-    TRANS_FUNC_GEN(VPINSRQ, vpinsrx),
+    TRANS_FUNC_GEN(VPINSRQ, vpinsrq),
     TRANS_FUNC_GEN(VPMINSD, vpminxx),
     TRANS_FUNC_GEN(VPMINSW, vpminxx),
     TRANS_FUNC_GEN(VPMINSB, vpminxx),
@@ -1760,21 +1785,27 @@ static bool (*translate_functions[])(IR1_INST *) = {
     TRANS_FUNC_GEN(VPADDQ, vpaddq),
     TRANS_FUNC_GEN(VZEROUPPER, vzeroupper),
     //TRANS_FUNC_GEN(VPINSRB, vpinsrb),
-    //TRANS_FUNC_GEN(VPINSRQ, vpinsrq),
     TRANS_FUNC_GEN(XGETBV, xgetbv_wrap),
     TRANS_FUNC_GEN(XSETBV, xsetbv_wrap),
     TRANS_FUNC_GEN(XSAVE, xsave_wrap),
+    TRANS_FUNC_GEN(XSAVE64, xsave_wrap),
     TRANS_FUNC_GEN(XSAVEOPT, xsaveopt_wrap),
+    TRANS_FUNC_GEN(XSAVEOPT64, xsaveopt_wrap),
     TRANS_FUNC_GEN(XRSTOR, xrstor_wrap),
+    TRANS_FUNC_GEN(XRSTOR64, xrstor_wrap),
     TRANS_FUNC_GEN(VPBROADCASTD, vpbroadcastd),
     //TRANS_FUNC_GEN(VPMAXSD, vpmaxsd),
     //TRANS_FUNC_GEN(VPMINSD, vpminsd),
+#undef LATX_AVX_OPT_ENTRY
+#define LATX_AVX_OPT_ENTRY false
 #endif
     TRANS_FUNC_GEN(ANDN, andn),
     TRANS_FUNC_GEN(MOVBE, movbe),
     TRANS_FUNC_GEN(RORX, rorx),
     TRANS_FUNC_GEN(BLSI, blsi),
 #ifdef CONFIG_LATX_AVX_OPT
+#undef LATX_AVX_OPT_ENTRY
+#define LATX_AVX_OPT_ENTRY true
     TRANS_FUNC_GEN(VPADDSB, vpaddx),
     TRANS_FUNC_GEN(VPADDSW, vpaddx),
     TRANS_FUNC_GEN(VPADDUSB, vpaddx),
@@ -1799,6 +1830,8 @@ static bool (*translate_functions[])(IR1_INST *) = {
     TRANS_FUNC_GEN(VROUNDSS, vroundss),
     TRANS_FUNC_GEN(VROUNDPD, vroundpd),
     TRANS_FUNC_GEN(VROUNDSD, vroundsd),
+#undef LATX_AVX_OPT_ENTRY
+#define LATX_AVX_OPT_ENTRY false
 #endif
 
 #ifndef CONFIG_LATX_AVX_OPT
@@ -1814,10 +1847,14 @@ static bool (*translate_functions[])(IR1_INST *) = {
 #endif
     TRANS_FUNC_GEN(PCMPISTRM, pcmpistrm),
 #ifdef CONFIG_LATX_AVX_OPT
+#undef LATX_AVX_OPT_ENTRY
+#define LATX_AVX_OPT_ENTRY true
     TRANS_FUNC_GEN(VPCMPESTRI, vpcmpestri),
     TRANS_FUNC_GEN(VPCMPESTRM, vpcmpestrm),
     TRANS_FUNC_GEN(VPCMPISTRI, vpcmpistri),
     TRANS_FUNC_GEN(VPCMPISTRM, vpcmpistrm),
+#undef LATX_AVX_OPT_ENTRY
+#define LATX_AVX_OPT_ENTRY false
 #endif
 
     TRANS_FUNC_GEN(AESDEC, aesdec),
@@ -1828,6 +1865,8 @@ static bool (*translate_functions[])(IR1_INST *) = {
     TRANS_FUNC_GEN(AESKEYGENASSIST, aeskeygenassist),
 
 #ifdef CONFIG_LATX_AVX_OPT
+#undef LATX_AVX_OPT_ENTRY
+#define LATX_AVX_OPT_ENTRY true
     TRANS_FUNC_GEN(VAESDEC, vaesdec),
     TRANS_FUNC_GEN(VAESDECLAST, vaesdeclast),
     TRANS_FUNC_GEN(VAESENC, vaesenc),
@@ -1844,6 +1883,8 @@ static bool (*translate_functions[])(IR1_INST *) = {
     TRANS_FUNC_GEN(VGATHERQPD, vpgatherqq),
     TRANS_FUNC_GEN(VGATHERDPS, vpgatherdd),
     TRANS_FUNC_GEN(VGATHERQPS, vpgatherqd),
+#undef LATX_AVX_OPT_ENTRY
+#define LATX_AVX_OPT_ENTRY false
 #endif
 
     TRANS_FUNC_GEN(PEXT, pext),
@@ -1855,8 +1896,12 @@ static bool (*translate_functions[])(IR1_INST *) = {
     TRANS_FUNC_GEN(ADCX, adcx),
     TRANS_FUNC_GEN(ADOX, adox),
 #ifdef CONFIG_LATX_AVX_OPT
+#undef LATX_AVX_OPT_ENTRY
+#define LATX_AVX_OPT_ENTRY true
     TRANS_FUNC_GEN(VPBROADCASTB, vpbroadcastb),
     TRANS_FUNC_GEN(VPBROADCASTW, vpbroadcastw),
+#undef LATX_AVX_OPT_ENTRY
+#define LATX_AVX_OPT_ENTRY false
 #endif
     TRANS_FUNC_GEN(CRC32, crc32),
     TRANS_FUNC_GEN(PCLMULQDQ, pclmulqdq),
@@ -1865,8 +1910,21 @@ static bool (*translate_functions[])(IR1_INST *) = {
     TRANS_FUNC_GEN_REAL(ENDING, NULL),
 };
 
+#ifdef CONFIG_LATX_AVX_OPT
+
+#endif
+
 bool ir1_translate(IR1_INST *ir1)
 {
+    int tr_func_idx = ir1_opcode(ir1) - dt_X86_INS_INVALID;
+#ifdef CONFIG_LATX_AVX_OPT
+    if (!option_avx_cpuid && translate_functions[tr_func_idx].avx_isa) {
+        return translate_invalid(ir1);
+    }
+    if (translate_functions[tr_func_idx].avx_opt_only) {
+        latx_avx_trace_instrument(ir1);
+    }
+#endif
 #ifdef CONFIG_LATX_INSTS_PATTERN
     if (try_translate_instptn(ir1)) {
         ra_free_all();
@@ -1875,8 +1933,6 @@ bool ir1_translate(IR1_INST *ir1)
 #endif
 
     /* 2. call translate_xx function */
-    int tr_func_idx = ir1_opcode(ir1) - dt_X86_INS_INVALID;
-
     bool translation_success = false;
 
 #ifdef CONFIG_LATX_DEBUG
@@ -1936,7 +1992,7 @@ bool ir1_translate(IR1_INST *ir1)
             ir1_opcode_dump(ir1);
         }
     } else {
-        if (translate_functions[tr_func_idx] == NULL) {
+        if (translate_functions[tr_func_idx].translate == NULL) {
             ir1_opcode_dump(ir1);
 #ifndef CONFIG_LATX_TU
             lsassertm(0, "%s %s %d error : this ins %d not implemented: %s\n",
@@ -1949,7 +2005,8 @@ bool ir1_translate(IR1_INST *ir1)
             return 0;
 #endif
         } else {
-            translation_success = translate_functions[tr_func_idx](ir1); /* TODO */
+            translation_success =
+                translate_functions[tr_func_idx].translate(ir1); /* TODO */
         }
     }
 
@@ -3673,6 +3730,98 @@ void tr_load_xmm64_from_env(uint8 xmm_to_load)
 }
 #endif
 
+static inline void helper_save_reg(IR2_OPND opnd);
+
+static void tr_save_ymm_to_env_lsx(uint16 ymm_to_save)
+{
+    helper_save_reg(a1_ir2_opnd);
+    helper_save_reg(a2_ir2_opnd);
+
+    /* Keep the fixed env pointer out of the LSX fault-save scratch path. */
+    for (int i = 0; i < 8; ++i) {
+        if (ymm_to_save & (UINT16_C(1) << i)) {
+            la_vst(ra_alloc_xmm(i), env_ir2_opnd,
+                   lsenv_offset_of_xmm(lsenv, i));
+        }
+    }
+#ifdef TARGET_X86_64
+    if (ymm_to_save >> 8) {
+        la_addi_d(a1_ir2_opnd, env_ir2_opnd, 0x7f0);
+        for (int i = 0; i < 8; ++i) {
+            if (ymm_to_save & (UINT16_C(1) << (i + 8))) {
+                la_vst(ra_alloc_xmm(i + 8), a1_ir2_opnd,
+                       lsenv_offset_of_xmm(lsenv, i + 8) - 0x7f0);
+            }
+        }
+    }
+#endif
+
+    for (int i = 0; i < CPU_NB_REGS; ++i) {
+        IR2_OPND high;
+
+        if (!(ymm_to_save & (UINT16_C(1) << i))) {
+            continue;
+        }
+        high = ra_alloc_ftemp();
+        li_d(a1_ir2_opnd, lsenv_offset_of_ymmh(lsenv, i));
+        la_add_d(a1_ir2_opnd, env_ir2_opnd, a1_ir2_opnd);
+        la_vld(high, a1_ir2_opnd, 0);
+        li_d(a2_ir2_opnd, lsenv_offset_of_xmm(lsenv, i) + 16);
+        la_add_d(a2_ir2_opnd, env_ir2_opnd, a2_ir2_opnd);
+        la_vst(high, a2_ir2_opnd, 0);
+        ra_free_temp(high);
+    }
+}
+
+void tr_save_ymm_to_env(uint16 ymm_to_save)
+{
+    if (!option_enable_lasx) {
+        tr_save_ymm_to_env_lsx(ymm_to_save);
+        return;
+    }
+
+    tr_save_xmm_to_env((uint8_t)ymm_to_save);
+#ifdef TARGET_X86_64
+    tr_save_xmm64_to_env((uint8_t)(ymm_to_save >> 8));
+#endif
+
+    for (int i = 0; i < CPU_NB_REGS; ++i) {
+        IR2_OPND address;
+        IR2_OPND high;
+
+        if (!(ymm_to_save & (UINT16_C(1) << i))) {
+            continue;
+        }
+        high = load_ymm_high128_shadow(i);
+        address = ra_alloc_itemp();
+        li_d(address, lsenv_offset_of_xmm(lsenv, i) + 16);
+        la_add_d(address, env_ir2_opnd, address);
+        la_vst(high, address, 0);
+        ra_free_temp(address);
+        ra_free_temp(high);
+    }
+}
+
+void tr_load_ymm_high_from_env(uint16 ymm_to_load)
+{
+    for (int i = 0; i < CPU_NB_REGS; ++i) {
+        IR2_OPND address;
+        IR2_OPND high;
+
+        if (!(ymm_to_load & (UINT16_C(1) << i))) {
+            continue;
+        }
+        address = ra_alloc_itemp();
+        high = ra_alloc_ftemp();
+        li_d(address, lsenv_offset_of_xmm(lsenv, i) + 16);
+        la_add_d(address, env_ir2_opnd, address);
+        la_vld(high, address, 0);
+        store_ymm_high128_shadow(high, i);
+        ra_free_temp(address);
+        ra_free_temp(high);
+    }
+}
+
 void tr_save_registers_to_env(uint8 gpr_to_save, uint8 fpr_to_save,
                               uint8 xmm_to_save, uint8 vreg_to_save)
 {
@@ -4015,11 +4164,9 @@ static inline void helper_restore_reg(IR2_OPND opnd)
             lsenv_offset_of_all_gpr(lsenv, ir2_opnd_base_reg_num(&opnd)));
 }
 
-void gen_test_page_flag(IR2_OPND mem_opnd, int mem_imm, uint32_t flag)
+static void gen_test_page_flag_internal(IR2_OPND mem_opnd, int mem_imm,
+                                        uint32_t flag)
 {
-    if (!option_mem_test) {
-        return;
-    }
     TranslationBlock *tb __attribute__((unused)) = NULL;
     if (option_aot) {
         tb = (TranslationBlock *)lsenv->tr_data->curr_tb;
@@ -4093,11 +4240,15 @@ void gen_test_page_flag(IR2_OPND mem_opnd, int mem_imm, uint32_t flag)
     if (need_restore1) {
         helper_restore_reg(itemp1);
     }
-    /* Raise a SIGSEGV. */
+    /* Signal frames export YMM high halves from env->xmm_regs. */
+    tr_save_ymm_to_env(UINT16_MAX);
+    /* The host signal bridge recognizes the synthetic null access and uses
+     * env->cr[2] as the guest fault address. */
+    IR2_OPND fault_addr = zero_ir2_opnd;
     if (flag & PAGE_WRITE) {
-        la_st_w(a1_ir2_opnd, zero_ir2_opnd, 0);
+        la_st_w(a1_ir2_opnd, fault_addr, 0);
     } else {
-        la_ld_w(a1_ir2_opnd, zero_ir2_opnd, 0);
+        la_ld_w(a1_ir2_opnd, fault_addr, 0);
     }
     la_code_align(4, 0x03400000);
     la_label(label_exit);
@@ -4119,8 +4270,21 @@ void gen_test_page_flag(IR2_OPND mem_opnd, int mem_imm, uint32_t flag)
     }
 }
 
-void tr_gen_call_to_helper_vfll(ADDR func, IR2_OPND arg1, IR2_OPND arg2, int use_fp,
-        enum aot_rel_kind REL_KIND)
+void gen_test_page_flag(IR2_OPND mem_opnd, int mem_imm, uint32_t flag)
+{
+    if (!option_mem_test) {
+        return;
+    }
+    gen_test_page_flag_internal(mem_opnd, mem_imm, flag);
+}
+
+void gen_test_page_flag_force(IR2_OPND mem_opnd, int mem_imm, uint32_t flag)
+{
+    gen_test_page_flag_internal(mem_opnd, mem_imm, flag);
+}
+
+void tr_gen_call_to_helper_vfll(ADDR func, IR2_OPND arg1, IR2_OPND arg2,
+        int use_fp, bool sync_ymm, enum aot_rel_kind REL_KIND)
 {
     /* aot relocation requires the tb struct */
     TranslationBlock *tb __attribute__((unused)) = NULL;
@@ -4131,6 +4295,9 @@ void tr_gen_call_to_helper_vfll(ADDR func, IR2_OPND arg1, IR2_OPND arg2, int use
     helper_save_reg(arg2);
     /* prologue */
     tr_gen_call_to_helper_prologue(use_fp);
+    if (sync_ymm) {
+        tr_save_ymm_to_env(UINT16_MAX);
+    }
 
     helper_restore_reg(arg1);
     helper_restore_reg(arg2);
