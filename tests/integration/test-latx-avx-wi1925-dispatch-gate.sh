@@ -51,7 +51,7 @@ table_sizes = {
     "LATX_AVX_INTEGER_CMP_LSX_TABLE": 8,
     "LATX_AVX_INTEGER_SHIFT_LSX_TABLE": 15,
     "LATX_AVX_INTEGER_3OP_LSX_TABLE": 28,
-    "LATX_AVX_INTEGER_REMAINING_3OP_LSX_TABLE": 11,
+    "LATX_AVX_INTEGER_REMAINING_3OP_LSX_TABLE": 8,
 }
 table_rows = []
 for name, expected in table_sizes.items():
@@ -94,21 +94,21 @@ first_batch = {
     "VMOVSD", "VMOVMSKPD", "VMOVMSKPS", "VLDDQU", "VMASKMOVPD", "VMASKMOVPS",
 }
 
-wi1915_tables = {"LATX_AVX_INTEGER_REMAINING_3OP_LSX_TABLE": 11}
+wi1915_tables = {"LATX_AVX_INTEGER_REMAINING_3OP_LSX_TABLE": 8}
 legacy_table_rows = sum(
     expected for name, expected in table_sizes.items() if name not in wi1915_tables
 )
-if sum(row[0] in wi1915 for row in direct) != 27:
+if sum(row[0] in wi1915 for row in direct) != 30:
     raise SystemExit("WI-1915 direct registration inventory changed")
-if sum(expected for expected in wi1915_tables.values()) != 11:
+if sum(expected for expected in wi1915_tables.values()) != 8:
     raise SystemExit("WI-1915 table registration inventory changed")
 
 # The WI title names the 144 legacy entries. The current tree also contains
-# 38 WI-1915 entries added after that audit: 27 direct and 11 table rows.
+# 38 WI-1915 entries added after that audit: 30 direct and 8 table rows.
 # Before this fix, the source audit found 33 direct legacy entries outside a
 # gate; the other 119 direct legacy entries were already gated.
 legacy_scope = 33 + len(fma) + legacy_table_rows
-wi1915_scope = 27 + 11
+wi1915_scope = 30 + 8
 if legacy_scope != 144 or wi1915_scope != 38:
     raise SystemExit(
         f"scope inventory changed: legacy={legacy_scope}, wi1915={wi1915_scope}"
