@@ -556,18 +556,21 @@ bool translate_vcvtsd2ss_lsx(IR1_INST * pir1) {
         IR2_OPND bit = ra_alloc_itemp();
         IR2_OPND masks = ra_alloc_itemp();
         IR2_OPND unmasked = ra_alloc_itemp();
+        IR2_OPND old_mxcsr = ra_alloc_itemp();
         IR2_OPND keep_denormal = ra_alloc_label();
         IR2_OPND daz_done = ra_alloc_label();
         IR2_OPND check_overflow = ra_alloc_label();
         IR2_OPND check_underflow = ra_alloc_label();
         IR2_OPND check_precision = ra_alloc_label();
         IR2_OPND exception_ready = ra_alloc_label();
+        IR2_OPND keep_precision = ra_alloc_label();
         IR2_OPND no_exception = ra_alloc_label();
 
         /* Read all sources before changing FCSR or an aliased dest. */
         la_vori_b(src1, ra_alloc_xmm(ir1_opnd_base_reg_num(opnd1)), 0);
         la_or(flags, zero_ir2_opnd, zero_ir2_opnd);
         la_ld_wu(mxcsr, env_ir2_opnd, lsenv_offset_of_mxcsr(lsenv));
+        la_or(old_mxcsr, mxcsr, zero_ir2_opnd);
         la_vpickve2gr_du(converted_low, src2, 0);
         li_d(masks, UINT64_C(0x7ff0000000000000));
         la_and(bit, converted_low, masks);
@@ -632,6 +635,16 @@ bool translate_vcvtsd2ss_lsx(IR1_INST * pir1) {
         la_label(check_precision);
         la_andi(unmasked, unmasked, 0x20);
         la_label(exception_ready);
+
+        /* An unmasked underflow is delivered before a new inexact flag. */
+        la_andi(bit, unmasked, 0x10);
+        la_beq(bit, zero_ir2_opnd, keep_precision);
+        la_andi(bit, flags, 0x20);
+        la_beq(bit, zero_ir2_opnd, keep_precision);
+        la_andi(bit, old_mxcsr, 0x20);
+        la_bne(bit, zero_ir2_opnd, keep_precision);
+        la_bstrins_w(mxcsr, zero_ir2_opnd, 5, 5);
+        la_label(keep_precision);
         ra_free_temp(bit);
         ra_free_temp(masks);
         la_st_w(mxcsr, env_ir2_opnd, lsenv_offset_of_mxcsr(lsenv));
@@ -655,6 +668,7 @@ bool translate_vcvtsd2ss_lsx(IR1_INST * pir1) {
 
         la_label(no_exception);
         la_st_w(mxcsr, env_ir2_opnd, lsenv_offset_of_mxcsr(lsenv));
+        ra_free_temp(old_mxcsr);
         ra_free_temp(flags);
         ra_free_temp(mxcsr);
         la_vinsgr2vr_w(src1, converted_low, 0);
