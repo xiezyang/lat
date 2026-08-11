@@ -6870,6 +6870,7 @@ bool translate_vpmaskmovx_lsx(IR1_INST *pir1)
 
         /* Copy the mask before writing dest, including the dest/mask alias. */
         la_vori_b(mask_low, ra_alloc_xmm(mask_index), 0);
+        la_vxor_v(dest_low, dest_low, dest_low);
         if (!ymm) {
             clear_ymm_high128_shadow(dest_index);
         }
@@ -6881,6 +6882,7 @@ bool translate_vpmaskmovx_lsx(IR1_INST *pir1)
             IR2_OPND dest_high = load_ymm_high128_shadow(dest_index);
             IR2_OPND mask_high = load_ymm_high128_shadow(mask_index);
 
+            la_vxor_v(dest_high, dest_high, dest_high);
             for (int lane = 0; lane < lane_count; ++lane) {
                 vpmaskmov_lsx_lane(dest_high, mask_high, address, lane,
                                    lane + lane_count, element_size, false);
