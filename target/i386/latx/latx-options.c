@@ -26,6 +26,9 @@ char *option_kzt_log_error;
 
 #ifdef CONFIG_LATX_AVX_OPT
 int option_avx_cpuid = 0;
+int option_avx_trace = 0;
+int option_avx_trace_ymm = -1;
+int option_avx_trace_ymm_init = 0;
 #endif
 
 #ifdef CONFIG_LATX_FLAG_REDUCTION
@@ -244,6 +247,9 @@ void options_init(void)
 
 #ifdef CONFIG_LATX_AVX_OPT
     option_avx_cpuid = 1;
+    option_avx_trace = 0;
+    option_avx_trace_ymm = -1;
+    option_avx_trace_ymm_init = 0;
 #endif /*CONFIG_LATX_AVX_OPT*/
 
 #ifdef CONFIG_LATX_AOT

@@ -35,9 +35,15 @@ extern void __gcov_dump(void);
 #ifdef CONFIG_LATX_PERF
 #include "latx-perf.h"
 #endif
+#ifdef CONFIG_LATX_AVX_OPT
+#include "avx-trace.h"
+#endif
 
 void preexit_cleanup(CPUArchState *env, int code)
 {
+#ifdef CONFIG_LATX_AVX_OPT
+    latx_avx_trace_flush();
+#endif
 #ifdef CONFIG_LATX_PERF
     latx_timer_stop(TIMER_PROCESS);
 #endif

@@ -57,6 +57,9 @@ int mydebug = 1;
 #include "latx-config.h"
 #include "latx-options.h"
 #include "latx-runtime.h"
+#ifdef CONFIG_LATX_AVX_OPT
+#include "avx-trace.h"
+#endif
 #include "aot.h"
 #include <openssl/evp.h>
 #endif
@@ -663,6 +666,47 @@ static void handle_arg_latx_avx_cpuid(const char *arg)
     printf("handle_arg_latx_avx_cpuid:arg=%s\n",arg);
     option_avx_cpuid = strtol(arg, NULL, 0);
 }
+
+static void handle_arg_latx_avx_trace(const char *arg)
+{
+    option_avx_trace = strtol(arg, NULL, 0);
+    if (option_avx_trace < 0 || option_avx_trace > 3) {
+        fprintf(stderr, "LATX_AVX_TRACE must be 0, 1, 2, or 3\n");
+        exit(EXIT_FAILURE);
+    }
+    if (option_avx_trace) {
+        option_aot = 0;
+        option_load_aot = 0;
+        latx_avx_trace_init();
+    }
+}
+
+static void handle_arg_latx_avx_trace_ymm(const char *arg)
+{
+    option_avx_trace_ymm = strtol(arg, NULL, 0);
+#ifdef TARGET_X86_64
+    if (option_avx_trace_ymm < 0 || option_avx_trace_ymm >= 16) {
+#else
+    if (option_avx_trace_ymm < 0 || option_avx_trace_ymm >= 8) {
+#endif
+        fprintf(stderr, "LATX_AVX_TRACE_YMM register is out of range\n");
+        exit(EXIT_FAILURE);
+    }
+}
+
+static void handle_arg_latx_avx_trace_ymm_init(const char *arg)
+{
+    option_avx_trace_ymm_init = strtol(arg, NULL, 0);
+    if (option_avx_trace_ymm_init < 0 || option_avx_trace_ymm_init > 1) {
+        fprintf(stderr, "LATX_AVX_TRACE_YMM_INIT must be 0 or 1\n");
+        exit(EXIT_FAILURE);
+    }
+    if (option_avx_trace_ymm_init && option_avx_trace_ymm < 0) {
+        fprintf(stderr,
+                "LATX_AVX_TRACE_YMM_INIT requires LATX_AVX_TRACE_YMM\n");
+        exit(EXIT_FAILURE);
+    }
+}
 #endif
 
 #if defined(CONFIG_LATX_KZT)
@@ -916,6 +960,14 @@ static const struct qemu_argument arg_table[] = {
 #if defined(CONFIG_LATX_AVX_OPT)
     {"latx-avx-cpuid",    "LATX_AVX_CPUID",     true,  handle_arg_latx_avx_cpuid,
     "",           "enable avx cpuid"},
+    {"latx-avx-trace",    "LATX_AVX_TRACE",     true,  handle_arg_latx_avx_trace,
+    "mode",       "trace executed AVX: 1 summary, 2 SIGILL on first, 3 every hit"},
+    {"latx-avx-trace-ymm", "LATX_AVX_TRACE_YMM", true,
+    handle_arg_latx_avx_trace_ymm,
+    "register",   "trace one guest YMM register state before each AVX hit"},
+    {"latx-avx-trace-ymm-init", "LATX_AVX_TRACE_YMM_INIT", true,
+    handle_arg_latx_avx_trace_ymm_init,
+    "0 or 1",     "initialize the traced YMM shadow high half before first hit"},
 #endif
 #if defined(CONFIG_LATX_KZT)
     {"latx-kzt",    "LATX_KZT",     true,  handle_arg_latx_kzt,

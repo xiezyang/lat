@@ -40,6 +40,9 @@ extern char *option_kzt_log_error;
 
 #ifdef CONFIG_LATX_AVX_OPT
 extern int option_avx_cpuid;
+extern int option_avx_trace;
+extern int option_avx_trace_ymm;
+extern int option_avx_trace_ymm_init;
 #endif /* CONFIG_LATX_AVX_OPT */
 
 extern int close_latx_parallel;
@@ -147,7 +150,10 @@ extern unsigned long long counter_mips_tr;
 
 #if defined(CONFIG_LATX) && defined(CONFIG_LATX_AVX_OPT)
 #define ENVSUP_AVX \
-    ENVFUN(LATX_AVX_CPUID, handle_arg_latx_avx_cpuid)
+    ENVFUN(LATX_AVX_CPUID, handle_arg_latx_avx_cpuid) \
+    ENVFUN(LATX_AVX_TRACE, handle_arg_latx_avx_trace) \
+    ENVFUN(LATX_AVX_TRACE_YMM, handle_arg_latx_avx_trace_ymm) \
+    ENVFUN(LATX_AVX_TRACE_YMM_INIT, handle_arg_latx_avx_trace_ymm_init)
 #else
 #define ENVSUP_AVX
 #endif
