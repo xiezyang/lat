@@ -10512,8 +10512,13 @@ static bool translate_avx_gather_lsx(IR1_INST *pir1,
     la_vori_b(index_low, ra_alloc_xmm(index_index), 0);
     la_vori_b(mask_low_values, mask_low_store, 0);
     if (ymm) {
-        la_vori_b(index_high_values, load_ymm_high128_shadow(index_index), 0);
-        la_vori_b(mask_high_values, load_ymm_high128_shadow(mask_index), 0);
+        IR2_OPND index_high = load_ymm_high128_shadow(index_index);
+        IR2_OPND mask_high = load_ymm_high128_shadow(mask_index);
+
+        la_vori_b(index_high_values, index_high, 0);
+        la_vori_b(mask_high_values, mask_high, 0);
+        ra_free_temp(index_high);
+        ra_free_temp(mask_high);
     }
 
     int lanes_per_half = value64 ? 2 : 4;
