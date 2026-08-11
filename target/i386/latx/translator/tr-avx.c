@@ -8353,6 +8353,7 @@ static bool translate_vpcmpxstrx_lsx(IR1_INST *pir1, ADDR helper_func,
         tr_gen_call_to_helper_pcmpxstrx(helper_func, d, temp_index, imm,
                                         rel_kind);
         la_vori_b(src, temp, 0);
+        ra_free_temp(temp);
     }
     if (writes_mask) {
         clear_ymm_high128_shadow(0);
