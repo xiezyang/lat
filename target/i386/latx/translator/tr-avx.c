@@ -2554,11 +2554,13 @@ static bool translate_avx_integer_3op_custom_lsx(
         src2_low = ra_alloc_ftemp();
         la_vori_b(src2_low, ra_alloc_xmm(src2_index), 0);
         if (ir1_opnd_is_ymm(opnd0)) {
+            lsx_op(result_low, src1_low, src2_low);
+
+            /* Keep high-half sources out of the low-half helper's temp set. */
             IR2_OPND src1_high = load_ymm_high128_shadow(src1_index);
             IR2_OPND src2_high = load_ymm_high128_shadow(src2_index);
             IR2_OPND result_high = ra_alloc_ftemp();
 
-            lsx_op(result_low, src1_low, src2_low);
             lsx_op(result_high, src1_high, src2_high);
             la_vori_b(ra_alloc_xmm(dest_index), result_low, 0);
             store_ymm_high128_shadow(result_high, dest_index);
