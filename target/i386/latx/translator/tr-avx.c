@@ -2541,11 +2541,16 @@ static bool translate_avx_integer_3op_custom_lsx(
             lsx_op(result_high, src1_high, src2_high);
             la_vori_b(ra_alloc_xmm(dest_index), result_low, 0);
             store_ymm_high128_shadow(result_high, dest_index);
+            ra_free_temp(src1_high);
+            ra_free_temp(src2_low);
+            ra_free_temp(src2_high);
+            ra_free_temp(result_high);
         } else {
             src2_low = load_v128_from_ir1_mem_exact(opnd2);
             lsx_op(result_low, src1_low, src2_low);
             la_vori_b(ra_alloc_xmm(dest_index), result_low, 0);
             clear_ymm_high128_shadow(dest_index);
+            ra_free_temp(src2_low);
         }
     } else {
         int src2_index = ir1_opnd_base_reg_num(opnd2);
@@ -2564,12 +2569,18 @@ static bool translate_avx_integer_3op_custom_lsx(
             lsx_op(result_high, src1_high, src2_high);
             la_vori_b(ra_alloc_xmm(dest_index), result_low, 0);
             store_ymm_high128_shadow(result_high, dest_index);
+            ra_free_temp(src1_high);
+            ra_free_temp(src2_high);
+            ra_free_temp(result_high);
         } else {
             lsx_op(result_low, src1_low, src2_low);
             la_vori_b(ra_alloc_xmm(dest_index), result_low, 0);
             clear_ymm_high128_shadow(dest_index);
         }
+        ra_free_temp(src2_low);
     }
+    ra_free_temp(result_low);
+    ra_free_temp(src1_low);
     return true;
 }
 
@@ -2640,6 +2651,8 @@ static void translate_vphaddw_lane_lsx(IR2_OPND dest, IR2_OPND src1,
     la_vpickev_h(even, src2, src1);
     la_vpickod_h(odd, src2, src1);
     la_vadd_h(dest, even, odd);
+    ra_free_temp(odd);
+    ra_free_temp(even);
 }
 
 static void translate_vphaddd_lane_lsx(IR2_OPND dest, IR2_OPND src1,
@@ -2651,6 +2664,8 @@ static void translate_vphaddd_lane_lsx(IR2_OPND dest, IR2_OPND src1,
     la_vpickev_w(even, src2, src1);
     la_vpickod_w(odd, src2, src1);
     la_vadd_w(dest, even, odd);
+    ra_free_temp(odd);
+    ra_free_temp(even);
 }
 
 static void translate_vphaddsw_lane_lsx(IR2_OPND dest, IR2_OPND src1,
@@ -2662,6 +2677,8 @@ static void translate_vphaddsw_lane_lsx(IR2_OPND dest, IR2_OPND src1,
     la_vpickev_h(even, src2, src1);
     la_vpickod_h(odd, src2, src1);
     la_vsadd_h(dest, even, odd);
+    ra_free_temp(odd);
+    ra_free_temp(even);
 }
 
 static void translate_vphsubw_lane_lsx(IR2_OPND dest, IR2_OPND src1,
