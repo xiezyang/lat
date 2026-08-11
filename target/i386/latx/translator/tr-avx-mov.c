@@ -139,6 +139,10 @@ bool translate_vmovups_lsx(IR1_INST * pir1) {
         IR1_OPND *dest = ir1_get_opnd(pir1, 0);
         IR1_OPND *src = ir1_get_opnd(pir1, 1);
 
+        if (ir1_opnd_is_ymm(src)) {
+            tr_save_ymm_to_env(UINT16_MAX);
+        }
+
         if (ir1_opnd_size(dest) == 256 && ir1_opnd_is_mem(src)) {
             int dest_index = ir1_opnd_base_reg_num(dest);
             IR2_OPND low;
@@ -147,12 +151,15 @@ bool translate_vmovups_lsx(IR1_INST * pir1) {
             load_v256_from_ir1_mem_exact(src, &low, &high);
             la_vori_b(ra_alloc_xmm(dest_index), low, 0);
             store_ymm_high128_shadow(high, dest_index);
+            ra_free_temp(low);
+            ra_free_temp(high);
         } else if (ir1_opnd_is_mem(dest) && ir1_opnd_size(src) == 256) {
             int src_index = ir1_opnd_base_reg_num(src);
+            IR2_OPND high = load_ymm_high128_shadow(src_index);
 
             store_v256_to_ir1_mem_exact(
-                ra_alloc_xmm(src_index),
-                load_ymm_high128_shadow(src_index), dest);
+                ra_alloc_xmm(src_index), high, dest);
+            ra_free_temp(high);
         } else if (ir1_opnd_size(dest) == 256 &&
                    ir1_opnd_size(src) == 256) {
             int dest_index = ir1_opnd_base_reg_num(dest);
@@ -161,12 +168,14 @@ bool translate_vmovups_lsx(IR1_INST * pir1) {
 
             la_vori_b(ra_alloc_xmm(dest_index), ra_alloc_xmm(src_index), 0);
             store_ymm_high128_shadow(high, dest_index);
+            ra_free_temp(high);
         } else if (ir1_opnd_size(dest) == 128 && ir1_opnd_is_mem(src)) {
             int dest_index = ir1_opnd_base_reg_num(dest);
             IR2_OPND value = load_v128_from_ir1_mem_exact(src);
 
             la_vori_b(ra_alloc_xmm(dest_index), value, 0);
             clear_ymm_high128_shadow(dest_index);
+            ra_free_temp(value);
         } else if (ir1_opnd_is_mem(dest) && ir1_opnd_size(src) == 128) {
             store_v128_to_ir1_mem_exact(
                 ra_alloc_xmm(ir1_opnd_base_reg_num(src)), dest);
@@ -178,6 +187,7 @@ bool translate_vmovups_lsx(IR1_INST * pir1) {
             la_vori_b(value, ra_alloc_xmm(ir1_opnd_base_reg_num(src)), 0);
             la_vori_b(ra_alloc_xmm(dest_index), value, 0);
             clear_ymm_high128_shadow(dest_index);
+            ra_free_temp(value);
         } else {
 #ifdef CONFIG_LATX_TS
             return false;
@@ -255,6 +265,10 @@ bool translate_vmovaps_lsx(IR1_INST *pir1)
         IR1_OPND *dest = ir1_get_opnd(pir1, 0);
         IR1_OPND *src = ir1_get_opnd(pir1, 1);
 
+        if (ir1_opnd_is_ymm(src)) {
+            tr_save_ymm_to_env(UINT16_MAX);
+        }
+
         if (ir1_opnd_is_ymm(dest) && ir1_opnd_is_mem(src)) {
             int dest_index = ir1_opnd_base_reg_num(dest);
             IR2_OPND address;
@@ -270,6 +284,8 @@ bool translate_vmovaps_lsx(IR1_INST *pir1)
             la_vori_b(ra_alloc_xmm(dest_index), low, 0);
             store_ymm_high128_shadow(high, dest_index);
             ra_free_temp(address);
+            ra_free_temp(low);
+            ra_free_temp(high);
         } else if (ir1_opnd_is_mem(dest) && ir1_opnd_is_ymm(src)) {
             int src_index = ir1_opnd_base_reg_num(src);
             IR2_OPND address;
@@ -285,6 +301,7 @@ bool translate_vmovaps_lsx(IR1_INST *pir1)
             la_vst(low, address, 0);
             la_vst(high, address, 16);
             ra_free_temp(address);
+            ra_free_temp(high);
         } else if (ir1_opnd_is_ymm(dest) && ir1_opnd_is_ymm(src)) {
             int dest_index = ir1_opnd_base_reg_num(dest);
             int src_index = ir1_opnd_base_reg_num(src);
@@ -292,6 +309,7 @@ bool translate_vmovaps_lsx(IR1_INST *pir1)
 
             la_vori_b(ra_alloc_xmm(dest_index), ra_alloc_xmm(src_index), 0);
             store_ymm_high128_shadow(high, dest_index);
+            ra_free_temp(high);
         } else if (ir1_opnd_is_xmm(dest) && ir1_opnd_is_mem(src)) {
             int dest_index = ir1_opnd_base_reg_num(dest);
             IR2_OPND address;
@@ -304,6 +322,7 @@ bool translate_vmovaps_lsx(IR1_INST *pir1)
             la_vori_b(ra_alloc_xmm(dest_index), value, 0);
             clear_ymm_high128_shadow(dest_index);
             ra_free_temp(address);
+            ra_free_temp(value);
         } else if (ir1_opnd_is_mem(dest) && ir1_opnd_is_xmm(src)) {
             IR2_OPND address;
 
@@ -321,6 +340,7 @@ bool translate_vmovaps_lsx(IR1_INST *pir1)
             la_vori_b(value, ra_alloc_xmm(ir1_opnd_base_reg_num(src)), 0);
             la_vori_b(ra_alloc_xmm(dest_index), value, 0);
             clear_ymm_high128_shadow(dest_index);
+            ra_free_temp(value);
         } else {
 #ifdef CONFIG_LATX_TS
             return false;
@@ -421,6 +441,9 @@ static bool translate_vmovmsk_lsx(IR1_INST *pir1, bool is_pd)
     lsassert(ir1_opnd_is_xmm(src_opnd) || ir1_opnd_is_ymm(src_opnd));
 
     src_index = ir1_opnd_base_reg_num(src_opnd);
+    if (ir1_opnd_is_ymm(src_opnd)) {
+        tr_save_ymm_to_env(UINT16_MAX);
+    }
     if (is_pd) {
         la_vmskltz_d(low_mask, ra_alloc_xmm(src_index));
     } else {
@@ -431,20 +454,26 @@ static bool translate_vmovmsk_lsx(IR1_INST *pir1, bool is_pd)
     if (ir1_opnd_is_ymm(src_opnd)) {
         IR2_OPND high_mask = ra_alloc_ftemp();
         IR2_OPND high_bits = ra_alloc_itemp();
+        IR2_OPND high = load_ymm_high128_shadow(src_index);
 
         if (is_pd) {
-            la_vmskltz_d(high_mask, load_ymm_high128_shadow(src_index));
+            la_vmskltz_d(high_mask, high);
             la_movfr2gr_d(high_bits, high_mask);
             la_slli_d(high_bits, high_bits, 2);
         } else {
-            la_vmskltz_w(high_mask, load_ymm_high128_shadow(src_index));
+            la_vmskltz_w(high_mask, high);
             la_movfr2gr_d(high_bits, high_mask);
             la_slli_d(high_bits, high_bits, 4);
         }
         la_or(result, result, high_bits);
+        ra_free_temp(high);
+        ra_free_temp(high_bits);
+        ra_free_temp(high_mask);
     }
 
     store_ireg_to_ir1(result, dest_opnd, false);
+    ra_free_temp(low_mask);
+    ra_free_temp(result);
     return true;
 }
 
@@ -610,6 +639,10 @@ bool translate_vmovddup_lsx(IR1_INST * pir1) {
         IR1_OPND *src = ir1_get_opnd(pir1, 1);
         int dest_index = ir1_opnd_base_reg_num(dest);
 
+        if (ir1_opnd_is_ymm(src)) {
+            tr_save_ymm_to_env(UINT16_MAX);
+        }
+
         if (ir1_opnd_is_ymm(dest)) {
             IR2_OPND src_low;
             IR2_OPND src_high;
@@ -630,6 +663,8 @@ bool translate_vmovddup_lsx(IR1_INST * pir1) {
             la_vreplvei_d(src_high, src_high, 0);
             la_vori_b(ra_alloc_xmm(dest_index), src_low, 0);
             store_ymm_high128_shadow(src_high, dest_index);
+            ra_free_temp(src_low);
+            ra_free_temp(src_high);
         } else {
             IR2_OPND result = ra_alloc_ftemp();
 
@@ -639,16 +674,19 @@ bool translate_vmovddup_lsx(IR1_INST * pir1) {
                 IR2_OPND value = load_u64_from_ir1_mem_exact(src);
 
                 la_vreplgr2vr_d(result, value);
+                ra_free_temp(value);
             } else {
                 IR2_OPND src_low = ra_alloc_ftemp();
 
                 la_vori_b(src_low,
                           ra_alloc_xmm(ir1_opnd_base_reg_num(src)), 0);
                 la_vreplvei_d(result, src_low, 0);
+                ra_free_temp(src_low);
             }
 
             la_vori_b(ra_alloc_xmm(dest_index), result, 0);
             clear_ymm_high128_shadow(dest_index);
+            ra_free_temp(result);
         }
     }
     return true;
@@ -723,12 +761,30 @@ bool translate_vmovss_lsx(IR1_INST *pir1)
             IR2_OPND dest = ra_alloc_xmm(dest_index);
             IR2_OPND temp = ra_alloc_ftemp();
             IR2_OPND src1 = ra_alloc_xmm(ir1_opnd_base_reg_num(opnd1));
-            IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
+            IR1_OPND *opnd2 = ir1_get_opnd(pir1, 2);
+            IR2_OPND src2;
+            bool src2_is_temp = false;
+
+            if (ir1_opnd_is_mem(opnd2)) {
+                IR2_OPND value = load_u32_from_ir1_mem_exact(opnd2);
+
+                src2 = ra_alloc_ftemp();
+                la_vxor_v(src2, src2, src2);
+                la_vinsgr2vr_w(src2, value, 0);
+                ra_free_temp(value);
+                src2_is_temp = true;
+            } else {
+                lsassert(ir1_opnd_is_xmm(opnd2));
+                src2 = ra_alloc_xmm(ir1_opnd_base_reg_num(opnd2));
+            }
 
             la_vori_b(temp, src1, 0);
             la_vextrins_w(temp, src2, VEXTRINS_IMM_4_0(0, 0));
             la_vori_b(dest, temp, 0);
             ra_free_temp(temp);
+            if (src2_is_temp) {
+                ra_free_temp(src2);
+            }
             clear_ymm_high128_shadow(dest_index);
         } else if (ir1_opnd_is_xmm(opnd0) && ir1_opnd_is_mem(opnd1)) {
             int dest_index = ir1_opnd_base_reg_num(opnd0);
@@ -997,107 +1053,150 @@ bool translate_vmaskmovpx(IR1_INST * pir1) {
     return true;
 }
 
+static void emit_vmaskmovpx_lsx_lane(IR2_OPND vector, IR2_OPND mask,
+                                     IR2_OPND address, int vector_lane,
+                                     int memory_lane, int element_size,
+                                     bool store)
+{
+    IR2_OPND mask_value = ra_alloc_itemp();
+    IR2_OPND mask_sign = ra_alloc_itemp();
+    IR2_OPND value = ra_alloc_itemp();
+    IR2_OPND skip = ra_alloc_label();
+    int offset = memory_lane * element_size;
+
+    if (element_size == 4) {
+        la_vpickve2gr_wu(mask_value, mask, vector_lane);
+        la_bstrpick_d(mask_sign, mask_value, 31, 31);
+    } else {
+        la_vpickve2gr_du(mask_value, mask, vector_lane);
+        la_bstrpick_d(mask_sign, mask_value, 63, 63);
+    }
+    la_beq(mask_sign, zero_ir2_opnd, skip);
+
+    if (store) {
+        if (element_size == 4) {
+            la_vpickve2gr_wu(value, vector, vector_lane);
+            gen_test_page_flag_force_range(address, offset, element_size,
+                                           PAGE_WRITE | PAGE_WRITE_ORG);
+            la_st_w(value, address, offset);
+        } else {
+            la_vpickve2gr_du(value, vector, vector_lane);
+            gen_test_page_flag_force_range(address, offset, element_size,
+                                           PAGE_WRITE | PAGE_WRITE_ORG);
+            la_st_d(value, address, offset);
+        }
+    } else if (element_size == 4) {
+        gen_test_page_flag_force_range(address, offset, element_size,
+                                       PAGE_READ);
+        la_ld_w(value, address, offset);
+        la_vinsgr2vr_w(vector, value, vector_lane);
+    } else {
+        gen_test_page_flag_force_range(address, offset, element_size,
+                                       PAGE_READ);
+        la_ld_d(value, address, offset);
+        la_vinsgr2vr_d(vector, value, vector_lane);
+    }
+
+    la_label(skip);
+    ra_free_temp(value);
+    ra_free_temp(mask_sign);
+    ra_free_temp(mask_value);
+}
+
 bool translate_vmaskmovpx_lsx(IR1_INST *pir1)
 {
     IR1_OPND *dest = ir1_get_opnd(pir1, 0);
     IR1_OPND *mask_opnd = ir1_get_opnd(pir1, 1);
     IR1_OPND *value_opnd = ir1_get_opnd(pir1, 2);
-    IR2_INST *(*tr_slt)(IR2_OPND, IR2_OPND, int);
     bool is_ymm = ir1_opnd_is_ymm(dest) ||
                   (ir1_opnd_is_mem(dest) && ir1_opnd_size(dest) == 256);
+    bool is_pd = ir1_opcode(pir1) == dt_X86_INS_VMASKMOVPD;
+    int element_size = is_pd ? 8 : 4;
+    int lane_count = is_pd ? 2 : 4;
 
+    lsassert(ir1_opcode(pir1) == dt_X86_INS_VMASKMOVPS || is_pd);
     lsassert(ir1_opnd_is_xmm(mask_opnd) || ir1_opnd_is_ymm(mask_opnd));
     lsassert(ir1_opnd_is_xmm(value_opnd) || ir1_opnd_is_ymm(value_opnd) ||
              ir1_opnd_is_mem(value_opnd));
-    switch (ir1_opcode(pir1)) {
-    case dt_X86_INS_VMASKMOVPS:
-        tr_slt = la_vslti_w;
-        break;
-    case dt_X86_INS_VMASKMOVPD:
-        tr_slt = la_vslti_d;
-        break;
-    default:
-        lsassert(0);
-        return false;
+
+    if (ir1_opnd_is_ymm(mask_opnd) || ir1_opnd_is_ymm(value_opnd)) {
+        tr_save_ymm_to_env(UINT16_MAX);
     }
 
     if (is_ymm) {
         int mask_index = ir1_opnd_base_reg_num(mask_opnd);
         IR2_OPND mask_low = ra_alloc_ftemp();
         IR2_OPND mask_high = load_ymm_high128_shadow(mask_index);
-        IR2_OPND value_low;
-        IR2_OPND value_high;
 
         lsassert(ir1_opnd_is_ymm(mask_opnd));
         la_vori_b(mask_low, ra_alloc_xmm(mask_index), 0);
-        if (ir1_opnd_is_mem(value_opnd)) {
-            load_v256_from_ir1_mem_exact(value_opnd, &value_low, &value_high);
-        } else {
+        if (ir1_opnd_is_mem(dest)) {
+            IR2_OPND address = convert_mem_to_itemp(dest);
             int value_index = ir1_opnd_base_reg_num(value_opnd);
+            IR2_OPND value_low = ra_alloc_xmm(value_index);
+            IR2_OPND value_high = load_ymm_high128_shadow(value_index);
 
-            lsassert(ir1_opnd_is_ymm(value_opnd));
-            value_low = ra_alloc_ftemp();
-            la_vori_b(value_low, ra_alloc_xmm(value_index), 0);
-            value_high = load_ymm_high128_shadow(value_index);
-        }
-
-        tr_slt(mask_low, mask_low, 0);
-        tr_slt(mask_high, mask_high, 0);
-        if (ir1_opnd_is_ymm(dest)) {
-            int dest_index = ir1_opnd_base_reg_num(dest);
-            IR2_OPND result_low = ra_alloc_ftemp();
-            IR2_OPND result_high = ra_alloc_ftemp();
-
-            la_vxor_v(result_low, result_low, result_low);
-            la_vxor_v(result_high, result_high, result_high);
-            la_vbitsel_v(result_low, result_low, value_low, mask_low);
-            la_vbitsel_v(result_high, result_high, value_high, mask_high);
-            la_vori_b(ra_alloc_xmm(dest_index), result_low, 0);
-            store_ymm_high128_shadow(result_high, dest_index);
+            for (int lane = 0; lane < lane_count; ++lane) {
+                emit_vmaskmovpx_lsx_lane(value_low, mask_low, address, lane,
+                                         lane, element_size, true);
+                emit_vmaskmovpx_lsx_lane(value_high, mask_high, address, lane,
+                                         lane + lane_count, element_size, true);
+            }
+            ra_free_temp(value_high);
+            ra_free_temp(address);
         } else {
-            IR2_OPND old_low;
-            IR2_OPND old_high;
+            int dest_index = ir1_opnd_base_reg_num(dest);
+            IR2_OPND value_low = ra_alloc_ftemp();
+            IR2_OPND value_high = ra_alloc_ftemp();
+            IR2_OPND address = convert_mem_to_itemp(value_opnd);
 
-            lsassert(ir1_opnd_is_mem(dest));
-            load_v256_from_ir1_mem_exact(dest, &old_low, &old_high);
-            la_vbitsel_v(old_low, old_low, value_low, mask_low);
-            la_vbitsel_v(old_high, old_high, value_high, mask_high);
-            store_v256_to_ir1_mem_exact(old_low, old_high, dest);
+            la_vxor_v(value_low, value_low, value_low);
+            la_vxor_v(value_high, value_high, value_high);
+            for (int lane = 0; lane < lane_count; ++lane) {
+                emit_vmaskmovpx_lsx_lane(value_low, mask_low, address, lane,
+                                         lane, element_size, false);
+                emit_vmaskmovpx_lsx_lane(value_high, mask_high, address, lane,
+                                         lane + lane_count, element_size, false);
+            }
+            la_vori_b(ra_alloc_xmm(dest_index), value_low, 0);
+            store_ymm_high128_shadow(value_high, dest_index);
+            ra_free_temp(value_low);
+            ra_free_temp(value_high);
+            ra_free_temp(address);
         }
+        ra_free_temp(mask_low);
+        ra_free_temp(mask_high);
     } else {
         int mask_index = ir1_opnd_base_reg_num(mask_opnd);
         IR2_OPND mask = ra_alloc_ftemp();
-        IR2_OPND value;
 
         lsassert(ir1_opnd_is_xmm(mask_opnd));
         la_vori_b(mask, ra_alloc_xmm(mask_index), 0);
-        if (ir1_opnd_is_mem(value_opnd)) {
-            value = load_v128_from_ir1_mem_exact(value_opnd);
+        if (ir1_opnd_is_mem(dest)) {
+            IR2_OPND address = convert_mem_to_itemp(dest);
+            IR2_OPND value = ra_alloc_xmm(ir1_opnd_base_reg_num(value_opnd));
+
+            for (int lane = 0; lane < lane_count; ++lane) {
+                emit_vmaskmovpx_lsx_lane(value, mask, address, lane, lane,
+                                         element_size, true);
+            }
+            ra_free_temp(address);
         } else {
-            int value_index = ir1_opnd_base_reg_num(value_opnd);
-
-            lsassert(ir1_opnd_is_xmm(value_opnd));
-            value = ra_alloc_ftemp();
-            la_vori_b(value, ra_alloc_xmm(value_index), 0);
-        }
-
-        tr_slt(mask, mask, 0);
-        if (ir1_opnd_is_xmm(dest)) {
             int dest_index = ir1_opnd_base_reg_num(dest);
-            IR2_OPND result = ra_alloc_ftemp();
+            IR2_OPND value = ra_alloc_ftemp();
+            IR2_OPND address = convert_mem_to_itemp(value_opnd);
 
-            la_vxor_v(result, result, result);
-            la_vbitsel_v(result, result, value, mask);
-            la_vori_b(ra_alloc_xmm(dest_index), result, 0);
+            la_vxor_v(value, value, value);
+            for (int lane = 0; lane < lane_count; ++lane) {
+                emit_vmaskmovpx_lsx_lane(value, mask, address, lane, lane,
+                                         element_size, false);
+            }
+            la_vori_b(ra_alloc_xmm(dest_index), value, 0);
             clear_ymm_high128_shadow(dest_index);
-        } else {
-            IR2_OPND old;
-
-            lsassert(ir1_opnd_is_mem(dest));
-            old = load_v128_from_ir1_mem_exact(dest);
-            la_vbitsel_v(old, old, value, mask);
-            store_v128_to_ir1_mem_exact(old, dest);
+            ra_free_temp(value);
+            ra_free_temp(address);
         }
+        ra_free_temp(mask);
     }
     return true;
 }
@@ -1442,11 +1541,17 @@ bool translate_vmovsd_lsx(IR1_INST *pir1)
             IR2_OPND low;
             IR2_OPND high = ra_alloc_itemp();
             IR2_OPND result = ra_alloc_ftemp();
+            bool low_is_temp = false;
 
-            lsassert(ir1_opnd_is_xmm(src2));
-            low = ra_alloc_itemp();
-            la_vpickve2gr_du(
-                low, ra_alloc_xmm(ir1_opnd_base_reg_num(src2)), 0);
+            if (ir1_opnd_is_mem(src2)) {
+                low = load_u64_from_ir1_mem_exact(src2);
+                low_is_temp = true;
+            } else {
+                lsassert(ir1_opnd_is_xmm(src2));
+                low = ra_alloc_itemp();
+                la_vpickve2gr_du(
+                    low, ra_alloc_xmm(ir1_opnd_base_reg_num(src2)), 0);
+            }
             la_vpickve2gr_du(
                 high, ra_alloc_xmm(ir1_opnd_base_reg_num(src)), 1);
             la_vxor_v(result, result, result);
@@ -1454,6 +1559,11 @@ bool translate_vmovsd_lsx(IR1_INST *pir1)
             la_vinsgr2vr_d(result, high, 1);
             la_vori_b(ra_alloc_xmm(dest_index), result, 0);
             clear_ymm_high128_shadow(dest_index);
+            if (low_is_temp) {
+                ra_free_temp(low);
+            }
+            ra_free_temp(high);
+            ra_free_temp(result);
         } else if (ir1_opnd_is_xmm(dest) && ir1_opnd_is_mem(src)) {
             int dest_index = ir1_opnd_base_reg_num(dest);
             IR2_OPND low = load_u64_from_ir1_mem_exact(src);
@@ -1463,12 +1573,15 @@ bool translate_vmovsd_lsx(IR1_INST *pir1)
             la_vinsgr2vr_d(result, low, 0);
             la_vori_b(ra_alloc_xmm(dest_index), result, 0);
             clear_ymm_high128_shadow(dest_index);
+            ra_free_temp(low);
+            ra_free_temp(result);
         } else if (ir1_opnd_is_mem(dest) && ir1_opnd_is_xmm(src)) {
             IR2_OPND low = ra_alloc_itemp();
 
             la_vpickve2gr_du(
                 low, ra_alloc_xmm(ir1_opnd_base_reg_num(src)), 0);
             store_u64_to_ir1_mem_exact(low, dest);
+            ra_free_temp(low);
         } else {
             lsassert(0);
         }
