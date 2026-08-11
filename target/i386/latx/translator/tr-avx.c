@@ -5976,7 +5976,8 @@ bool translate_vpinsrx_lsx(IR1_INST *pir1)
         lsassert(0);
     }
     clear_ymm_high128_shadow(dest_index);
-    ra_free_temp(src2);
+    if (ir1_opnd_is_mem(src2_opnd))
+        ra_free_temp(src2);
     return true;
 }
 
@@ -6002,7 +6003,8 @@ bool translate_vpinsrq_lsx(IR1_INST *pir1)
     la_vori_b(dest, src1, 0);
     la_vinsgr2vr_d(dest, src2, imm);
     clear_ymm_high128_shadow(dest_index);
-    ra_free_temp(src2);
+    if (ir1_opnd_is_mem(opnd2))
+        ra_free_temp(src2);
 
     return true;
 }
