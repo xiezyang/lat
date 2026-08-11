@@ -55,6 +55,7 @@ assert "load_v256_from_ir1_mem_exact" in generated
 assert "load_ymm_high128_shadow" in generated
 assert "store_ymm_high128_shadow" in generated
 assert "clear_ymm_high128_shadow" in generated
+assert "tr_save_ymm_to_env(UINT16_MAX)" in generated
 assert "la_xv" not in generated
 assert "option_enable_lasx" not in generated
 

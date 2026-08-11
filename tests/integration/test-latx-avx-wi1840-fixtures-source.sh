@@ -10,7 +10,7 @@ from pathlib import Path
 root = Path(sys.argv[1])
 fixture_dir = root / "tests/integration"
 mnemonics = (
-    "vpcmpeqb", "vpcmpeqw", "vpcmpeqd",
+    "vpcmpeqb", "vpcmpeqw", "vpcmpeqd", "vpcmpeqq",
     "vpcmpgtb", "vpcmpgtw", "vpcmpgtd", "vpcmpgtq",
 )
 asm_template = (fixture_dir / "latx-avx-single-vintcmp-template.S").read_text()
@@ -34,6 +34,13 @@ assert "latx-avx-single-vintcmp-template.S" in builder
 assert "latx-avx-single-vintcmp-template.c" in builder
 
 for mnemonic in mnemonics:
+    if mnemonic == "vpcmpeqq":
+        asm = (fixture_dir / "latx-avx-single-vpcmpeqq.S").read_text()
+        c = (fixture_dir / "latx-avx-single-vpcmpeqq.c").read_text()
+        assert "vpcmpeqq ymm0, ymm1, ymm2" in asm
+        assert "vpcmpeqq xmm0, xmm1, xmm2" in asm
+        assert "latx_avx_single_vpcmpeqq_run" in c
+        continue
     asm = (fixture_dir / f"latx-avx-single-{mnemonic}.S").read_text()
     c = (fixture_dir / f"latx-avx-single-{mnemonic}.c").read_text()
     symbol = f"latx_avx_single_{mnemonic}"
@@ -45,5 +52,5 @@ for mnemonic in mnemonics:
     assert c.count("#include \"latx-avx-single-vintcmp-template.c\"") == 1
     assert "vpcmpeqq" not in asm + c
 
-print("PASS WI-1840 seven independent comparison fixtures and ABI entries")
+print("PASS WI-1840 eight independent comparison fixtures and ABI entries")
 PY
