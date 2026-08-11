@@ -17,6 +17,7 @@ lsx = source[start:end]
 required = [
     "vpmaskmov_lsx_lane",
     "gen_test_page_flag_force",
+    "gen_test_page_flag_force_range",
     "la_bstrpick_d",
     "la_beq",
     "PAGE_READ",

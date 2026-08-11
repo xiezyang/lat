@@ -6804,21 +6804,23 @@ static void vpmaskmov_lsx_lane(IR2_OPND vector, IR2_OPND mask,
     if (store) {
         if (element_size == 4) {
             la_vpickve2gr_wu(value, vector, vector_lane);
-            gen_test_page_flag_force(address, offset,
-                                     PAGE_WRITE | PAGE_WRITE_ORG);
+            gen_test_page_flag_force_range(address, offset, element_size,
+                                           PAGE_WRITE | PAGE_WRITE_ORG);
             la_st_w(value, address, offset);
         } else {
             la_vpickve2gr_du(value, vector, vector_lane);
-            gen_test_page_flag_force(address, offset,
-                                     PAGE_WRITE | PAGE_WRITE_ORG);
+            gen_test_page_flag_force_range(address, offset, element_size,
+                                           PAGE_WRITE | PAGE_WRITE_ORG);
             la_st_d(value, address, offset);
         }
     } else if (element_size == 4) {
-        gen_test_page_flag_force(address, offset, PAGE_READ);
+        gen_test_page_flag_force_range(address, offset, element_size,
+                                       PAGE_READ);
         la_ld_w(value, address, offset);
         la_vinsgr2vr_w(vector, value, vector_lane);
     } else {
-        gen_test_page_flag_force(address, offset, PAGE_READ);
+        gen_test_page_flag_force_range(address, offset, element_size,
+                                       PAGE_READ);
         la_ld_d(value, address, offset);
         la_vinsgr2vr_d(vector, value, vector_lane);
     }
@@ -10514,6 +10516,7 @@ static bool translate_avx_gather_lsx(IR1_INST *pir1,
     lsassert(!ymm || ymm_allowed);
     if (ymm) {
         lsassert(ir1_opnd_is_ymm(opnd0) && ir1_opnd_is_ymm(opnd2));
+        tr_save_ymm_to_env(UINT16_MAX);
     }
     index_ymm = ir1_index_reg_is_ymm(opnd1);
 

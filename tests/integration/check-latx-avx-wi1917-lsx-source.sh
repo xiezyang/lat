@@ -25,6 +25,7 @@ start = source.rindex("static void translate_avx_gather_lane_lsx")
 block = source[start:]
 for token in (
     "la_blt(mask_value, zero_ir2_opnd, load)",
+    "tr_save_ymm_to_env(UINT16_MAX)",
     "ir1_opnd_vsib_index_reg_num",
     "ir1_index_reg_is_ymm(opnd1)",
     "index_high_values",
