@@ -160,7 +160,9 @@ if ungated:
     raise SystemExit("LSX registration exists outside option_enable_lasx=0 gate")
 if legacy_ungated != 0 or wi1915_ungated != 0:
     raise SystemExit("registration gate audit failed")
-if len(direct) + len(fma) + len(table_rows) != 319:
+# VMOVNTDQ/VMOVNTPD/VMOVNTPS were added after the original 319-entry
+# inventory and are part of the gated AVX move registrations.
+if len(direct) + len(fma) + len(table_rows) != 322:
     raise SystemExit("unexpected registration inventory; review scope before changing code")
 if "TRANS_FUNC_GEN(VPAND, vpand)" not in translate:
     raise SystemExit("LASX generic VPAND table entry is missing")
