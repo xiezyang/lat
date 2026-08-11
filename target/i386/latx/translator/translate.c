@@ -4231,9 +4231,24 @@ static void tr_save_ymm_to_env_lsx(uint16 ymm_to_save)
 {
     helper_save_reg(a1_ir2_opnd);
     helper_save_reg(a2_ir2_opnd);
-    tr_save_xmm_to_env((uint8_t)ymm_to_save);
+
+    /* Keep the fixed env pointer out of the LSX fault-save scratch path. */
+    for (int i = 0; i < 8; ++i) {
+        if (ymm_to_save & (UINT16_C(1) << i)) {
+            la_vst(ra_alloc_xmm(i), env_ir2_opnd,
+                   lsenv_offset_of_xmm(lsenv, i));
+        }
+    }
 #ifdef TARGET_X86_64
-    tr_save_xmm64_to_env((uint8_t)(ymm_to_save >> 8));
+    if (ymm_to_save >> 8) {
+        la_addi_d(a1_ir2_opnd, env_ir2_opnd, 0x7f0);
+        for (int i = 0; i < 8; ++i) {
+            if (ymm_to_save & (UINT16_C(1) << (i + 8))) {
+                la_vst(ra_alloc_xmm(i + 8), a1_ir2_opnd,
+                       lsenv_offset_of_xmm(lsenv, i + 8) - 0x7f0);
+            }
+        }
+    }
 #endif
 
     for (int i = 0; i < CPU_NB_REGS; ++i) {
