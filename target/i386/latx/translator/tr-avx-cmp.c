@@ -431,6 +431,8 @@ static bool translate_avx_integer_cmp_lsx(
                 cmp, reverse, src1_high, src1_high, src2_high);
             la_vori_b(ra_alloc_xmm(dest_index), src1_low, 0);
             store_ymm_high128_shadow(src1_high, dest_index);
+            ra_free_temp(src1_high);
+            ra_free_temp(src2_high);
         } else {
             src2_low = load_v128_from_ir1_mem_exact(opnd2);
             translate_avx_integer_cmp_lsx_apply(
@@ -455,6 +457,8 @@ static bool translate_avx_integer_cmp_lsx(
                 cmp, reverse, src1_high, src1_high, src2_high);
             la_vori_b(ra_alloc_xmm(dest_index), src1_low, 0);
             store_ymm_high128_shadow(src1_high, dest_index);
+            ra_free_temp(src1_high);
+            ra_free_temp(src2_high);
         } else {
             translate_avx_integer_cmp_lsx_apply(
                 cmp, reverse, src1_low, src1_low, src2_low);
@@ -462,6 +466,8 @@ static bool translate_avx_integer_cmp_lsx(
             clear_ymm_high128_shadow(dest_index);
         }
     }
+    ra_free_temp(src2_low);
+    ra_free_temp(src1_low);
     return true;
 }
 
