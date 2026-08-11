@@ -4287,9 +4287,15 @@ static bool translate_vunpckxx_lsx(IR1_INST *pir1, bool high,
         IR2_OPND result_high = ra_alloc_ftemp();
         tr_inst(result_high, src2_high, src1_high);
         store_avx_lsx_result(opnd0, result_low, result_high);
+        ra_free_temp(result_high);
+        ra_free_temp(src1_high);
+        ra_free_temp(src2_high);
     } else {
         store_avx_lsx_result(opnd0, result_low, result_low);
     }
+    ra_free_temp(result_low);
+    ra_free_temp(src1_low);
+    ra_free_temp(src2_low);
     return true;
 }
 
