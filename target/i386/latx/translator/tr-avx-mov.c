@@ -924,6 +924,9 @@ bool translate_vpmovmskb_lsx(IR1_INST *pir1)
 
     lsassert(ir1_opnd_is_gpr(dest_opnd));
     lsassert(ir1_opnd_is_xmm(src_opnd) || ir1_opnd_is_ymm(src_opnd));
+    if (ir1_opnd_is_ymm(src_opnd)) {
+        tr_save_ymm_to_env(UINT16_MAX);
+    }
     la_vori_b(low, ra_alloc_xmm(src_index), 0);
     la_vmskltz_b(low_mask, low);
     la_movfr2gr_d(dest, low_mask);
