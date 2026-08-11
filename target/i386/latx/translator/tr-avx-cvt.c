@@ -546,10 +546,24 @@ bool translate_vcvtsd2ss_lsx(IR1_INST * pir1) {
     {
         /* LSX-only path */
         int dest_index = ir1_opnd_base_reg_num(opnd0);
-        IR2_OPND fcsr_opnd;
         IR2_OPND src1 = ra_alloc_ftemp();
         IR2_OPND src2;
         bool src2_is_temp = false;
+
+        /* Read all sources before changing FCSR or an aliased dest. */
+        la_vori_b(src1, ra_alloc_xmm(ir1_opnd_base_reg_num(opnd1)), 0);
+        if (ir1_opnd_is_mem(opnd2)) {
+            IR2_OPND memory_value = load_u64_from_ir1_mem_exact(opnd2);
+
+            src2 = ra_alloc_ftemp();
+            src2_is_temp = true;
+            la_vxor_v(src2, src2, src2);
+            la_vinsgr2vr_d(src2, memory_value, 0);
+            ra_free_temp(memory_value);
+        } else {
+            src2 = load_freg128_from_ir1(opnd2);
+        }
+        IR2_OPND fcsr_opnd;
         IR2_OPND converted = ra_alloc_ftemp();
         IR2_OPND converted_low = ra_alloc_itemp();
         IR2_OPND mxcsr = ra_alloc_itemp();
@@ -566,20 +580,6 @@ bool translate_vcvtsd2ss_lsx(IR1_INST * pir1) {
         IR2_OPND exception_ready = ra_alloc_label();
         IR2_OPND keep_precision = ra_alloc_label();
         IR2_OPND no_exception = ra_alloc_label();
-
-        /* Read all sources before changing FCSR or an aliased dest. */
-        la_vori_b(src1, ra_alloc_xmm(ir1_opnd_base_reg_num(opnd1)), 0);
-        if (ir1_opnd_is_mem(opnd2)) {
-            IR2_OPND memory_value = load_u64_from_ir1_mem_exact(opnd2);
-
-            src2 = ra_alloc_ftemp();
-            src2_is_temp = true;
-            la_vxor_v(src2, src2, src2);
-            la_vinsgr2vr_d(src2, memory_value, 0);
-            ra_free_temp(memory_value);
-        } else {
-            src2 = load_freg128_from_ir1(opnd2);
-        }
         fcsr_opnd = set_fpu_fcsr_rounding_field_by_x86();
         la_or(flags, zero_ir2_opnd, zero_ir2_opnd);
         la_ld_wu(mxcsr, env_ir2_opnd, lsenv_offset_of_mxcsr(lsenv));
