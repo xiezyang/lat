@@ -10147,6 +10147,9 @@ static void translate_avx_gather_lane_lsx(IR2_OPND dest,
     }
 
     la_label(done);
+    ra_free_temp(loaded);
+    ra_free_temp(index_value);
+    ra_free_temp(mask_value);
 }
 
 static bool translate_avx_gather_lsx(IR1_INST *pir1,
@@ -10224,14 +10227,23 @@ static bool translate_avx_gather_lsx(IR1_INST *pir1,
                 index64, value64,
                 high, mask_index, high, dest_index);
         }
+        if (high) {
+            ra_free_temp(dest);
+        }
     }
 
     if (ymm) {
         clear_ymm_high128_shadow(mask_index);
+        ra_free_temp(index_high_values);
+        ra_free_temp(mask_high_values);
     } else {
         clear_ymm_high128_shadow(mask_index);
         clear_ymm_high128_shadow(dest_index);
     }
+    ra_free_temp(mask_low_values);
+    ra_free_temp(index_low);
+    ra_free_temp(address);
+    ra_free_temp(base_addr);
     return true;
 }
 
