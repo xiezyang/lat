@@ -2429,11 +2429,15 @@ static bool translate_avx_integer_3op_lsx(
             lsx_op(src1_high, src1_high, src2_high);
             la_vori_b(ra_alloc_xmm(dest_index), src1_low, 0);
             store_ymm_high128_shadow(src1_high, dest_index);
+            ra_free_temp(src1_high);
+            ra_free_temp(src2_low);
+            ra_free_temp(src2_high);
         } else {
             src2_low = load_v128_from_ir1_mem_exact(opnd2);
             lsx_op(src1_low, src1_low, src2_low);
             la_vori_b(ra_alloc_xmm(dest_index), src1_low, 0);
             clear_ymm_high128_shadow(dest_index);
+            ra_free_temp(src2_low);
         }
     } else {
         int src2_index = ir1_opnd_base_reg_num(opnd2);
@@ -2449,12 +2453,18 @@ static bool translate_avx_integer_3op_lsx(
             lsx_op(src1_high, src1_high, src2_high);
             la_vori_b(ra_alloc_xmm(dest_index), src1_low, 0);
             store_ymm_high128_shadow(src1_high, dest_index);
+            ra_free_temp(src1_high);
+            ra_free_temp(src2_low);
+            ra_free_temp(src2_high);
         } else {
             lsx_op(src1_low, src1_low, src2_low);
             la_vori_b(ra_alloc_xmm(dest_index), src1_low, 0);
             clear_ymm_high128_shadow(dest_index);
+            ra_free_temp(src2_low);
         }
     }
+
+    ra_free_temp(src1_low);
 
     return true;
 }
