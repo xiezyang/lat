@@ -2657,6 +2657,7 @@ static void translate_vpmulhrsw_lane_lsx(IR2_OPND dest, IR2_OPND src1,
     la_vmulwod_w_h(temp2, src1, src2);
     la_vsrai_w(temp1, temp1, 0xe);
     la_vsrai_w(temp2, temp2, 0xe);
+    la_vxor_v(temp3, temp3, temp3);
     la_vandi_b(temp3, temp3, 0);
     la_vbitseti_w(temp3, temp3, 0);
     la_vadd_w(temp1, temp1, temp3);
@@ -2708,54 +2709,40 @@ static void translate_vphaddsw_lane_lsx(IR2_OPND dest, IR2_OPND src1,
 static void translate_vphsubw_lane_lsx(IR2_OPND dest, IR2_OPND src1,
                                         IR2_OPND src2)
 {
-    IR2_OPND src1_even = ra_alloc_ftemp();
-    IR2_OPND src1_odd = ra_alloc_ftemp();
-    IR2_OPND src2_even = ra_alloc_ftemp();
-    IR2_OPND src2_odd = ra_alloc_ftemp();
-    IR2_OPND result1 = ra_alloc_ftemp();
-    IR2_OPND result2 = ra_alloc_ftemp();
+    IR2_OPND even = ra_alloc_ftemp();
+    IR2_OPND odd = ra_alloc_ftemp();
 
-    la_vpickev_h(src1_even, src1, src1);
-    la_vpickod_h(src1_odd, src1, src1);
-    la_vsub_h(result1, src1_even, src1_odd);
-    la_vpickev_h(src2_even, src2, src2);
-    la_vpickod_h(src2_odd, src2, src2);
-    la_vsub_h(result2, src2_even, src2_odd);
-    la_vshuf4i_d(result2, result1, 0x06);
-    la_vori_b(dest, result2, 0);
+    la_vpickev_h(even, src2, src1);
+    la_vpickod_h(odd, src2, src1);
+    la_vsub_h(dest, even, odd);
+    ra_free_temp(odd);
+    ra_free_temp(even);
 }
 
 static void translate_vphsubd_lane_lsx(IR2_OPND dest, IR2_OPND src1,
                                         IR2_OPND src2)
 {
-    IR2_OPND result1 = ra_alloc_ftemp();
-    IR2_OPND result2 = ra_alloc_ftemp();
+    IR2_OPND even = ra_alloc_ftemp();
+    IR2_OPND odd = ra_alloc_ftemp();
 
-    la_vhsubw_d_w(result1, src1, src1);
-    la_vneg_w(result1, result1);
-    la_vhsubw_d_w(result2, src2, src2);
-    la_vneg_w(result2, result2);
-    la_vpickev_w(dest, result2, result1);
+    la_vpickev_w(even, src2, src1);
+    la_vpickod_w(odd, src2, src1);
+    la_vsub_w(dest, even, odd);
+    ra_free_temp(odd);
+    ra_free_temp(even);
 }
 
 static void translate_vphsubsw_lane_lsx(IR2_OPND dest, IR2_OPND src1,
                                          IR2_OPND src2)
 {
-    IR2_OPND src1_even = ra_alloc_ftemp();
-    IR2_OPND src1_odd = ra_alloc_ftemp();
-    IR2_OPND src2_even = ra_alloc_ftemp();
-    IR2_OPND src2_odd = ra_alloc_ftemp();
-    IR2_OPND result1 = ra_alloc_ftemp();
-    IR2_OPND result2 = ra_alloc_ftemp();
+    IR2_OPND even = ra_alloc_ftemp();
+    IR2_OPND odd = ra_alloc_ftemp();
 
-    la_vpickev_h(src1_even, src1, src1);
-    la_vpickod_h(src1_odd, src1, src1);
-    la_vssub_h(result1, src1_even, src1_odd);
-    la_vpickev_h(src2_even, src2, src2);
-    la_vpickod_h(src2_odd, src2, src2);
-    la_vssub_h(result2, src2_even, src2_odd);
-    la_vshuf4i_d(result2, result1, 0x06);
-    la_vori_b(dest, result2, 0);
+    la_vpickev_h(even, src2, src1);
+    la_vpickod_h(odd, src2, src1);
+    la_vssub_h(dest, even, odd);
+    ra_free_temp(odd);
+    ra_free_temp(even);
 }
 
 bool translate_vpmaddwd_lsx(IR1_INST *pir1)
