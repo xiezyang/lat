@@ -3972,7 +3972,8 @@ bool translate_vptest_lsx(IR1_INST *pir1)
         la_vor_v(andn_result, andn_result, half_result);
     }
 
-    la_x86mtflag(zero_ir2_opnd, 0x3f);
+    /* VPTEST changes only ZF and CF; preserve the other arithmetic flags. */
+    la_x86mtflag(zero_ir2_opnd, ZF_USEDEF_BIT | CF_USEDEF_BIT);
     la_vseteqz_v(fcc0_ir2_opnd, and_result);
     la_bceqz(fcc0_ir2_opnd, zf_done);
     la_x86mtflag(n4095_opnd, ZF_USEDEF_BIT);
