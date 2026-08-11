@@ -762,7 +762,8 @@ bool translate_vdivsd_lsx(IR1_INST * pir1) {
         int dest_index = ir1_opnd_base_reg_num(opnd0);
         IR2_OPND fcsr_opnd = set_fpu_fcsr_rounding_field_by_x86();
         IR2_OPND src1 = ra_alloc_ftemp();
-        IR2_OPND src2 = load_freg128_from_ir1(opnd2);
+        IR2_OPND src2;
+        bool src2_is_temp = false;
         IR2_OPND src1_low = ra_alloc_itemp();
         IR2_OPND src2_low = ra_alloc_itemp();
         IR2_OPND mxcsr = ra_alloc_itemp();
@@ -775,6 +776,17 @@ bool translate_vdivsd_lsx(IR1_INST * pir1) {
 
         /* Read all sources before changing FCSR or an aliased dest. */
         la_vori_b(src1, ra_alloc_xmm(ir1_opnd_base_reg_num(opnd1)), 0);
+        if (ir1_opnd_is_mem(opnd2)) {
+            IR2_OPND memory_value = load_u64_from_ir1_mem_exact(opnd2);
+
+            src2 = ra_alloc_ftemp();
+            src2_is_temp = true;
+            la_vxor_v(src2, src2, src2);
+            la_vinsgr2vr_d(src2, memory_value, 0);
+            ra_free_temp(memory_value);
+        } else {
+            src2 = ra_alloc_xmm(ir1_opnd_base_reg_num(opnd2));
+        }
         la_vpickve2gr_du(src1_low, src1, 0);
         la_vpickve2gr_du(src2_low, src2, 0);
         la_ld_wu(mxcsr, env_ir2_opnd, lsenv_offset_of_mxcsr(lsenv));
@@ -835,6 +847,9 @@ bool translate_vdivsd_lsx(IR1_INST * pir1) {
         ra_free_temp(quotient_low);
         ra_free_temp(src1_high);
         ra_free_temp(src1);
+        if (src2_is_temp) {
+            ra_free_temp(src2);
+        }
     }
     return true;
 }
