@@ -933,9 +933,14 @@ bool translate_vpmovmskb_lsx(IR1_INST *pir1)
         la_slli_d(high_bits, high_bits, 16);
         la_or(dest, dest, high_bits);
         la_bstrpick_d(dest, dest, 31, 0);
+        ra_free_temp(high_bits);
+        ra_free_temp(high_mask);
+        ra_free_temp(high);
     } else {
         la_bstrpick_d(dest, dest, 15, 0);
     }
+    ra_free_temp(low_mask);
+    ra_free_temp(low);
     return true;
 }
 
