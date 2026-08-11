@@ -358,6 +358,12 @@ static void save_xmm_to_env(CPUX86State *env)
         save_one_xmm(14, XMM14_MAPS);
         save_one_xmm(15, XMM15_MAPS);
 #endif
+        if (!option_enable_lasx) {
+            for (int i = 0; i < CPU_NB_REGS; ++i) {
+                env->xmm_regs[i].ZMM_Q(2) = env->ymmh_regs[i]._q[0];
+                env->xmm_regs[i].ZMM_Q(3) = env->ymmh_regs[i]._q[1];
+            }
+        }
     }
 }
 
@@ -401,6 +407,17 @@ static void xsave_sigcontext(CPUX86State *env, struct target_fpstate_fxsave *fxs
         __put_user(0, &fxsave->sw_reserved.magic1);
     } else {
         uint32_t xstate_size = xsave_area_size(env->xcr0);
+
+        /*
+         * A guest can expose XSAVE while its current XCR0 has no
+         * save-area components enabled.  Do not form the extended-state
+         * trailer offset from an underflowed xstate_size in that state.
+         */
+        if (xstate_size < TARGET_FXSAVE_SIZE) {
+            cpu_x86_fxsave(env, fxsave_addr);
+            __put_user(0, &fxsave->sw_reserved.magic1);
+            return;
+        }
         uint32_t xfeatures_size = xstate_size - TARGET_FXSAVE_SIZE;
 
         /*
@@ -542,8 +559,11 @@ get_sigframe(struct target_sigaction *ka, CPUX86State *env, size_t fxsave_offset
     } else if (!(env->features[FEAT_1_ECX] & CPUID_EXT_XSAVE)) {
         return ((esp - TARGET_FXSAVE_SIZE) & -16ul) - fxsave_offset;
     } else {
-        size_t xstate_size =
-               xsave_area_size(env->xcr0) + TARGET_FP_XSTATE_MAGIC2_SIZE;
+        size_t xstate_size = xsave_area_size(env->xcr0);
+        if (xstate_size < TARGET_FXSAVE_SIZE) {
+            xstate_size = TARGET_FXSAVE_SIZE;
+        }
+        xstate_size += TARGET_FP_XSTATE_MAGIC2_SIZE;
         return ((esp - xstate_size) & -64ul) - fxsave_offset;
     }
 }

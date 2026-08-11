@@ -687,7 +687,8 @@ static void x86_cpu_vendor_words2str(char *dst, uint32_t vendor1,
 #ifdef CONFIG_LATX_AVX_OPT
 #define TCG_7_0_ECX_FEATURES (CPUID_7_0_ECX_PKU | \
           /* CPUID_7_0_ECX_OSPKE is dynamic */ \
-          CPUID_7_0_ECX_LA57)
+          CPUID_7_0_ECX_LA57 | CPUID_7_0_ECX_VAES | \
+          CPUID_7_0_ECX_VPCLMULQDQ)
 #else/*CONFIG_LATX_AVX_OPT*/
 #define TCG_7_0_ECX_FEATURES (CPUID_7_0_ECX_PKU | \
           /* CPUID_7_0_ECX_OSPKE is dynamic */ \
@@ -1933,6 +1934,8 @@ static X86CPUDefinition builtin_x86_defs[] = {
             CPUID_7_0_EBX_BMI1 |
             CPUID_7_0_EBX_AVX2 |
             CPUID_7_0_EBX_BMI2,
+        .features[FEAT_7_0_ECX] =
+            CPUID_7_0_ECX_VAES | CPUID_7_0_ECX_VPCLMULQDQ,
         .features[FEAT_XSAVE] =
             CPUID_XSAVE_XSAVEOPT | CPUID_XSAVE_XGETBV1,
 #endif/*CONFIG_LATX_AVX_OPT*/
@@ -2081,6 +2084,8 @@ static X86CPUDefinition builtin_x86_defs[] = {
             CPUID_7_0_EBX_BMI1 |
             CPUID_7_0_EBX_AVX2 |
             CPUID_7_0_EBX_BMI2,
+        .features[FEAT_7_0_ECX] =
+            CPUID_7_0_ECX_VAES | CPUID_7_0_ECX_VPCLMULQDQ,
         .features[FEAT_XSAVE] =
             CPUID_XSAVE_XSAVEOPT | CPUID_XSAVE_XGETBV1,
 #endif
@@ -7586,6 +7591,8 @@ static void x86_cpu_register_types(void)
                 CPUID_7_0_EBX_BMI1 |
                 CPUID_7_0_EBX_AVX2 |
                 CPUID_7_0_EBX_BMI2);
+        uint64_t feat_7_0_ecx_mask = ~(CPUID_7_0_ECX_VAES |
+                CPUID_7_0_ECX_VPCLMULQDQ);
         uint64_t feat_xsave_mask = ~(CPUID_XSAVE_XSAVEOPT |
                 CPUID_XSAVE_XGETBV1);
 
@@ -7594,17 +7601,21 @@ static void x86_cpu_register_types(void)
                 CPUID_EXT_F16C);
         uint64_t tcg_7_0_ebx_mask = ~(CPUID_7_0_EBX_HLE |
                 CPUID_7_0_EBX_AVX2);
+        uint64_t tcg_7_0_ecx_mask = ~(CPUID_7_0_ECX_VAES |
+                CPUID_7_0_ECX_VPCLMULQDQ);
 
         for (i = 0; i < ARRAY_SIZE(builtin_x86_defs); i++) {
             if(strcmp(builtin_x86_defs[i].name, "qemu64") == 0 ||
                     strcmp(builtin_x86_defs[i].name, "qemu32") == 0){
                 builtin_x86_defs[i].features[FEAT_1_ECX] &= feat_1_ecx_mask;
                 builtin_x86_defs[i].features[FEAT_7_0_EBX] &= feat_7_0_ebx_mask;
+                builtin_x86_defs[i].features[FEAT_7_0_ECX] &= feat_7_0_ecx_mask;
                 builtin_x86_defs[i].features[FEAT_XSAVE] &= feat_xsave_mask;
             }
         }
         feature_word_info[FEAT_1_ECX].tcg_features &= tcg_ext_mask;
         feature_word_info[FEAT_7_0_EBX].tcg_features &= tcg_7_0_ebx_mask;
+        feature_word_info[FEAT_7_0_ECX].tcg_features &= tcg_7_0_ecx_mask;
         feature_word_info[FEAT_XSAVE].tcg_features |= CPUID_7_0_ECX_PKS;
 
     }
