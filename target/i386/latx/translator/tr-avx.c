@@ -1340,6 +1340,8 @@ bool translate_vxorpd_lsx(IR1_INST * pir1) {
             la_vxor_v(src1_low, src1_low, src2_low);
             la_vori_b(ra_alloc_xmm(dest_index), src1_low, 0);
             clear_ymm_high128_shadow(dest_index);
+            ra_free_temp(src2_low);
+            ra_free_temp(src1_low);
         } else {
             IR2_OPND src1_high;
             IR2_OPND src2_low;
@@ -1361,6 +1363,10 @@ bool translate_vxorpd_lsx(IR1_INST * pir1) {
             la_vxor_v(src1_high, src1_high, src2_high);
             la_vori_b(ra_alloc_xmm(dest_index), src1_low, 0);
             store_ymm_high128_shadow(src1_high, dest_index);
+            ra_free_temp(src2_high);
+            ra_free_temp(src1_high);
+            ra_free_temp(src2_low);
+            ra_free_temp(src1_low);
         }
     }
     return true;
@@ -9563,11 +9569,19 @@ static bool translate_avx_fp_binary_lsx(IR1_INST *pir1,
             lsx_fp_status_finish(pir1, &status);
         }
         store_avx_lsx_result(opnd0, result_low, result_high);
+        ra_free_temp(result_high);
     } else {
         if (track_fp_status) {
             lsx_fp_status_finish(pir1, &status);
         }
         store_avx_lsx_result(opnd0, result_low, result_low);
+    }
+    ra_free_temp(result_low);
+    ra_free_temp(src1_low);
+    ra_free_temp(src2_low);
+    if (ymm) {
+        ra_free_temp(src1_high);
+        ra_free_temp(src2_high);
     }
     return true;
 }
@@ -9637,6 +9651,7 @@ static bool translate_avx_fp_scalar_lsx(IR1_INST *pir1,
         lsx_fp_status_finish(pir1, &status);
     }
     store_avx_lsx_result(opnd0, dest, dest);
+    ra_free_temp(temp);
     if (src2_is_temp) {
         ra_free_temp(src2);
     }
@@ -9777,6 +9792,10 @@ static void translate_avx_addsub_lane_lsx(IR2_OPND result,
         la_vfadd_s(add1, add1, add2);
         la_vpickev_w(result, add1, sub1);
     }
+    ra_free_temp(add2);
+    ra_free_temp(add1);
+    ra_free_temp(sub2);
+    ra_free_temp(sub1);
 }
 
 static void translate_avx_hadd_lane_lsx(IR2_OPND result,
@@ -9805,6 +9824,8 @@ static void translate_avx_hadd_lane_lsx(IR2_OPND result,
             la_vfadd_s(result, even, odd);
         }
     }
+    ra_free_temp(odd);
+    ra_free_temp(even);
 }
 
 static bool translate_avx_pairwise_lsx(IR1_INST *pir1,
@@ -9841,9 +9862,17 @@ static bool translate_avx_pairwise_lsx(IR1_INST *pir1,
                         double_precision, double_precision ? 2 : 4);
         lsx_fp_status_finish(pir1, &status);
         store_avx_lsx_result(opnd0, result_low, result_high);
+        ra_free_temp(result_high);
     } else {
         lsx_fp_status_finish(pir1, &status);
         store_avx_lsx_result(opnd0, result_low, result_low);
+    }
+    ra_free_temp(result_low);
+    ra_free_temp(src1_low);
+    ra_free_temp(src2_low);
+    if (ymm) {
+        ra_free_temp(src1_high);
+        ra_free_temp(src2_high);
     }
     return true;
 }
@@ -9950,6 +9979,9 @@ static void translate_avx_minmax_lane_lsx(IR2_OPND result,
     la_vand_v(selected1, src1, mask);
     la_vandn_v(selected2, mask, src2);
     la_vor_v(result, selected1, selected2);
+    ra_free_temp(selected2);
+    ra_free_temp(selected1);
+    ra_free_temp(mask);
 }
 
 static bool translate_avx_minmax_lsx(IR1_INST *pir1,
@@ -9989,6 +10021,7 @@ static bool translate_avx_minmax_lsx(IR1_INST *pir1,
         }
         lsx_fp_status_finish(pir1, &status);
         store_avx_lsx_result(opnd0, dest, dest);
+        ra_free_temp(result);
         if (src2_is_temp) {
             ra_free_temp(src2);
         }
@@ -10023,9 +10056,17 @@ static bool translate_avx_minmax_lsx(IR1_INST *pir1,
                         is_double, is_double ? 2 : 4);
         lsx_fp_status_finish(pir1, &status);
         store_avx_lsx_result(opnd0, result_low, result_high);
+        ra_free_temp(result_high);
     } else {
         lsx_fp_status_finish(pir1, &status);
         store_avx_lsx_result(opnd0, result_low, result_low);
+    }
+    ra_free_temp(result_low);
+    ra_free_temp(src1_low);
+    ra_free_temp(src2_low);
+    if (ymm) {
+        ra_free_temp(src1_high);
+        ra_free_temp(src2_high);
     }
     return true;
 }
@@ -10100,9 +10141,15 @@ static bool translate_avx_fp_unary_lsx(IR1_INST *pir1,
                         double_precision, double_precision ? 2 : 4);
         lsx_fp_status_finish(pir1, &status);
         store_avx_lsx_result(opnd0, result_low, result_high);
+        ra_free_temp(result_high);
     } else {
         lsx_fp_status_finish(pir1, &status);
         store_avx_lsx_result(opnd0, result_low, result_low);
+    }
+    ra_free_temp(result_low);
+    ra_free_temp(src_low);
+    if (ymm) {
+        ra_free_temp(src_high);
     }
     return true;
 }
@@ -10134,6 +10181,7 @@ static bool translate_avx_fp_scalar_unary_lsx(IR1_INST *pir1,
     }
     lsx_fp_status_finish(pir1, &status);
     store_avx_lsx_result(opnd0, dest, dest);
+    ra_free_temp(temp);
     if (src2_is_temp) {
         ra_free_temp(src2);
     }
@@ -10213,6 +10261,12 @@ static void translate_avx_dppd_lane_lsx(IR2_OPND result,
     if (imm & 0x2) {
         la_vextrins_d(result, sum, VEXTRINS_IMM_4_0(1, 1));
     }
+    ra_free_temp(sum);
+    ra_free_temp(odd);
+    ra_free_temp(even);
+    ra_free_temp(product);
+    ra_free_temp(selected2);
+    ra_free_temp(selected1);
 }
 
 static void translate_avx_dpps_lane_lsx(IR2_OPND result,
@@ -10265,6 +10319,12 @@ static void translate_avx_dpps_lane_lsx(IR2_OPND result,
     if (imm & 0x8) {
         la_vextrins_w(result, sum, VEXTRINS_IMM_4_0(3, 3));
     }
+    ra_free_temp(sum);
+    ra_free_temp(odd);
+    ra_free_temp(even);
+    ra_free_temp(product);
+    ra_free_temp(selected2);
+    ra_free_temp(selected1);
 }
 
 bool translate_vdppd_lsx(IR1_INST *pir1)
@@ -10286,6 +10346,7 @@ bool translate_vdppd_lsx(IR1_INST *pir1)
     lsx_fp_apply_fz(result, status.mxcsr, status.flags, true, 2);
     lsx_fp_status_finish(pir1, &status);
     store_avx_lsx_result(opnd0, result, result);
+    ra_free_temp(result);
     return true;
 }
 
@@ -10316,9 +10377,17 @@ bool translate_vdpps_lsx(IR1_INST *pir1)
         lsx_fp_apply_fz(result_high, status.mxcsr, status.flags, false, 4);
         lsx_fp_status_finish(pir1, &status);
         store_avx_lsx_result(opnd0, result_low, result_high);
+        ra_free_temp(result_high);
     } else {
         lsx_fp_status_finish(pir1, &status);
         store_avx_lsx_result(opnd0, result_low, result_low);
+    }
+    ra_free_temp(result_low);
+    ra_free_temp(src1_low);
+    ra_free_temp(src2_low);
+    if (ymm) {
+        ra_free_temp(src1_high);
+        ra_free_temp(src2_high);
     }
     return true;
 }
