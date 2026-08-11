@@ -59,5 +59,18 @@ vshufps_lsx = translator.split(
     "bool translate_vshufps_lsx", 1)[0]
 assert "la_vpickev_d(result, src2_shuffled, src1_shuffled)" in vshufps_lsx
 assert "la_vpickod_d" not in vshufps_lsx
+pack_lsx = translator.split(
+    "static bool translate_avx_pack_lsx", 1)[1].split(
+    "bool translate_vpackssxx_lsx", 1)[0]
+assert "negative_cmp_inst" in pack_lsx
+assert "la_vandn_v(narrow1_low, narrow1_low, src1_low)" in pack_lsx
+assert "la_vandn_v(narrow2_low, narrow2_low, src2_low)" in pack_lsx
+assert "la_vandn_v(narrow1_high, narrow1_high, src1_high)" in pack_lsx
+assert "la_vandn_v(narrow2_high, narrow2_high, src2_high)" in pack_lsx
+packus_lsx = translator.split(
+    "bool translate_vpackusxx_lsx", 1)[1].split(
+    "bool translate_vpunpckhxx_lsx", 1)[0]
+assert "negative_cmp_inst = la_vslti_w" in packus_lsx
+assert "negative_cmp_inst = la_vslti_h" in packus_lsx
 print("PASS WI-1843 source audit: 14 mnemonic fixture registration, legal reg/mem forms, alias/boundary coverage, LASX preserved")
 PY

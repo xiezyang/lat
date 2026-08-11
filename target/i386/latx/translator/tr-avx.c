@@ -4090,7 +4090,8 @@ static bool translate_avx_lane_3op_lsx(IR1_INST *pir1,
 }
 
 static bool translate_avx_pack_lsx(IR1_INST *pir1,
-                                   avx_lsx_narrow_fn cvt_inst)
+                                   avx_lsx_narrow_fn cvt_inst,
+                                   avx_lsx_narrow_fn negative_cmp_inst)
 {
     IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
     IR1_OPND *opnd1 = ir1_get_opnd(pir1, 1);
@@ -4107,16 +4108,34 @@ static bool translate_avx_pack_lsx(IR1_INST *pir1,
     lsassert(ir1_opnd_size(opnd0) == ir1_opnd_size(opnd2));
     load_avx_lsx_operand(opnd1, ymm, &src1_low, &src1_high);
     load_avx_lsx_operand(opnd2, ymm, &src2_low, &src2_high);
-    cvt_inst(narrow1_low, src1_low, 0);
-    cvt_inst(narrow2_low, src2_low, 0);
+    if (negative_cmp_inst) {
+        negative_cmp_inst(narrow1_low, src1_low, 0);
+        la_vandn_v(narrow1_low, narrow1_low, src1_low);
+        negative_cmp_inst(narrow2_low, src2_low, 0);
+        la_vandn_v(narrow2_low, narrow2_low, src2_low);
+    } else {
+        la_vori_b(narrow1_low, src1_low, 0);
+        la_vori_b(narrow2_low, src2_low, 0);
+    }
+    cvt_inst(narrow1_low, narrow1_low, 0);
+    cvt_inst(narrow2_low, narrow2_low, 0);
     la_vilvl_d(result_low, narrow2_low, narrow1_low);
 
     if (ymm) {
         IR2_OPND narrow1_high = ra_alloc_ftemp();
         IR2_OPND narrow2_high = ra_alloc_ftemp();
         IR2_OPND result_high = ra_alloc_ftemp();
-        cvt_inst(narrow1_high, src1_high, 0);
-        cvt_inst(narrow2_high, src2_high, 0);
+        if (negative_cmp_inst) {
+            negative_cmp_inst(narrow1_high, src1_high, 0);
+            la_vandn_v(narrow1_high, narrow1_high, src1_high);
+            negative_cmp_inst(narrow2_high, src2_high, 0);
+            la_vandn_v(narrow2_high, narrow2_high, src2_high);
+        } else {
+            la_vori_b(narrow1_high, src1_high, 0);
+            la_vori_b(narrow2_high, src2_high, 0);
+        }
+        cvt_inst(narrow1_high, narrow1_high, 0);
+        cvt_inst(narrow2_high, narrow2_high, 0);
         la_vilvl_d(result_high, narrow2_high, narrow1_high);
         store_avx_lsx_result(opnd0, result_low, result_high);
     } else {
@@ -4140,25 +4159,28 @@ bool translate_vpackssxx_lsx(IR1_INST *pir1)
         lsassert(0);
         return false;
     }
-    return translate_avx_pack_lsx(pir1, cvt_inst);
+    return translate_avx_pack_lsx(pir1, cvt_inst, NULL);
 }
 
 bool translate_vpackusxx_lsx(IR1_INST *pir1)
 {
     avx_lsx_narrow_fn cvt_inst;
+    avx_lsx_narrow_fn negative_cmp_inst;
 
     switch (ir1_opcode(pir1)) {
     case dt_X86_INS_VPACKUSDW:
         cvt_inst = la_vssrani_hu_w;
+        negative_cmp_inst = la_vslti_w;
         break;
     case dt_X86_INS_VPACKUSWB:
         cvt_inst = la_vssrani_bu_h;
+        negative_cmp_inst = la_vslti_h;
         break;
     default:
         lsassert(0);
         return false;
     }
-    return translate_avx_pack_lsx(pir1, cvt_inst);
+    return translate_avx_pack_lsx(pir1, cvt_inst, negative_cmp_inst);
 }
 
 bool translate_vpunpckhxx_lsx(IR1_INST *pir1)
