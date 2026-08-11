@@ -1732,6 +1732,8 @@ static bool translate_vbroadcast_scalar_lsx(IR1_INST *pir1, int bits)
     } else {
         store_ymm_high128_shadow(result, dest_index);
     }
+    ra_free_temp(result);
+    ra_free_temp(value);
     return true;
 }
 
@@ -1750,6 +1752,8 @@ static bool translate_vbroadcast128_lsx(IR1_INST *pir1)
     dest_index = ir1_opnd_base_reg_num(dest_opnd);
     la_vori_b(ra_alloc_xmm(dest_index), src, 0);
     store_ymm_high128_shadow(src, dest_index);
+    if (ir1_opnd_is_mem(src_opnd))
+        ra_free_temp(src);
     return true;
 }
 
@@ -1893,6 +1897,8 @@ static bool translate_vextract128_lsx(IR1_INST *pir1)
     } else {
         store_v128_to_ir1_mem_exact(src, dest);
     }
+    if (imm)
+        ra_free_temp(src);
     return true;
 }
 
@@ -1950,6 +1956,9 @@ bool translate_vextractps_lsx(IR1_INST *pir1)
     } else {
         store_u32_to_ir1_mem_exact(value, dest);
     }
+    ra_free_temp(value);
+    if (ir1_opnd_is_ymm(src_opnd) && (imm & 0x4))
+        ra_free_temp(src);
     return true;
 }
 
@@ -2024,6 +2033,8 @@ bool translate_vinsertps_lsx(IR1_INST *pir1)
     dest_index = ir1_opnd_base_reg_num(dest_opnd);
     la_vori_b(ra_alloc_xmm(dest_index), result, 0);
     clear_ymm_high128_shadow(dest_index);
+    ra_free_temp(result);
+    ra_free_temp(value);
     return true;
 }
 
@@ -2062,6 +2073,9 @@ static bool translate_vinsert128_lsx(IR1_INST *pir1)
             la_vori_b(ra_alloc_xmm(dest_index), src1_low, 0);
             store_ymm_high128_shadow(src2_value, dest_index);
         }
+        ra_free_temp(src2_value);
+        ra_free_temp(src1_high);
+        ra_free_temp(src1_low);
     }
     return true;
 }
@@ -3634,6 +3648,7 @@ bool translate_vpextrx_lsx(IR1_INST *pir1)
     default:
         lsassert(0);
     }
+    ra_free_temp(value);
     return true;
 }
 
@@ -5961,6 +5976,7 @@ bool translate_vpinsrx_lsx(IR1_INST *pir1)
         lsassert(0);
     }
     clear_ymm_high128_shadow(dest_index);
+    ra_free_temp(src2);
     return true;
 }
 
@@ -5986,6 +6002,7 @@ bool translate_vpinsrq_lsx(IR1_INST *pir1)
     la_vori_b(dest, src1, 0);
     la_vinsgr2vr_d(dest, src2, imm);
     clear_ymm_high128_shadow(dest_index);
+    ra_free_temp(src2);
 
     return true;
 }
