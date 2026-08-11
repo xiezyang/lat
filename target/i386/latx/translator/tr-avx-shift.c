@@ -175,9 +175,11 @@ static void apply_avx_shift_var_lsx(
 
         sign(sign_fill, src, max_count);
         la_vbitsel_v(dest, sign_fill, dest, mask);
+        ra_free_temp(sign_fill);
     } else {
         la_vand_v(dest, dest, mask);
     }
+    ra_free_temp(mask);
 }
 
 static bool translate_avx_integer_shift_lsx(IR1_INST *pir1)
@@ -332,6 +334,7 @@ static bool translate_avx_integer_shift_lsx(IR1_INST *pir1)
                 apply_avx_shift_var_lsx(src_high, src_high, scalar, shift_var,
                                         valid, sign, max_count, arithmetic);
             }
+            ra_free_temp(scalar);
         } else {
             apply_avx_shift_var_lsx(src_low, src_low, count_low, shift_var,
                                     valid, sign, max_count, arithmetic);
@@ -341,6 +344,10 @@ static bool translate_avx_integer_shift_lsx(IR1_INST *pir1)
                                         arithmetic);
             }
         }
+        ra_free_temp(count_low);
+        if (count_is_ymm) {
+            ra_free_temp(count_high);
+        }
     }
 
     la_vori_b(ra_alloc_xmm(dest_index), src_low, 0);
@@ -348,6 +355,10 @@ static bool translate_avx_integer_shift_lsx(IR1_INST *pir1)
         store_ymm_high128_shadow(src_high, dest_index);
     } else {
         clear_ymm_high128_shadow(dest_index);
+    }
+    ra_free_temp(src_low);
+    if (is_ymm) {
+        ra_free_temp(src_high);
     }
     return true;
 }
