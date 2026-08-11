@@ -4121,9 +4121,15 @@ static bool translate_avx_lane_3op_lsx(IR1_INST *pir1,
         IR2_OPND result_high = ra_alloc_ftemp();
         tr_inst(result_high, src2_high, src1_high);
         store_avx_lsx_result(opnd0, result_low, result_high);
+        ra_free_temp(result_high);
+        ra_free_temp(src1_high);
+        ra_free_temp(src2_high);
     } else {
         store_avx_lsx_result(opnd0, result_low, result_low);
     }
+    ra_free_temp(result_low);
+    ra_free_temp(src1_low);
+    ra_free_temp(src2_low);
     return true;
 }
 
@@ -4176,9 +4182,17 @@ static bool translate_avx_pack_lsx(IR1_INST *pir1,
         cvt_inst(narrow2_high, narrow2_high, 0);
         la_vilvl_d(result_high, narrow2_high, narrow1_high);
         store_avx_lsx_result(opnd0, result_low, result_high);
+        ra_free_temp(result_high);
+        ra_free_temp(narrow1_high);
+        ra_free_temp(narrow2_high);
     } else {
         store_avx_lsx_result(opnd0, result_low, result_low);
     }
+    ra_free_temp(result_low);
+    ra_free_temp(narrow1_low);
+    ra_free_temp(narrow2_low);
+    ra_free_temp(src1_low);
+    ra_free_temp(src2_low);
     return true;
 }
 
@@ -4374,9 +4388,15 @@ bool translate_vshufpd_lsx(IR1_INST *pir1)
         translate_vshufpd_lane_lsx(result_high, src1_high, src2_high,
                                    (imm >> 2) & 3);
         store_avx_lsx_result(opnd0, result_low, result_high);
+        ra_free_temp(result_high);
+        ra_free_temp(src1_high);
+        ra_free_temp(src2_high);
     } else {
         store_avx_lsx_result(opnd0, result_low, result_low);
     }
+    ra_free_temp(result_low);
+    ra_free_temp(src1_low);
+    ra_free_temp(src2_low);
     return true;
 }
 
@@ -4389,6 +4409,8 @@ static void translate_vshufps_lane_lsx(IR2_OPND result, IR2_OPND src1,
     la_vshuf4i_w(src1_shuffled, src1, imm & 0xf);
     la_vshuf4i_w(src2_shuffled, src2, imm >> 4);
     la_vpickev_d(result, src2_shuffled, src1_shuffled);
+    ra_free_temp(src1_shuffled);
+    ra_free_temp(src2_shuffled);
 }
 
 bool translate_vshufps_lsx(IR1_INST *pir1)
@@ -4411,9 +4433,15 @@ bool translate_vshufps_lsx(IR1_INST *pir1)
         IR2_OPND result_high = ra_alloc_ftemp();
         translate_vshufps_lane_lsx(result_high, src1_high, src2_high, imm);
         store_avx_lsx_result(opnd0, result_low, result_high);
+        ra_free_temp(result_high);
+        ra_free_temp(src1_high);
+        ra_free_temp(src2_high);
     } else {
         store_avx_lsx_result(opnd0, result_low, result_low);
     }
+    ra_free_temp(result_low);
+    ra_free_temp(src1_low);
+    ra_free_temp(src2_low);
     return true;
 }
 
