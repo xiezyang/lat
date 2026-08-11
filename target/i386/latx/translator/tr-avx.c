@@ -4407,7 +4407,8 @@ bool translate_vpshufd_lsx(IR1_INST *pir1)
     IR2_OPND result_low = ra_alloc_ftemp();
 
     lsassert(ir1_opnd_is_xmm(dest_opnd) || ymm);
-    lsassert(ir1_opnd_is_xmm(src_opnd) == !ymm ||
+    lsassert(ir1_opnd_is_mem(src_opnd) ||
+             ir1_opnd_is_xmm(src_opnd) == !ymm ||
              ir1_opnd_is_ymm(src_opnd) == ymm);
     if (ymm) {
         tr_save_ymm_to_env(UINT16_MAX);
@@ -4452,7 +4453,8 @@ static bool translate_vpshufh_lsx(IR1_INST *pir1, bool high_half)
     IR2_OPND result_low = ra_alloc_ftemp();
 
     lsassert(ir1_opnd_is_xmm(dest_opnd) || ymm);
-    lsassert(ir1_opnd_is_xmm(src_opnd) == !ymm ||
+    lsassert(ir1_opnd_is_mem(src_opnd) ||
+             ir1_opnd_is_xmm(src_opnd) == !ymm ||
              ir1_opnd_is_ymm(src_opnd) == ymm);
     if (ymm) {
         tr_save_ymm_to_env(UINT16_MAX);
