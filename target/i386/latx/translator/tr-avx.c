@@ -4432,9 +4432,15 @@ bool translate_vpshufb_lsx(IR1_INST *pir1)
 
         translate_vpshufb_lane_lsx(result_high, src_high, control_high);
         store_avx_lsx_result(dest_opnd, result_low, result_high);
+        ra_free_temp(result_high);
+        ra_free_temp(src_high);
+        ra_free_temp(control_high);
     } else {
         store_avx_lsx_result(dest_opnd, result_low, result_low);
     }
+    ra_free_temp(result_low);
+    ra_free_temp(src_low);
+    ra_free_temp(control_low);
     return true;
 }
 
@@ -4462,9 +4468,13 @@ bool translate_vpshufd_lsx(IR1_INST *pir1)
 
         la_vshuf4i_w(result_high, src_high, imm);
         store_avx_lsx_result(dest_opnd, result_low, result_high);
+        ra_free_temp(result_high);
+        ra_free_temp(src_high);
     } else {
         store_avx_lsx_result(dest_opnd, result_low, result_low);
     }
+    ra_free_temp(result_low);
+    ra_free_temp(src_low);
     return true;
 }
 
@@ -4508,9 +4518,13 @@ static bool translate_vpshufh_lsx(IR1_INST *pir1, bool high_half)
 
         translate_vpshufh_lane_lsx(result_high, src_high, imm, high_half);
         store_avx_lsx_result(dest_opnd, result_low, result_high);
+        ra_free_temp(result_high);
+        ra_free_temp(src_high);
     } else {
         store_avx_lsx_result(dest_opnd, result_low, result_low);
     }
+    ra_free_temp(result_low);
+    ra_free_temp(src_low);
     return true;
 }
 
