@@ -554,6 +554,7 @@ static bool translate_vaes_round_lsx(IR1_INST *pir1, int enc, int last)
         return true;
     }
 
+    tr_save_ymm_to_env(UINT16_MAX);
     IR2_OPND src_low = ra_alloc_xmm(s1);
     IR2_OPND src_high = load_ymm_high128_shadow(s1);
     IR2_OPND key_low;

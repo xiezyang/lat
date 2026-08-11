@@ -43,6 +43,7 @@ assert "emit_pclmul_ctz_loop" in avx[avx.index("static void emit_pclmul_lsx_lane
 vpaes_lsx = body(vpaes, "static bool translate_vaes_round_lsx", "bool latx_translate_aesenc_vpaes")
 assert "la_xv" not in vpaes_lsx
 assert "emit_aes_round_lsx" in vpaes_lsx
+assert "tr_save_ymm_to_env(UINT16_MAX)" in vpaes_lsx
 assert "load_ymm_high128_shadow" in vpaes_lsx
 assert "store_ymm_high128_shadow" in vpaes_lsx
 
