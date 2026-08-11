@@ -4004,6 +4004,15 @@ bool translate_vptest_lsx(IR1_INST *pir1)
     la_label(cf_done);
 
     ra_free_num_4095(n4095_opnd);
+    ra_free_temp(half_result);
+    ra_free_temp(andn_result);
+    ra_free_temp(and_result);
+    ra_free_temp(src_low);
+    ra_free_temp(dest_low);
+    if (ymm) {
+        ra_free_temp(src_high);
+        ra_free_temp(dest_high);
+    }
     return true;
 }
 
