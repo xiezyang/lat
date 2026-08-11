@@ -35,8 +35,13 @@ assert len(rows) == 15
 lsx_start = source.index("typedef IR2_INST *(*latx_avx_shift_imm_fn)")
 lsx_end = source.index("static bool translate_vpsrlq_lasx", lsx_start)
 lsx = source[lsx_start:lsx_end]
+shift_start = source.index("static bool translate_avx_integer_shift_lsx")
+shift_end = source.index("static bool translate_avx_byte_shift_lsx", shift_start)
+shift = source[shift_start:shift_end]
 assert "la_xv" not in lsx
 assert "option_enable_lasx" not in lsx
+assert "if (is_ymm)" in shift
+assert "tr_save_ymm_to_env(UINT16_MAX)" in shift
 assert "load_v128_from_ir1_mem_exact" in lsx
 assert "load_v256_from_ir1_mem_exact" in lsx
 assert "load_ymm_high128_shadow" in lsx
