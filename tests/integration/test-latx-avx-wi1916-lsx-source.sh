@@ -36,6 +36,7 @@ def body(text, marker, next_marker):
 
 vpclmul_lsx = body(avx, "bool translate_vpclmulqdq_lsx", "static void adjust_vsib_index")
 assert "la_xv" not in vpclmul_lsx
+assert "tr_save_ymm_to_env(UINT16_MAX)" in vpclmul_lsx
 assert "load_ymm_high128_shadow" in vpclmul_lsx
 assert "store_ymm_high128_shadow" in vpclmul_lsx
 assert "emit_pclmul_ctz_loop" in avx[avx.index("static void emit_pclmul_lsx_lane"):avx.index("bool translate_vpclmulqdq_lsx")]

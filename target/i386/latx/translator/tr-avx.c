@@ -8611,6 +8611,7 @@ bool translate_vpclmulqdq_lsx(IR1_INST *pir1)
         return true;
     }
 
+    tr_save_ymm_to_env(UINT16_MAX);
     int dest_index = ir1_opnd_base_reg_num(opnd0);
     int src1_index = ir1_opnd_base_reg_num(opnd1);
     IR2_OPND src1_low = ra_alloc_xmm(src1_index);
