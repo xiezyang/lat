@@ -4632,6 +4632,7 @@ static IR2_OPND build_blend_mask_lsx(int element_bits, uint8_t imm,
             lsassert(0);
         }
     }
+    ra_free_temp(all_ones);
     return mask;
 }
 
@@ -4655,18 +4656,27 @@ static bool translate_blend_imm_lsx(IR1_INST *pir1, int element_bits)
     lsassert(ir1_opnd_is_imm(ir1_get_opnd(pir1, 3)));
     load_avx_lsx_operand(src1_opnd, ymm, &src1_low, &src1_high);
     load_avx_lsx_operand(src2_opnd, ymm, &src2_low, &src2_high);
-    la_vbitsel_v(result_low, src1_low, src2_low,
-                 build_blend_mask_lsx(element_bits, imm, elements));
+    IR2_OPND mask_low = build_blend_mask_lsx(element_bits, imm, elements);
+    la_vbitsel_v(result_low, src1_low, src2_low, mask_low);
+    ra_free_temp(mask_low);
     if (ymm) {
         IR2_OPND result_high = ra_alloc_ftemp();
         uint8_t high_imm = element_bits == 16 ? imm : imm >> elements;
+        IR2_OPND mask_high = build_blend_mask_lsx(element_bits, high_imm,
+                                                  elements);
 
-        la_vbitsel_v(result_high, src1_high, src2_high,
-                     build_blend_mask_lsx(element_bits, high_imm, elements));
+        la_vbitsel_v(result_high, src1_high, src2_high, mask_high);
+        ra_free_temp(mask_high);
         store_avx_lsx_result(dest_opnd, result_low, result_high);
+        ra_free_temp(result_high);
+        ra_free_temp(src1_high);
+        ra_free_temp(src2_high);
     } else {
         store_avx_lsx_result(dest_opnd, result_low, result_low);
     }
+    ra_free_temp(result_low);
+    ra_free_temp(src1_low);
+    ra_free_temp(src2_low);
     return true;
 }
 
@@ -4708,9 +4718,17 @@ static bool translate_blend_variable_lsx(IR1_INST *pir1, int element_bits)
         }
         la_vbitsel_v(result_high, src1_high, src2_high, mask_high);
         store_avx_lsx_result(dest_opnd, result_low, result_high);
+        ra_free_temp(result_high);
+        ra_free_temp(src1_high);
+        ra_free_temp(src2_high);
+        ra_free_temp(mask_high);
     } else {
         store_avx_lsx_result(dest_opnd, result_low, result_low);
     }
+    ra_free_temp(result_low);
+    ra_free_temp(src1_low);
+    ra_free_temp(src2_low);
+    ra_free_temp(mask_low);
     return true;
 }
 
@@ -4759,6 +4777,7 @@ static void translate_vpalignr_lane_lsx(IR2_OPND result, IR2_OPND src1,
         la_vbsrl_v(shifted_src2, src2, imm);
         la_vbsll_v(result, src1, 16 - imm);
         la_vor_v(result, shifted_src2, result);
+        ra_free_temp(shifted_src2);
     }
 }
 
@@ -4787,9 +4806,15 @@ bool translate_vpalignr_lsx(IR1_INST *pir1)
 
         translate_vpalignr_lane_lsx(result_high, src1_high, src2_high, imm);
         store_avx_lsx_result(dest_opnd, result_low, result_high);
+        ra_free_temp(result_high);
+        ra_free_temp(src1_high);
+        ra_free_temp(src2_high);
     } else {
         store_avx_lsx_result(dest_opnd, result_low, result_low);
     }
+    ra_free_temp(result_low);
+    ra_free_temp(src1_low);
+    ra_free_temp(src2_low);
     return true;
 }
 
@@ -4845,6 +4870,12 @@ static bool translate_vperm2f128_lsx_common(IR1_INST *pir1)
                                       src2_high, (imm >> 4) & 0x3,
                                       (imm & 0x80) != 0);
     store_avx_lsx_result(dest_opnd, result_low, result_high);
+    ra_free_temp(result_low);
+    ra_free_temp(result_high);
+    ra_free_temp(src1_low);
+    ra_free_temp(src1_high);
+    ra_free_temp(src2_low);
+    ra_free_temp(src2_high);
     return true;
 }
 
@@ -4931,9 +4962,21 @@ static bool translate_vpermil_lsx(IR1_INST *pir1, bool pd)
                                          immediate, imm);
         }
         store_avx_lsx_result(dest_opnd, result_low, result_high);
+        ra_free_temp(result_high);
+        ra_free_temp(src_low);
+        ra_free_temp(src_high);
+        if (!immediate) {
+            ra_free_temp(control_low);
+            ra_free_temp(control_high);
+        }
     } else {
         store_avx_lsx_result(dest_opnd, result_low, result_low);
+        ra_free_temp(src_low);
+        if (!immediate) {
+            ra_free_temp(control_low);
+        }
     }
+    ra_free_temp(result_low);
     return true;
 }
 
@@ -4968,6 +5011,7 @@ static void translate_vpermute_q_imm_lsx(IR2_OPND result_low,
         } else {
             la_vinsgr2vr_d(result_high, value, i - 2);
         }
+        ra_free_temp(value);
     }
 }
 
@@ -4983,6 +5027,7 @@ static void translate_vpermute_w_dynamic_lsx(IR2_OPND result,
      * vk[0..3] with vj[0..3].  Put the low half in vk and high half in vj. */
     la_vshuf_w(control, data_high, data_low);
     la_vori_b(result, control, 0);
+    ra_free_temp(control);
 }
 
 bool translate_vpermd_lsx(IR1_INST *pir1)
@@ -5005,6 +5050,12 @@ bool translate_vpermd_lsx(IR1_INST *pir1)
     translate_vpermute_w_dynamic_lsx(result_high, data_low, data_high,
                                      index_high);
     store_avx_lsx_result(dest_opnd, result_low, result_high);
+    ra_free_temp(result_low);
+    ra_free_temp(result_high);
+    ra_free_temp(index_low);
+    ra_free_temp(index_high);
+    ra_free_temp(data_low);
+    ra_free_temp(data_high);
     return true;
 }
 
@@ -5026,6 +5077,8 @@ bool translate_vpermpx_lsx(IR1_INST *pir1)
                                      data_low, data_high,
                                      ir1_opnd_uimm(index_or_imm));
         store_avx_lsx_result(dest_opnd, result_low, result_high);
+        ra_free_temp(data_low);
+        ra_free_temp(data_high);
     } else {
         IR1_OPND *index_opnd = ir1_get_opnd(pir1, 1);
         IR1_OPND *data_opnd = ir1_get_opnd(pir1, 2);
@@ -5040,7 +5093,13 @@ bool translate_vpermpx_lsx(IR1_INST *pir1)
         translate_vpermute_w_dynamic_lsx(result_high, data_low, data_high,
                                          index_high);
         store_avx_lsx_result(dest_opnd, result_low, result_high);
+        ra_free_temp(index_low);
+        ra_free_temp(index_high);
+        ra_free_temp(data_low);
+        ra_free_temp(data_high);
     }
+    ra_free_temp(result_low);
+    ra_free_temp(result_high);
     return true;
 }
 
@@ -5059,6 +5118,10 @@ bool translate_vpermq_lsx(IR1_INST *pir1)
     translate_vpermute_q_imm_lsx(result_low, result_high, src_low, src_high,
                                  ir1_opnd_uimm(imm_opnd));
     store_avx_lsx_result(dest_opnd, result_low, result_high);
+    ra_free_temp(result_low);
+    ra_free_temp(result_high);
+    ra_free_temp(src_low);
+    ra_free_temp(src_high);
     return true;
 }
 
