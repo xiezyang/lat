@@ -546,7 +546,7 @@ bool translate_vcvtsd2ss_lsx(IR1_INST * pir1) {
     {
         /* LSX-only path */
         int dest_index = ir1_opnd_base_reg_num(opnd0);
-        IR2_OPND fcsr_opnd = set_fpu_fcsr_rounding_field_by_x86();
+        IR2_OPND fcsr_opnd;
         IR2_OPND src1 = ra_alloc_ftemp();
         IR2_OPND src2;
         bool src2_is_temp = false;
@@ -580,6 +580,7 @@ bool translate_vcvtsd2ss_lsx(IR1_INST * pir1) {
         } else {
             src2 = load_freg128_from_ir1(opnd2);
         }
+        fcsr_opnd = set_fpu_fcsr_rounding_field_by_x86();
         la_or(flags, zero_ir2_opnd, zero_ir2_opnd);
         la_ld_wu(mxcsr, env_ir2_opnd, lsenv_offset_of_mxcsr(lsenv));
         la_or(old_mxcsr, mxcsr, zero_ir2_opnd);
