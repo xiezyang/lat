@@ -9427,9 +9427,11 @@ static bool translate_avx_fp_binary_lsx(IR1_INST *pir1,
 }
 
 static IR2_OPND load_avx_lsx_scalar_operand(IR1_OPND *opnd,
-                                            bool double_precision)
+                                            bool double_precision,
+                                            bool *is_temp)
 {
     if (!ir1_opnd_is_mem(opnd)) {
+        *is_temp = false;
         return load_freg128_from_ir1(opnd);
     }
 
@@ -9445,6 +9447,7 @@ static IR2_OPND load_avx_lsx_scalar_operand(IR1_OPND *opnd,
         la_vinsgr2vr_w(result, value, 0);
     }
     ra_free_temp(value);
+    *is_temp = true;
     return result;
 }
 
@@ -9460,12 +9463,13 @@ static bool translate_avx_fp_scalar_lsx(IR1_INST *pir1,
     IR2_OPND src1;
     IR2_OPND src2;
     IR2_OPND temp = ra_alloc_ftemp();
+    bool src2_is_temp;
     LsxFpStatus status;
 
     lsassert(ir1_opnd_is_xmm(opnd0) && ir1_opnd_is_xmm(opnd1));
     dest = load_freg128_from_ir1(opnd0);
     src1 = load_freg128_from_ir1(opnd1);
-    src2 = load_avx_lsx_scalar_operand(opnd2, is_double);
+    src2 = load_avx_lsx_scalar_operand(opnd2, is_double, &src2_is_temp);
     if (track_fp_status) {
         lsx_fp_status_begin(&status);
         lsx_fp_apply_daz(src1, status.mxcsr, status.flags,
@@ -9487,6 +9491,9 @@ static bool translate_avx_fp_scalar_lsx(IR1_INST *pir1,
         lsx_fp_status_finish(pir1, &status);
     }
     store_avx_lsx_result(opnd0, dest, dest);
+    if (src2_is_temp) {
+        ra_free_temp(src2);
+    }
     return true;
 }
 
@@ -9814,9 +9821,10 @@ static bool translate_avx_minmax_lsx(IR1_INST *pir1,
 
     if (scalar) {
         IR2_OPND dest = load_freg128_from_ir1(opnd0);
+        bool src2_is_temp;
 
         src1 = load_freg128_from_ir1(opnd1);
-        src2 = load_avx_lsx_scalar_operand(opnd2, is_double);
+        src2 = load_avx_lsx_scalar_operand(opnd2, is_double, &src2_is_temp);
         result = ra_alloc_ftemp();
         lsx_fp_status_begin(&status);
         lsx_fp_apply_daz(src1, status.mxcsr, status.flags,
@@ -9835,6 +9843,9 @@ static bool translate_avx_minmax_lsx(IR1_INST *pir1,
         }
         lsx_fp_status_finish(pir1, &status);
         store_avx_lsx_result(opnd0, dest, dest);
+        if (src2_is_temp) {
+            ra_free_temp(src2);
+        }
         return true;
     }
 
@@ -9959,7 +9970,9 @@ static bool translate_avx_fp_scalar_unary_lsx(IR1_INST *pir1,
     IR1_OPND *opnd2 = ir1_get_opnd(pir1, 2);
     IR2_OPND dest = load_freg128_from_ir1(opnd0);
     IR2_OPND src1 = load_freg128_from_ir1(opnd1);
-    IR2_OPND src2 = load_avx_lsx_scalar_operand(opnd2, is_double);
+    bool src2_is_temp;
+    IR2_OPND src2 = load_avx_lsx_scalar_operand(opnd2, is_double,
+                                                &src2_is_temp);
     IR2_OPND temp = ra_alloc_ftemp();
     LsxFpStatus status;
 
@@ -9975,6 +9988,9 @@ static bool translate_avx_fp_scalar_unary_lsx(IR1_INST *pir1,
     }
     lsx_fp_status_finish(pir1, &status);
     store_avx_lsx_result(opnd0, dest, dest);
+    if (src2_is_temp) {
+        ra_free_temp(src2);
+    }
     return true;
 }
 
