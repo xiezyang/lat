@@ -4042,6 +4042,7 @@ bool translate_vptest_lsx(IR1_INST *pir1)
     IR2_OPND and_result = ra_alloc_ftemp();
     IR2_OPND andn_result = ra_alloc_ftemp();
     IR2_OPND half_result = ra_alloc_ftemp();
+    IR2_OPND flags = ra_alloc_itemp();
     IR2_OPND n4095_opnd = ra_alloc_num_4095();
     IR2_OPND zf_done = ra_alloc_label();
     IR2_OPND cf_done = ra_alloc_label();
@@ -4067,17 +4068,21 @@ bool translate_vptest_lsx(IR1_INST *pir1)
     }
 
     /* VPTEST changes only ZF and CF; preserve the other arithmetic flags. */
-    la_x86mtflag(zero_ir2_opnd, ZF_USEDEF_BIT | CF_USEDEF_BIT);
+    la_x86mfflag(flags, 0x3f);
+    la_bstrins_w(flags, zero_ir2_opnd, CF_BIT_INDEX, CF_BIT_INDEX);
+    la_bstrins_w(flags, zero_ir2_opnd, ZF_BIT_INDEX, ZF_BIT_INDEX);
     la_vseteqz_v(fcc0_ir2_opnd, and_result);
     la_bceqz(fcc0_ir2_opnd, zf_done);
-    la_x86mtflag(n4095_opnd, ZF_USEDEF_BIT);
+    la_bstrins_w(flags, n4095_opnd, ZF_BIT_INDEX, ZF_BIT_INDEX);
     la_label(zf_done);
 
     la_vseteqz_v(fcc0_ir2_opnd, andn_result);
     la_bceqz(fcc0_ir2_opnd, cf_done);
-    la_x86mtflag(n4095_opnd, CF_USEDEF_BIT);
+    la_bstrins_w(flags, n4095_opnd, CF_BIT_INDEX, CF_BIT_INDEX);
     la_label(cf_done);
 
+    la_x86mtflag(flags, 0x3f);
+    ra_free_temp(flags);
     ra_free_num_4095(n4095_opnd);
     ra_free_temp(half_result);
     ra_free_temp(andn_result);
