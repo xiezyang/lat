@@ -7656,6 +7656,10 @@ static void translate_vmpsadbw_lane_lsx(IR2_OPND result, IR2_OPND src1,
     la_vhaddw_wu_hu(temp_dest, temp3, temp3);
     la_vsrlni_h_w(temp_dest, temp2, 0);
     la_vori_b(result, temp_dest, 0);
+    ra_free_temp(temp_dest);
+    ra_free_temp(temp3);
+    ra_free_temp(temp2);
+    ra_free_temp(temp1);
 }
 
 bool translate_vmpsadbw_lsx(IR1_INST *pir1)
@@ -7683,9 +7687,15 @@ bool translate_vmpsadbw_lsx(IR1_INST *pir1)
         translate_vmpsadbw_lane_lsx(result_high, src1_high, src2_high,
                                      (imm >> 3) & 7);
         store_avx_lsx_result(opnd0, result_low, result_high);
+        ra_free_temp(result_high);
+        ra_free_temp(src1_high);
+        ra_free_temp(src2_high);
     } else {
         store_avx_lsx_result(opnd0, result_low, result_low);
     }
+    ra_free_temp(result_low);
+    ra_free_temp(src1_low);
+    ra_free_temp(src2_low);
     return true;
 }
 
