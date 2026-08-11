@@ -10154,6 +10154,8 @@ static void translate_avx_gather_lane_lsx(IR2_OPND dest,
 
     la_label(load);
     adjust_vsib_index(address, base_addr, index_value, scale);
+    gen_test_page_flag_force_range(address, 0, value64 ? 8 : 4,
+                                   PAGE_READ);
     if (value64) {
         la_ld_d(loaded, address, 0);
         la_vinsgr2vr_d(dest, loaded, lane);
