@@ -8575,6 +8575,7 @@ bool translate_vpclmulqdq_lsx(IR1_INST *pir1)
 
         emit_pclmul_lsx_lane(dest, src1, src2, ctrl);
         clear_ymm_high128_shadow(ir1_opnd_base_reg_num(opnd0));
+        ra_free_temp_auto(src2);
         return true;
     }
 
@@ -8598,6 +8599,10 @@ bool translate_vpclmulqdq_lsx(IR1_INST *pir1)
     emit_pclmul_lsx_lane(dest_low, src1_low, src2_low, ctrl);
     emit_pclmul_lsx_lane(dest_high, src1_high, src2_high, ctrl);
     store_ymm_high128_shadow(dest_high, dest_index);
+    ra_free_temp(dest_high);
+    ra_free_temp(src1_high);
+    ra_free_temp_auto(src2_low);
+    ra_free_temp_auto(src2_high);
     return true;
 }
 

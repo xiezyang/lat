@@ -429,6 +429,12 @@ static void emit_aes_round_lsx(IR2_OPND dst, IR2_OPND key, int enc, int last)
         }
     }
     la_vxor_v(dst, dst, key);
+    ra_free_temp(zero);
+    ra_free_temp(mix_tmp1);
+    ra_free_temp(mix_tmp0);
+    ra_free_temp(table_mix);
+    ra_free_temp(hi_nibble);
+    ra_free_temp(lo_nibble);
 }
 
 static void emit_aes_round_lasx(IR2_OPND dst, IR2_OPND key, int enc, int last)
@@ -543,6 +549,7 @@ static bool translate_vaes_round_lsx(IR1_INST *pir1, int enc, int last)
         vpaes_spill_low_fprs();
         emit_aes_round_lsx(dst, key, enc, last);
         vpaes_restore_low_fprs();
+        ra_free_temp_auto(key);
         clear_ymm_high128_shadow(d);
         return true;
     }
@@ -551,7 +558,6 @@ static bool translate_vaes_round_lsx(IR1_INST *pir1, int enc, int last)
     IR2_OPND src_high = load_ymm_high128_shadow(s1);
     IR2_OPND key_low;
     IR2_OPND key_high;
-    bool key_copy = false;
 
     if (ir1_opnd_is_mem(opnd2)) {
         load_v256_from_ir1_mem_exact(opnd2, &key_low, &key_high);
@@ -564,9 +570,9 @@ static bool translate_vaes_round_lsx(IR1_INST *pir1, int enc, int last)
             IR2_OPND key_high_copy = ra_alloc_ftemp();
             la_vor_v(key_low_copy, key_low, key_low);
             la_vor_v(key_high_copy, key_high, key_high);
+            ra_free_temp(key_high);
             key_low = key_low_copy;
             key_high = key_high_copy;
-            key_copy = true;
         }
     }
 
@@ -582,10 +588,10 @@ static bool translate_vaes_round_lsx(IR1_INST *pir1, int enc, int last)
     emit_aes_round_lsx(dst_high, key_high, enc, last);
     vpaes_restore_low_fprs();
     store_ymm_high128_shadow(dst_high, d);
-    if (key_copy) {
-        ra_free_temp_auto(key_low);
-        ra_free_temp_auto(key_high);
-    }
+    ra_free_temp(src_high);
+    ra_free_temp(dst_high);
+    ra_free_temp_auto(key_low);
+    ra_free_temp_auto(key_high);
     return true;
 }
 
@@ -621,6 +627,11 @@ bool latx_translate_aesimc_vpaes(IR1_INST *pir1)
     vpaes_invmixcolumns_xtime_lsx(dst, vreg(VPAES_T0), vreg(VPAES_T1),
                                   d0, d1, d2, v0);
     vpaes_restore_low_fprs();
+    ra_free_temp(v0);
+    ra_free_temp(d2);
+    ra_free_temp(d1);
+    ra_free_temp(d0);
+    ra_free_temp_auto(src);
     return true;
 }
 
@@ -653,6 +664,13 @@ bool latx_translate_aeskeygenassist_vpaes(IR1_INST *pir1)
     vpaes_load_tables_lsx(VPAES_TABLE_KEYGEN, 0, 8);
     vpaes_keygenassist_lsx(dst, zero, d0, d1, d2, v0, v1, imm);
     vpaes_restore_low_fprs();
+    ra_free_temp(v1);
+    ra_free_temp(v0);
+    ra_free_temp(d2);
+    ra_free_temp(d1);
+    ra_free_temp(d0);
+    ra_free_temp(zero);
+    ra_free_temp_auto(src);
     return true;
 }
 
