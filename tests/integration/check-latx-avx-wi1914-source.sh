@@ -60,5 +60,12 @@ if "la_xv" in lsx_block:
 for primitive in ("la_vfrecip_s", "la_vfrsqrt_s"):
     if primitive not in lsx_block:
         raise SystemExit(f"missing dedicated approximate primitive: {primitive}")
+if "static IR2_OPND load_avx_lsx_scalar_operand" not in source:
+    raise SystemExit("missing exact scalar memory-source helper")
+if source.count("load_avx_lsx_scalar_operand(opnd2, is_double)") != 3:
+    raise SystemExit("scalar LSX paths do not all use exact m32/m64 loads")
+for helper in ("load_u32_from_ir1_mem_exact", "load_u64_from_ir1_mem_exact"):
+    if helper not in source[source.index("static IR2_OPND load_avx_lsx_scalar_operand"):]:
+        raise SystemExit(f"scalar helper missing {helper}")
 print(f"PASS WI-1914 source: {len(scope)} functions/declarations/dispatches")
 PY

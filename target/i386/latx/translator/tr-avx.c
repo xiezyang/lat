@@ -9426,6 +9426,28 @@ static bool translate_avx_fp_binary_lsx(IR1_INST *pir1,
     return true;
 }
 
+static IR2_OPND load_avx_lsx_scalar_operand(IR1_OPND *opnd,
+                                            bool double_precision)
+{
+    if (!ir1_opnd_is_mem(opnd)) {
+        return load_freg128_from_ir1(opnd);
+    }
+
+    IR2_OPND value = double_precision ?
+        load_u64_from_ir1_mem_exact(opnd) :
+        load_u32_from_ir1_mem_exact(opnd);
+    IR2_OPND result = ra_alloc_ftemp();
+
+    la_vxor_v(result, result, result);
+    if (double_precision) {
+        la_vinsgr2vr_d(result, value, 0);
+    } else {
+        la_vinsgr2vr_w(result, value, 0);
+    }
+    ra_free_temp(value);
+    return result;
+}
+
 static bool translate_avx_fp_scalar_lsx(IR1_INST *pir1,
                                         avx_lsx_fp_binary_fn tr_inst,
                                         bool is_double,
@@ -9443,7 +9465,7 @@ static bool translate_avx_fp_scalar_lsx(IR1_INST *pir1,
     lsassert(ir1_opnd_is_xmm(opnd0) && ir1_opnd_is_xmm(opnd1));
     dest = load_freg128_from_ir1(opnd0);
     src1 = load_freg128_from_ir1(opnd1);
-    src2 = load_freg128_from_ir1(opnd2);
+    src2 = load_avx_lsx_scalar_operand(opnd2, is_double);
     if (track_fp_status) {
         lsx_fp_status_begin(&status);
         lsx_fp_apply_daz(src1, status.mxcsr, status.flags,
@@ -9794,7 +9816,7 @@ static bool translate_avx_minmax_lsx(IR1_INST *pir1,
         IR2_OPND dest = load_freg128_from_ir1(opnd0);
 
         src1 = load_freg128_from_ir1(opnd1);
-        src2 = load_freg128_from_ir1(opnd2);
+        src2 = load_avx_lsx_scalar_operand(opnd2, is_double);
         result = ra_alloc_ftemp();
         lsx_fp_status_begin(&status);
         lsx_fp_apply_daz(src1, status.mxcsr, status.flags,
@@ -9937,7 +9959,7 @@ static bool translate_avx_fp_scalar_unary_lsx(IR1_INST *pir1,
     IR1_OPND *opnd2 = ir1_get_opnd(pir1, 2);
     IR2_OPND dest = load_freg128_from_ir1(opnd0);
     IR2_OPND src1 = load_freg128_from_ir1(opnd1);
-    IR2_OPND src2 = load_freg128_from_ir1(opnd2);
+    IR2_OPND src2 = load_avx_lsx_scalar_operand(opnd2, is_double);
     IR2_OPND temp = ra_alloc_ftemp();
     LsxFpStatus status;
 
