@@ -336,6 +336,21 @@ bool translate_vmovapd_lsx(IR1_INST *pir1)
     return translate_vmovaps_lsx(pir1);
 }
 
+bool translate_vmovntdq_lsx(IR1_INST *pir1)
+{
+    return translate_vmovaps_lsx(pir1);
+}
+
+bool translate_vmovntpd_lsx(IR1_INST *pir1)
+{
+    return translate_vmovaps_lsx(pir1);
+}
+
+bool translate_vmovntps_lsx(IR1_INST *pir1)
+{
+    return translate_vmovaps_lsx(pir1);
+}
+
 bool translate_vlddqu_lsx(IR1_INST *pir1)
 {
     return translate_vmovups_lsx(pir1);

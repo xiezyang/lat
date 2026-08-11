@@ -2059,6 +2059,12 @@ void translate_context_init(void)
                                    translate_vmovapd_lsx);
             translate_register_lsx(dt_X86_INS_VMOVAPS,
                                    translate_vmovaps_lsx);
+            translate_register_lsx(dt_X86_INS_VMOVNTDQ,
+                                   translate_vmovntdq_lsx);
+            translate_register_lsx(dt_X86_INS_VMOVNTPD,
+                                   translate_vmovntpd_lsx);
+            translate_register_lsx(dt_X86_INS_VMOVNTPS,
+                                   translate_vmovntps_lsx);
             translate_register_lsx(dt_X86_INS_VMOVDDUP,
                                    translate_vmovddup_lsx);
             translate_register_lsx(dt_X86_INS_VMOVSHDUP,
