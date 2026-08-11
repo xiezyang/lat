@@ -2438,6 +2438,9 @@ static bool translate_avx_integer_3op_lsx(
     lsassert(ir1_opnd_size(opnd0) == ir1_opnd_size(opnd1));
     lsassert(ir1_opnd_size(opnd0) == ir1_opnd_size(opnd2));
 
+    if (ir1_opnd_is_ymm(opnd0)) {
+        tr_save_ymm_to_env(UINT16_MAX);
+    }
     la_vori_b(src1_low, ra_alloc_xmm(src1_index), 0);
     if (ir1_opnd_is_mem(opnd2)) {
         if (ir1_opnd_is_ymm(opnd0)) {

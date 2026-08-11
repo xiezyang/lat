@@ -25,7 +25,8 @@ manifest_names = {
 assert len(manifest_names) == 28, sorted(manifest_names)
 
 table_start = header.index("#define LATX_AVX_INTEGER_3OP_LSX_TABLE(X)")
-table_end = header.index("#define TRANS_FPU_WRAP_GEN_NO_PROLOGUE", table_start)
+table_end = header.index("#define LATX_AVX_INTEGER_REMAINING_3OP_LSX_TABLE(X)",
+                         table_start)
 table = header[table_start:table_end]
 rows = re.findall(r"X\((V[A-Z0-9]+), ([a-z0-9]+), (la_v[a-z0-9_]+)\)", table)
 assert len(rows) == 28, rows
@@ -37,6 +38,11 @@ for opcode, name, lsx_op in rows:
     assert f"{opcode}, {name}, {lsx_op}" in table
 
 assert "typedef IR2_INST *(*latx_avx_integer_3op_lsx_fn)" in source
+helper_start = source.index("static bool translate_avx_integer_3op_lsx")
+helper_end = source.index("#define LATX_AVX_INTEGER_3OP_LSX_DEFINE", helper_start)
+helper = source[helper_start:helper_end]
+assert "if (ir1_opnd_is_ymm(opnd0))" in helper
+assert "tr_save_ymm_to_env(UINT16_MAX)" in helper
 define_start = source.index(
     "#define LATX_AVX_INTEGER_3OP_LSX_DEFINE"
 )
