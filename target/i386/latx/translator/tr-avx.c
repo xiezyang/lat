@@ -4997,6 +4997,10 @@ bool translate_vzeroall(IR1_INST * pir1) {
 }
 
 bool translate_vtestps(IR1_INST * pir1) {
+    if (!option_enable_lasx) {
+        return translate_vtestps_lsx(pir1);
+    }
+
     IR1_OPND * opnd0 = ir1_get_opnd(pir1, 0);
     IR1_OPND * opnd1 = ir1_get_opnd(pir1, 1);
     if (ir1_opnd_is_xmm(opnd0)) {
@@ -5052,6 +5056,10 @@ bool translate_vtestps(IR1_INST * pir1) {
 }
 
 bool translate_vtestpd(IR1_INST * pir1) {
+    if (!option_enable_lasx) {
+        return translate_vtestpd_lsx(pir1);
+    }
+
     IR1_OPND * opnd0 = ir1_get_opnd(pir1, 0);
     IR1_OPND * opnd1 = ir1_get_opnd(pir1, 1);
     if (ir1_opnd_is_xmm(opnd0)) {
@@ -5520,6 +5528,10 @@ bool translate_vpsadbw(IR1_INST *pir1)
 
 bool translate_vroundps(IR1_INST *pir1)
 {
+    if (!option_enable_lasx) {
+        return translate_vroundps_lsx(pir1);
+    }
+
     IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
     IR1_OPND *opnd1 = ir1_get_opnd(pir1, 1);
     IR1_OPND *opnd2 = ir1_get_opnd(pir1, 2);
@@ -5606,6 +5618,10 @@ bool translate_vroundps(IR1_INST *pir1)
 
 bool translate_vroundpd(IR1_INST *pir1)
 {
+    if (!option_enable_lasx) {
+        return translate_vroundpd_lsx(pir1);
+    }
+
     IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
     IR1_OPND *opnd1 = ir1_get_opnd(pir1, 1);
     IR1_OPND *opnd2 = ir1_get_opnd(pir1, 2);
@@ -5692,6 +5708,10 @@ bool translate_vroundpd(IR1_INST *pir1)
 
 bool translate_vroundss(IR1_INST *pir1)
 {
+    if (!option_enable_lasx) {
+        return translate_vroundss_lsx(pir1);
+    }
+
     IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
     IR1_OPND *opnd1 = ir1_get_opnd(pir1, 1);
     IR1_OPND *opnd2 = ir1_get_opnd(pir1, 2);
@@ -5789,6 +5809,10 @@ bool translate_vroundss(IR1_INST *pir1)
 
 bool translate_vroundsd(IR1_INST *pir1)
 {
+    if (!option_enable_lasx) {
+        return translate_vroundsd_lsx(pir1);
+    }
+
     IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
     IR1_OPND *opnd1 = ir1_get_opnd(pir1, 1);
     IR1_OPND *opnd2 = ir1_get_opnd(pir1, 2);
