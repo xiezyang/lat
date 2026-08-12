@@ -25,6 +25,8 @@ i386_ss.add(when: 'CONFIG_LATX', if_true: files(
   'tr-simd-fma.c',
   'tr-simd-sha.c',
   'tr-simd-f16c.c',
+  'tr-simd-f16c-lsx.c',
+  'tr-simd-cvt-lsx.c',
   'tr-avx.c',
   'tr-avx-lsx.c',
   'tr-avx-fma-lsx.c',

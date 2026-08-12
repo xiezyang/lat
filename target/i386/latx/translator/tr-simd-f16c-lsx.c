@@ -1,0 +1,93 @@
+/* LSX implementation split from tr-simd-f16c.c. */
+/*
+ * SPDX-FileCopyrightText: 2021-2026 LAT Project Authors
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
+ */
+
+#include "common.h"
+#include "reg-alloc.h"
+#include "lsenv.h"
+#include "latx-options.h"
+#include "translate.h"
+
+#ifdef CONFIG_LATX_AVX_OPT
+bool translate_vcvtph2ps_lsx(IR1_INST *pir1)
+{
+    IR1_OPND *dest_opnd = ir1_get_opnd(pir1, 0);
+    IR1_OPND *src_opnd = ir1_get_opnd(pir1, 1);
+    int dest_index = ir1_opnd_base_reg_num(dest_opnd);
+    ADDR helper;
+    int rel_kind;
+
+    if (ir1_opnd_is_ymm(dest_opnd)) {
+        helper = (ADDR)helper_cvtph2ps_ymm;
+        rel_kind = LOAD_HELPER_CVTPH2PS_YMM;
+    } else {
+        helper = (ADDR)helper_cvtph2ps_xmm;
+        rel_kind = LOAD_HELPER_CVTPH2PS_XMM;
+    }
+
+    if (!ir1_opnd_is_mem(src_opnd)) {
+        tr_gen_call_to_helper_pcmpxstrx(helper, dest_index,
+                                        ir1_opnd_base_reg_num(src_opnd), 0,
+                                        rel_kind);
+    } else {
+        int scratch_index = (dest_index + 1) & 7;
+        IR2_OPND saved = ra_alloc_ftemp();
+        IR2_OPND scratch = ra_alloc_xmm(scratch_index);
+
+        la_vori_b(saved, scratch, 0);
+        load_freg128_from_ir1_mem(scratch, src_opnd);
+        tr_gen_call_to_helper_pcmpxstrx(helper, dest_index, scratch_index, 0,
+                                        rel_kind);
+        la_vori_b(scratch, saved, 0);
+        ra_free_temp(saved);
+    }
+    if (ir1_opnd_is_xmm(dest_opnd)) {
+        clear_ymm_high128_shadow(dest_index);
+    }
+    return true;
+}
+
+bool translate_vcvtps2ph_lsx(IR1_INST *pir1)
+{
+    IR1_OPND *dest_opnd = ir1_get_opnd(pir1, 0);
+    IR1_OPND *src_opnd = ir1_get_opnd(pir1, 1);
+    int imm = ir1_opnd_uimm(ir1_get_opnd(pir1, 2));
+    int src_index = ir1_opnd_base_reg_num(src_opnd);
+    ADDR helper;
+    int rel_kind;
+
+    if (ir1_opnd_is_ymm(src_opnd)) {
+        helper = (ADDR)helper_cvtps2ph_ymm;
+        rel_kind = LOAD_HELPER_CVTPS2PH_YMM;
+    } else {
+        helper = (ADDR)helper_cvtps2ph_xmm;
+        rel_kind = LOAD_HELPER_CVTPS2PH_XMM;
+    }
+
+    if (!ir1_opnd_is_mem(dest_opnd)) {
+        tr_gen_call_to_helper_pcmpxstrx(helper,
+                                        ir1_opnd_base_reg_num(dest_opnd),
+                                        src_index, imm, rel_kind);
+    } else {
+        int scratch_index = (src_index + 1) & 7;
+        IR2_OPND saved = ra_alloc_ftemp();
+        IR2_OPND scratch = ra_alloc_xmm(scratch_index);
+
+        la_vori_b(saved, scratch, 0);
+        tr_gen_call_to_helper_pcmpxstrx(helper, scratch_index, src_index, imm,
+                                        rel_kind);
+        if (ir1_opnd_size(dest_opnd) == 128) {
+            store_v128_to_ir1_mem_exact(scratch, dest_opnd);
+        } else {
+            lsassert(ir1_opnd_size(dest_opnd) == 64);
+            store_freg_to_ir1(scratch, dest_opnd, false, false);
+        }
+        la_vori_b(scratch, saved, 0);
+        ra_free_temp(saved);
+    }
+    return true;
+}
+#endif

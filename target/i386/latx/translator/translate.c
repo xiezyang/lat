@@ -1910,10 +1910,6 @@ static LatxTranslateEntry translate_functions[] = {
     TRANS_FUNC_GEN_REAL(ENDING, NULL),
 };
 
-#ifdef CONFIG_LATX_AVX_OPT
-
-#endif
-
 bool ir1_translate(IR1_INST *ir1)
 {
     int tr_func_idx = ir1_opcode(ir1) - dt_X86_INS_INVALID;

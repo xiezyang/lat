@@ -12,6 +12,261 @@
 
 #ifdef CONFIG_LATX_AVX_OPT
 
+/* Keep a 256-bit guest value as two LSX registers.  The high half is kept in
+ * ymmh[] while LASX is disabled, so never use load_freg256_from_ir1() here. */
+static void load_avx_cvt_value_lsx(IR1_OPND *opnd, bool ymm,
+                                   IR2_OPND *low, IR2_OPND *high)
+{
+    *high = (IR2_OPND){ 0 };
+    if (ir1_opnd_is_mem(opnd)) {
+        if (ymm) {
+            load_v256_from_ir1_mem_exact(opnd, low, high);
+        } else {
+            *low = load_v128_from_ir1_mem_exact(opnd);
+        }
+        return;
+    }
+
+    lsassert(ir1_opnd_is_xmm(opnd) || ir1_opnd_is_ymm(opnd));
+    *low = ra_alloc_ftemp();
+    la_vori_b(*low, ra_alloc_xmm(ir1_opnd_base_reg_num(opnd)), 0);
+    if (ymm) {
+        *high = load_ymm_high128_shadow(ir1_opnd_base_reg_num(opnd));
+    }
+}
+
+static void store_avx_cvt_value_lsx(IR2_OPND low, IR2_OPND high, int dest,
+                                    bool ymm)
+{
+    la_vori_b(ra_alloc_xmm(dest), low, 0);
+    if (ymm) {
+        store_ymm_high128_shadow(high, dest);
+    } else {
+        clear_ymm_high128_shadow(dest);
+    }
+}
+
+static void pack_avx_cvt_low64_lsx(IR2_OPND dest, IR2_OPND low,
+                                   IR2_OPND high, bool have_high)
+{
+    IR2_OPND value = ra_alloc_itemp();
+
+    la_vxor_v(dest, dest, dest);
+    la_vpickve2gr_du(value, low, 0);
+    la_vinsgr2vr_d(dest, value, 0);
+    if (have_high) {
+        la_vpickve2gr_du(value, high, 0);
+        la_vinsgr2vr_d(dest, value, 1);
+    }
+    ra_free_temp(value);
+}
+
+bool translate_vcvtdq2ps_lsx(IR1_INST *pir1)
+{
+    IR1_OPND *dest_opnd = ir1_get_opnd(pir1, 0);
+    bool ymm = ir1_opnd_is_ymm(dest_opnd);
+    IR2_OPND src_low;
+    IR2_OPND src_high;
+    IR2_OPND result_low = ra_alloc_ftemp();
+    IR2_OPND result_high = ymm ? ra_alloc_ftemp() : (IR2_OPND){ 0 };
+    IR2_OPND fcsr = set_fpu_fcsr_rounding_field_by_x86();
+
+    load_avx_cvt_value_lsx(ir1_get_opnd(pir1, 1), ymm, &src_low, &src_high);
+    la_vffint_s_w(result_low, src_low);
+    if (ymm) {
+        la_vffint_s_w(result_high, src_high);
+    }
+    store_avx_cvt_value_lsx(result_low, result_high,
+                             ir1_opnd_base_reg_num(dest_opnd), ymm);
+    set_fpu_rounding_mode(fcsr);
+    ra_free_temp_auto(fcsr);
+    ra_free_temp(result_low);
+    if (ymm) {
+        ra_free_temp(result_high);
+        ra_free_temp(src_high);
+    }
+    ra_free_temp(src_low);
+    return true;
+}
+
+bool translate_vcvtdq2pd_lsx(IR1_INST *pir1)
+{
+    IR1_OPND *dest_opnd = ir1_get_opnd(pir1, 0);
+    bool ymm = ir1_opnd_is_ymm(dest_opnd);
+    IR2_OPND src;
+    IR2_OPND low = ra_alloc_ftemp();
+    IR2_OPND high = ymm ? ra_alloc_ftemp() : (IR2_OPND){ 0 };
+    IR2_OPND fcsr = set_fpu_fcsr_rounding_field_by_x86();
+
+    load_avx_cvt_value_lsx(ir1_get_opnd(pir1, 1), false, &src,
+                           &(IR2_OPND){ 0 });
+    la_vffintl_d_w(low, src);
+    if (ymm) {
+        la_vffinth_d_w(high, src);
+    }
+    store_avx_cvt_value_lsx(low, high, ir1_opnd_base_reg_num(dest_opnd), ymm);
+    set_fpu_rounding_mode(fcsr);
+    ra_free_temp_auto(fcsr);
+    ra_free_temp(src);
+    ra_free_temp(low);
+    if (ymm) {
+        ra_free_temp(high);
+    }
+    return true;
+}
+
+bool translate_vcvtps2pd_lsx(IR1_INST *pir1)
+{
+    IR1_OPND *dest_opnd = ir1_get_opnd(pir1, 0);
+    bool ymm = ir1_opnd_is_ymm(dest_opnd);
+    IR2_OPND src;
+    IR2_OPND low = ra_alloc_ftemp();
+    IR2_OPND high = ymm ? ra_alloc_ftemp() : (IR2_OPND){ 0 };
+    IR2_OPND fcsr = set_fpu_fcsr_rounding_field_by_x86();
+
+    load_avx_cvt_value_lsx(ir1_get_opnd(pir1, 1), false, &src,
+                           &(IR2_OPND){ 0 });
+    la_vfcvtl_d_s(low, src);
+    if (ymm) {
+        la_vfcvth_d_s(high, src);
+    }
+    store_avx_cvt_value_lsx(low, high, ir1_opnd_base_reg_num(dest_opnd), ymm);
+    set_fpu_rounding_mode(fcsr);
+    ra_free_temp_auto(fcsr);
+    ra_free_temp(src);
+    ra_free_temp(low);
+    if (ymm) {
+        ra_free_temp(high);
+    }
+    return true;
+}
+
+static bool translate_vcvtpd2x_lsx(IR1_INST *pir1, bool truncate)
+{
+    IR1_OPND *dest_opnd = ir1_get_opnd(pir1, 0);
+    IR1_OPND *src_opnd = ir1_get_opnd(pir1, 1);
+    bool src_ymm = ir1_opnd_is_ymm(src_opnd);
+    IR2_OPND src_low;
+    IR2_OPND src_high;
+    IR2_OPND result_low = ra_alloc_ftemp();
+    IR2_OPND result_high = src_ymm ? ra_alloc_ftemp() : (IR2_OPND){ 0 };
+    IR2_OPND dest = ra_alloc_ftemp();
+    IR2_OPND fcsr = set_fpu_fcsr_rounding_field_by_x86();
+
+    load_avx_cvt_value_lsx(src_opnd, src_ymm, &src_low, &src_high);
+    if (truncate) {
+        la_vftintrz_w_d(result_low, src_low, src_low);
+        if (src_ymm) {
+            la_vftintrz_w_d(result_high, src_high, src_high);
+        }
+    } else {
+        la_vftint_w_d(result_low, src_low, src_low);
+        if (src_ymm) {
+            la_vftint_w_d(result_high, src_high, src_high);
+        }
+    }
+    pack_avx_cvt_low64_lsx(dest, result_low, result_high, src_ymm);
+    store_avx_cvt_value_lsx(dest, (IR2_OPND){ 0 },
+                             ir1_opnd_base_reg_num(dest_opnd), false);
+    set_fpu_rounding_mode(fcsr);
+    ra_free_temp_auto(fcsr);
+    ra_free_temp(dest);
+    ra_free_temp(result_low);
+    ra_free_temp(src_low);
+    if (src_ymm) {
+        ra_free_temp(result_high);
+        ra_free_temp(src_high);
+    }
+    return true;
+}
+
+bool translate_vcvtpd2dq_lsx(IR1_INST *pir1)
+{
+    return translate_vcvtpd2x_lsx(pir1, false);
+}
+
+bool translate_vcvttpd2dq_lsx(IR1_INST *pir1)
+{
+    return translate_vcvtpd2x_lsx(pir1, true);
+}
+
+bool translate_vcvtpd2ps_lsx(IR1_INST *pir1)
+{
+    IR1_OPND *dest_opnd = ir1_get_opnd(pir1, 0);
+    IR1_OPND *src_opnd = ir1_get_opnd(pir1, 1);
+    bool src_ymm = ir1_opnd_is_ymm(src_opnd);
+    IR2_OPND src_low;
+    IR2_OPND src_high;
+    IR2_OPND result_low = ra_alloc_ftemp();
+    IR2_OPND result_high = src_ymm ? ra_alloc_ftemp() : (IR2_OPND){ 0 };
+    IR2_OPND dest = ra_alloc_ftemp();
+    IR2_OPND fcsr = set_fpu_fcsr_rounding_field_by_x86();
+
+    load_avx_cvt_value_lsx(src_opnd, src_ymm, &src_low, &src_high);
+    la_vfcvt_s_d(result_low, src_low, src_low);
+    if (src_ymm) {
+        la_vfcvt_s_d(result_high, src_high, src_high);
+    }
+    pack_avx_cvt_low64_lsx(dest, result_low, result_high, src_ymm);
+    store_avx_cvt_value_lsx(dest, (IR2_OPND){ 0 },
+                             ir1_opnd_base_reg_num(dest_opnd), false);
+    set_fpu_rounding_mode(fcsr);
+    ra_free_temp_auto(fcsr);
+    ra_free_temp(dest);
+    ra_free_temp(result_low);
+    ra_free_temp(src_low);
+    if (src_ymm) {
+        ra_free_temp(result_high);
+        ra_free_temp(src_high);
+    }
+    return true;
+}
+
+static bool translate_vcvtps2dq_lsx_common(IR1_INST *pir1, bool truncate)
+{
+    IR1_OPND *dest_opnd = ir1_get_opnd(pir1, 0);
+    bool ymm = ir1_opnd_is_ymm(dest_opnd);
+    IR2_OPND src_low;
+    IR2_OPND src_high;
+    IR2_OPND result_low = ra_alloc_ftemp();
+    IR2_OPND result_high = ymm ? ra_alloc_ftemp() : (IR2_OPND){ 0 };
+    IR2_OPND fcsr = set_fpu_fcsr_rounding_field_by_x86();
+
+    load_avx_cvt_value_lsx(ir1_get_opnd(pir1, 1), ymm, &src_low, &src_high);
+    if (truncate) {
+        la_vftintrz_w_s(result_low, src_low);
+        if (ymm) {
+            la_vftintrz_w_s(result_high, src_high);
+        }
+    } else {
+        la_vftint_w_s(result_low, src_low);
+        if (ymm) {
+            la_vftint_w_s(result_high, src_high);
+        }
+    }
+    store_avx_cvt_value_lsx(result_low, result_high,
+                             ir1_opnd_base_reg_num(dest_opnd), ymm);
+    set_fpu_rounding_mode(fcsr);
+    ra_free_temp_auto(fcsr);
+    ra_free_temp(result_low);
+    ra_free_temp(src_low);
+    if (ymm) {
+        ra_free_temp(result_high);
+        ra_free_temp(src_high);
+    }
+    return true;
+}
+
+bool translate_vcvtps2dq_lsx(IR1_INST *pir1)
+{
+    return translate_vcvtps2dq_lsx_common(pir1, false);
+}
+
+bool translate_vcvttps2dq_lsx(IR1_INST *pir1)
+{
+    return translate_vcvtps2dq_lsx_common(pir1, true);
+}
+
 bool translate_vcvtsd2ss_lsx(IR1_INST * pir1) {
     IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
     IR1_OPND *opnd1 = ir1_get_opnd(pir1, 1);

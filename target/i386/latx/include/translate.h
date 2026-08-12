@@ -820,12 +820,16 @@ TRANS_FUNC_DEF(vpaddx);
 /* f16c */
 TRANS_FUNC_DEF(vcvtph2ps);
 TRANS_FUNC_DEF(vcvtps2ph);
+TRANS_FUNC_DEF(vcvtph2ps_lsx);
+TRANS_FUNC_DEF(vcvtps2ph_lsx);
 
 /* avx */
 TRANS_FUNC_DEF(vpclmulqdq);
 TRANS_FUNC_DEF(vpclmulqdq_lsx);
 TRANS_FUNC_DEF(vtestpd);
 TRANS_FUNC_DEF(vtestps);
+TRANS_FUNC_DEF(vtestpd_lsx);
+TRANS_FUNC_DEF(vtestps_lsx);
 TRANS_FUNC_DEF(vzeroall);
 TRANS_FUNC_DEF(vzeroall_lsx);
 TRANS_FUNC_DEF(vpmulhrsw);
@@ -1131,14 +1135,24 @@ TRANS_FUNC_DEF(vcvtpd2dq);
 TRANS_FUNC_DEF(vcvtpd2ps);
 TRANS_FUNC_DEF(vcvtps2dq);
 TRANS_FUNC_DEF(vcvtps2pd);
+TRANS_FUNC_DEF(vcvtdq2pd_lsx);
+TRANS_FUNC_DEF(vcvtdq2ps_lsx);
+TRANS_FUNC_DEF(vcvtpd2dq_lsx);
+TRANS_FUNC_DEF(vcvtpd2ps_lsx);
+TRANS_FUNC_DEF(vcvtps2dq_lsx);
+TRANS_FUNC_DEF(vcvtps2pd_lsx);
 TRANS_FUNC_DEF(vcvtsd2ss);
 TRANS_FUNC_DEF(vcvtsd2ss_lsx);
 TRANS_FUNC_DEF(vcvtsi2sd);
 TRANS_FUNC_DEF(vcvtsi2sd_lsx);
 TRANS_FUNC_DEF(vcvtsi2ss);
+TRANS_FUNC_DEF(vcvtsi2ss_lsx);
 TRANS_FUNC_DEF(vcvtss2sd);
+TRANS_FUNC_DEF(vcvtss2sd_lsx);
 TRANS_FUNC_DEF(vcvttpd2dq);
 TRANS_FUNC_DEF(vcvttps2dq);
+TRANS_FUNC_DEF(vcvttpd2dq_lsx);
+TRANS_FUNC_DEF(vcvttps2dq_lsx);
 TRANS_FUNC_DEF(vfmaddxxxpd);
 TRANS_FUNC_DEF(vfmaddxxxpd_lsx);
 TRANS_FUNC_DEF(vfmaddxxxps);
@@ -1405,6 +1419,10 @@ TRANS_FUNC_DEF(vroundps);
 TRANS_FUNC_DEF(vroundss);
 TRANS_FUNC_DEF(vroundpd);
 TRANS_FUNC_DEF(vroundsd);
+TRANS_FUNC_DEF(vroundps_lsx);
+TRANS_FUNC_DEF(vroundss_lsx);
+TRANS_FUNC_DEF(vroundpd_lsx);
+TRANS_FUNC_DEF(vroundsd_lsx);
 #endif
 TRANS_FUNC_DEF(pcmpestrm);
 
