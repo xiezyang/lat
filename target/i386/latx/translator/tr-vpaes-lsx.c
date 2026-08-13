@@ -197,12 +197,9 @@ static IR2_OPND load_round_key(IR1_OPND *opnd, int need_copy)
         return key_tmp;
     }
 
+    lsassert(ir1_opnd_size(opnd) == 128);
     IR2_OPND key_tmp = ra_alloc_ftemp();
-    if (ir1_opnd_size(opnd) == 256) {
-        load_freg256_from_ir1_mem(key_tmp, opnd);
-    } else {
-        load_freg128_from_ir1_mem(key_tmp, opnd);
-    }
+    load_freg128_from_ir1_mem(key_tmp, opnd);
     return key_tmp;
 }
 

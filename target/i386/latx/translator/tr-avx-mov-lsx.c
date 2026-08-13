@@ -235,8 +235,8 @@ bool translate_vmovaps_lsx(IR1_INST *pir1)
 
             vmovaps_check_alignment(pir1, src, 32);
             address = convert_mem_to_itemp(src);
-            gen_test_page_flag_force(address, 0, PAGE_READ);
-            gen_test_page_flag_force(address, 16, PAGE_READ);
+            gen_test_page_flag(address, 0, PAGE_READ);
+            gen_test_page_flag(address, 16, PAGE_READ);
             la_vld(low, address, 0);
             la_vld(high, address, 16);
             la_vori_b(ra_alloc_xmm(dest_index), low, 0);
@@ -252,10 +252,10 @@ bool translate_vmovaps_lsx(IR1_INST *pir1)
 
             vmovaps_check_alignment(pir1, dest, 32);
             address = convert_mem_to_itemp(dest);
-            gen_test_page_flag_force(address, 0,
-                                     PAGE_WRITE | PAGE_WRITE_ORG);
-            gen_test_page_flag_force(address, 16,
-                                     PAGE_WRITE | PAGE_WRITE_ORG);
+            gen_test_page_flag(address, 0,
+                               PAGE_WRITE | PAGE_WRITE_ORG);
+            gen_test_page_flag(address, 16,
+                               PAGE_WRITE | PAGE_WRITE_ORG);
             la_vst(low, address, 0);
             la_vst(high, address, 16);
             ra_free_temp(address);
@@ -275,7 +275,7 @@ bool translate_vmovaps_lsx(IR1_INST *pir1)
 
             vmovaps_check_alignment(pir1, src, 16);
             address = convert_mem_to_itemp(src);
-            gen_test_page_flag_force(address, 0, PAGE_READ);
+            gen_test_page_flag(address, 0, PAGE_READ);
             la_vld(value, address, 0);
             la_vori_b(ra_alloc_xmm(dest_index), value, 0);
             clear_ymm_high128_shadow(dest_index);
@@ -286,8 +286,8 @@ bool translate_vmovaps_lsx(IR1_INST *pir1)
 
             vmovaps_check_alignment(pir1, dest, 16);
             address = convert_mem_to_itemp(dest);
-            gen_test_page_flag_force(address, 0,
-                                     PAGE_WRITE | PAGE_WRITE_ORG);
+            gen_test_page_flag(address, 0,
+                               PAGE_WRITE | PAGE_WRITE_ORG);
             la_vst(ra_alloc_xmm(ir1_opnd_base_reg_num(src)),
                    address, 0);
             ra_free_temp(address);
