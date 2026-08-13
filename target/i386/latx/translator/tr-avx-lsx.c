@@ -876,9 +876,6 @@ static bool translate_avx_integer_3op_lsx(
     lsassert(ir1_opnd_size(opnd0) == ir1_opnd_size(opnd1));
     lsassert(ir1_opnd_size(opnd0) == ir1_opnd_size(opnd2));
 
-    if (ir1_opnd_is_ymm(opnd0)) {
-        tr_save_ymm_to_env(UINT16_MAX);
-    }
     la_vori_b(src1_low, ra_alloc_xmm(src1_index), 0);
     if (ir1_opnd_is_mem(opnd2)) {
         if (ir1_opnd_is_ymm(opnd0)) {
@@ -1479,10 +1476,6 @@ bool translate_vpabsx_lsx(IR1_INST *pir1)
     lsassert(ir1_opnd_is_xmm(dest_opnd) || ir1_opnd_is_ymm(dest_opnd));
     lsassert(ir1_opnd_is_mem(src_opnd) || ir1_opnd_is_xmm(src_opnd) ||
              ir1_opnd_is_ymm(src_opnd));
-    if (ir1_opnd_is_ymm(dest_opnd)) {
-        tr_save_ymm_to_env(UINT16_MAX);
-    }
-
     switch (ir1_opcode(pir1)) {
     case dt_X86_INS_VPABSB:
         abs_op = la_vabsd_b;
@@ -1868,9 +1861,6 @@ bool translate_vptest_lsx(IR1_INST *pir1)
     lsassert(ir1_opnd_is_xmm(src_opnd) == !ymm ||
              ir1_opnd_is_ymm(src_opnd) == ymm ||
              ir1_opnd_is_mem(src_opnd));
-    if (ymm) {
-        tr_save_ymm_to_env(UINT16_MAX);
-    }
     load_avx_lsx_operand(dest_opnd, ymm, &dest_low, &dest_high);
     load_avx_lsx_operand(src_opnd, ymm, &src_low, &src_high);
 
@@ -1933,9 +1923,6 @@ static bool translate_avx_vtest_lsx(IR1_INST *pir1, bool double_precision)
     lsassert(ir1_opnd_is_xmm(src_opnd) == !ymm ||
              ir1_opnd_is_ymm(src_opnd) == ymm ||
              ir1_opnd_is_mem(src_opnd));
-    if (ymm) {
-        tr_save_ymm_to_env(UINT16_MAX);
-    }
     load_avx_lsx_operand(dest_opnd, ymm, &dest_low, &dest_high);
     load_avx_lsx_operand(src_opnd, ymm, &src_low, &src_high);
 
@@ -2050,9 +2037,6 @@ static bool translate_avx_lane_3op_lsx(IR1_INST *pir1,
     lsassert(ir1_opnd_is_xmm(opnd1) == !ymm ||
              ir1_opnd_is_ymm(opnd1) == ymm);
     lsassert(ir1_opnd_size(opnd0) == ir1_opnd_size(opnd2));
-    if (ymm) {
-        tr_save_ymm_to_env(UINT16_MAX);
-    }
     load_avx_lsx_operand(opnd1, ymm, &src1_low, &src1_high);
     load_avx_lsx_operand(opnd2, ymm, &src2_low, &src2_high);
     tr_inst(result_low, src2_low, src1_low);
@@ -2265,9 +2249,6 @@ static bool translate_vunpckxx_lsx(IR1_INST *pir1, bool high,
     } else {
         tr_inst = high ? la_vilvh_w : la_vilvl_w;
     }
-    if (ymm) {
-        tr_save_ymm_to_env(UINT16_MAX);
-    }
     load_avx_lsx_operand(opnd1, ymm, &src1_low, &src1_high);
     load_avx_lsx_operand(opnd2, ymm, &src2_low, &src2_high);
     tr_inst(result_low, src2_low, src1_low);
@@ -2336,9 +2317,6 @@ bool translate_vshufpd_lsx(IR1_INST *pir1)
     lsassert(ir1_opnd_is_xmm(opnd0) || ymm);
     lsassert(ir1_opnd_is_xmm(opnd1) == !ymm ||
              ir1_opnd_is_ymm(opnd1) == ymm);
-    if (ymm) {
-        tr_save_ymm_to_env(UINT16_MAX);
-    }
     load_avx_lsx_operand(opnd1, ymm, &src1_low, &src1_high);
     load_avx_lsx_operand(opnd2, ymm, &src2_low, &src2_high);
     translate_vshufpd_lane_lsx(result_low, src1_low, src2_low, imm & 3);
@@ -2385,9 +2363,6 @@ bool translate_vshufps_lsx(IR1_INST *pir1)
     lsassert(ir1_opnd_is_xmm(opnd0) || ymm);
     lsassert(ir1_opnd_is_xmm(opnd1) == !ymm ||
              ir1_opnd_is_ymm(opnd1) == ymm);
-    if (ymm) {
-        tr_save_ymm_to_env(UINT16_MAX);
-    }
     load_avx_lsx_operand(opnd1, ymm, &src1_low, &src1_high);
     load_avx_lsx_operand(opnd2, ymm, &src2_low, &src2_high);
     translate_vshufps_lane_lsx(result_low, src1_low, src2_low, imm);
@@ -2436,9 +2411,6 @@ bool translate_vpshufb_lsx(IR1_INST *pir1)
     lsassert(ir1_opnd_is_xmm(dest_opnd) || ymm);
     lsassert(ir1_opnd_is_xmm(src_opnd) == !ymm ||
              ir1_opnd_is_ymm(src_opnd) == ymm);
-    if (ymm) {
-        tr_save_ymm_to_env(UINT16_MAX);
-    }
     load_avx_lsx_operand(src_opnd, ymm, &src_low, &src_high);
     load_avx_lsx_operand(control_opnd, ymm, &control_low, &control_high);
     translate_vpshufb_lane_lsx(result_low, src_low, control_low);
@@ -2473,9 +2445,6 @@ bool translate_vpshufd_lsx(IR1_INST *pir1)
     lsassert(ir1_opnd_is_mem(src_opnd) ||
              ir1_opnd_is_xmm(src_opnd) == !ymm ||
              ir1_opnd_is_ymm(src_opnd) == ymm);
-    if (ymm) {
-        tr_save_ymm_to_env(UINT16_MAX);
-    }
     load_avx_lsx_operand(src_opnd, ymm, &src_low, &src_high);
     la_vshuf4i_w(result_low, src_low, imm);
     if (ymm) {
@@ -2523,9 +2492,6 @@ static bool translate_vpshufh_lsx(IR1_INST *pir1, bool high_half)
     lsassert(ir1_opnd_is_mem(src_opnd) ||
              ir1_opnd_is_xmm(src_opnd) == !ymm ||
              ir1_opnd_is_ymm(src_opnd) == ymm);
-    if (ymm) {
-        tr_save_ymm_to_env(UINT16_MAX);
-    }
     load_avx_lsx_operand(src_opnd, ymm, &src_low, &src_high);
     translate_vpshufh_lane_lsx(result_low, src_low, imm, high_half);
     if (ymm) {
@@ -3308,10 +3274,6 @@ bool translate_vpmaskmovx_lsx(IR1_INST *pir1)
                     (ir1_opnd_is_mem(opnd2) &&
                      (ir1_opnd_is_xmm(opnd0) || ir1_opnd_is_ymm(opnd0))));
 
-    if (ymm) {
-        tr_save_ymm_to_env(UINT16_MAX);
-    }
-
     if (store) {
         IR2_OPND address = convert_mem_to_itemp(opnd0);
         int src_index = ir1_opnd_base_reg_num(opnd2);
@@ -3998,9 +3960,6 @@ static bool translate_avx_round_packed_lsx(IR1_INST *pir1,
     IR2_OPND result_low = ra_alloc_ftemp();
 
     lsassert(ir1_opnd_is_xmm(opnd0) || ymm);
-    if (ymm) {
-        tr_save_ymm_to_env(UINT16_MAX);
-    }
     load_avx_lsx_operand(opnd1, ymm, &src_low, &src_high);
     translate_avx_round_lane_lsx(result_low, src_low, imm, double_precision);
     if (ymm) {

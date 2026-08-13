@@ -196,9 +196,6 @@ static bool translate_avx_integer_shift_lsx(IR1_INST *pir1)
     IR2_OPND src_low;
     IR2_OPND src_high;
 
-    if (is_ymm) {
-        tr_save_ymm_to_env(UINT16_MAX);
-    }
     load_avx_shift_operand_lsx(opnd1, is_ymm, &src_low, &src_high);
 
     if (ir1_opnd_is_imm(opnd2)) {

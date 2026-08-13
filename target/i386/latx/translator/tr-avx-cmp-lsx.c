@@ -380,9 +380,6 @@ static bool translate_avx_integer_cmp_lsx(
     lsassert(ir1_opnd_size(opnd0) == ir1_opnd_size(opnd1));
     lsassert(ir1_opnd_size(opnd0) == ir1_opnd_size(opnd2));
 
-    if (ir1_opnd_is_ymm(opnd0)) {
-        tr_save_ymm_to_env(UINT16_MAX);
-    }
     la_vori_b(src1_low, ra_alloc_xmm(src1_index), 0);
     if (ir1_opnd_is_mem(opnd2)) {
         if (ir1_opnd_is_ymm(opnd0)) {
@@ -679,10 +676,6 @@ static bool translate_avx_float_cmp_packed_lsx(IR1_INST *pir1,
                              &set_all_ones);
     lsassert(ir1_opnd_is_mem(opnd2) ||
              (is_ymm ? ir1_opnd_is_ymm(opnd2) : ir1_opnd_is_xmm(opnd2)));
-    if (is_ymm) {
-        tr_save_ymm_to_env(UINT16_MAX);
-    }
-
     src1_low = load_avx_float_cmp_packed_lsx_source(opnd1);
     if (ir1_opnd_is_mem(opnd2) && is_ymm) {
         IR2_OPND src1_high = load_ymm_high128_shadow(src1_index);
