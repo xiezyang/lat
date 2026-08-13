@@ -384,7 +384,16 @@ bool translate_vmulsd_lsx(IR1_INST * pir1) {
     return true;
 }
 
+static bool translate_avx_fp_scalar_lsx(IR1_INST *pir1,
+                                        IR2_INST *(*tr_inst)(IR2_OPND,
+                                                             IR2_OPND,
+                                                             IR2_OPND),
+                                        bool is_double,
+                                        bool track_fp_status);
+
 bool translate_vdivsd_lsx(IR1_INST * pir1) {
+    return translate_avx_fp_scalar_lsx(pir1, la_vfdiv_d, true, true);
+#if 0
     IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
     IR1_OPND *opnd1 = ir1_get_opnd(pir1, 1);
     IR1_OPND *opnd2 = ir1_get_opnd(pir1, 2);
@@ -487,6 +496,7 @@ bool translate_vdivsd_lsx(IR1_INST * pir1) {
         }
     }
     return true;
+#endif
 }
 
 bool translate_vxorpd_lsx(IR1_INST * pir1) {
@@ -3776,6 +3786,78 @@ static void lsx_fp_status_finish(IR1_INST *pir1, LsxFpStatus *status)
     ra_free_temp(status->mxcsr);
 }
 
+/*
+ * LSX floating arithmetic returns a positive default qNaN for invalid
+ * operations such as 0 / 0 and 0 * infinity.  x86 uses the negative
+ * indefinite qNaN in those cases, while a qNaN supplied by either operand
+ * must retain its payload.  Repair only a NaN result with no NaN input.
+ */
+static void lsx_fp_fix_invalid_nan_lane(IR2_OPND result, IR2_OPND src1,
+                                        IR2_OPND src2, bool double_precision,
+                                        int lane)
+{
+    uint64_t exponent_mask = double_precision ?
+        UINT64_C(0x7ff0000000000000) : UINT64_C(0x000000007f800000);
+    uint64_t fraction_mask = double_precision ?
+        UINT64_C(0x000fffffffffffff) : UINT64_C(0x00000000007fffff);
+    uint64_t indefinite = double_precision ?
+        UINT64_C(0xfff8000000000000) : UINT64_C(0x00000000ffc00000);
+    IR2_INST *(*pick)(IR2_OPND, IR2_OPND, int) = double_precision ?
+        la_vpickve2gr_du : la_vpickve2gr_w;
+    IR2_INST *(*insert)(IR2_OPND, IR2_OPND, int) = double_precision ?
+        la_vinsgr2vr_d : la_vinsgr2vr_w;
+    IR2_OPND bits = ra_alloc_itemp();
+    IR2_OPND field = ra_alloc_itemp();
+    IR2_OPND exponent = ra_alloc_itemp();
+    IR2_OPND source2 = ra_alloc_label();
+    IR2_OPND canonicalize = ra_alloc_label();
+    IR2_OPND done = ra_alloc_label();
+
+    li_d(exponent, exponent_mask);
+    pick(bits, result, lane);
+    la_and(field, bits, exponent);
+    la_bne(field, exponent, done);
+    li_d(field, fraction_mask);
+    la_and(field, bits, field);
+    la_beq(field, zero_ir2_opnd, done);
+
+    pick(bits, src1, lane);
+    la_and(field, bits, exponent);
+    la_bne(field, exponent, source2);
+    li_d(field, fraction_mask);
+    la_and(field, bits, field);
+    la_bne(field, zero_ir2_opnd, done);
+
+    la_label(source2);
+    pick(bits, src2, lane);
+    la_and(field, bits, exponent);
+    la_bne(field, exponent, canonicalize);
+    li_d(field, fraction_mask);
+    la_and(field, bits, field);
+    la_bne(field, zero_ir2_opnd, done);
+
+    la_label(canonicalize);
+    li_d(bits, indefinite);
+    insert(result, bits, lane);
+    la_label(done);
+    ra_free_temp(done);
+    ra_free_temp(canonicalize);
+    ra_free_temp(source2);
+    ra_free_temp(exponent);
+    ra_free_temp(field);
+    ra_free_temp(bits);
+}
+
+static void lsx_fp_fix_invalid_nan(IR2_OPND result, IR2_OPND src1,
+                                   IR2_OPND src2, bool double_precision,
+                                   int lanes)
+{
+    for (int lane = 0; lane < lanes; lane++) {
+        lsx_fp_fix_invalid_nan_lane(result, src1, src2,
+                                    double_precision, lane);
+    }
+}
+
 static bool translate_avx_fp_binary_lsx(IR1_INST *pir1,
                                         avx_lsx_fp_binary_fn tr_inst,
                                         bool double_precision,
@@ -3808,6 +3890,8 @@ static bool translate_avx_fp_binary_lsx(IR1_INST *pir1,
         }
     }
     tr_inst(result_low, src1_low, src2_low);
+    lsx_fp_fix_invalid_nan(result_low, src1_low, src2_low,
+                           double_precision, double_precision ? 2 : 4);
     if (track_fp_status) {
         lsx_fp_apply_fz(result_low, status.mxcsr, status.flags,
                         double_precision, double_precision ? 2 : 4);
@@ -3817,6 +3901,9 @@ static bool translate_avx_fp_binary_lsx(IR1_INST *pir1,
         IR2_OPND result_high = ra_alloc_ftemp();
 
         tr_inst(result_high, src1_high, src2_high);
+        lsx_fp_fix_invalid_nan(result_high, src1_high, src2_high,
+                               double_precision,
+                               double_precision ? 2 : 4);
         if (track_fp_status) {
             lsx_fp_apply_fz(result_high, status.mxcsr, status.flags,
                             double_precision, double_precision ? 2 : 4);
@@ -4064,6 +4151,7 @@ static bool translate_avx_fp_scalar_lsx(IR1_INST *pir1,
                          is_double, 1);
     }
     tr_inst(temp, src1, src2);
+    lsx_fp_fix_invalid_nan(temp, src1, src2, is_double, 1);
     if (track_fp_status) {
         lsx_fp_apply_fz(temp, status.mxcsr, status.flags, is_double, 1);
     }
@@ -4191,17 +4279,46 @@ bool translate_vxorps_lsx(IR1_INST *pir1)
 
 typedef void (*avx_lsx_lane_fn)(IR2_OPND, IR2_OPND, IR2_OPND);
 
+static void fix_vhaddpd_invalid_nan_lsx(IR2_OPND result, IR2_OPND lhs,
+                                        IR2_OPND rhs, int lane)
+{
+    IR2_OPND lhs_value = ra_alloc_itemp();
+    IR2_OPND rhs_value = ra_alloc_itemp();
+    IR2_OPND mask = ra_alloc_itemp();
+    IR2_OPND done = ra_alloc_label();
+
+    la_vpickve2gr_du(lhs_value, lhs, lane);
+    la_vpickve2gr_du(rhs_value, rhs, lane);
+    la_xor(mask, lhs_value, rhs_value);
+    la_srli_d(mask, mask, 63);
+    la_beq(mask, zero_ir2_opnd, done);
+
+    li_d(mask, UINT64_C(0x7ff0000000000000));
+    la_and(lhs_value, lhs_value, mask);
+    la_bne(lhs_value, mask, done);
+    la_and(rhs_value, rhs_value, mask);
+    la_bne(rhs_value, mask, done);
+
+    /* x86 returns its negative indefinite qNaN for +inf + -inf. */
+    li_d(lhs_value, UINT64_C(0xfff8000000000000));
+    la_vinsgr2vr_d(result, lhs_value, lane);
+    la_label(done);
+    ra_free_temp(mask);
+    ra_free_temp(rhs_value);
+    ra_free_temp(lhs_value);
+}
+
 static void translate_avx_addsub_lane_lsx(IR2_OPND result,
                                           IR2_OPND src1,
                                           IR2_OPND src2,
                                           bool is_double)
 {
-    IR2_OPND sub1 = ra_alloc_ftemp();
-    IR2_OPND sub2 = ra_alloc_ftemp();
-    IR2_OPND add1 = ra_alloc_ftemp();
-    IR2_OPND add2 = ra_alloc_ftemp();
-
     if (is_double) {
+        IR2_OPND sub1 = ra_alloc_ftemp();
+        IR2_OPND sub2 = ra_alloc_ftemp();
+        IR2_OPND add1 = ra_alloc_ftemp();
+        IR2_OPND add2 = ra_alloc_ftemp();
+
         la_vpickev_d(sub1, src1, src1);
         la_vpickev_d(sub2, src2, src2);
         la_vpickod_d(add1, src1, src1);
@@ -4209,19 +4326,21 @@ static void translate_avx_addsub_lane_lsx(IR2_OPND result,
         la_vfsub_d(sub1, sub1, sub2);
         la_vfadd_d(add1, add1, add2);
         la_vpickev_d(result, add1, sub1);
+        ra_free_temp(add2);
+        ra_free_temp(add1);
+        ra_free_temp(sub2);
+        ra_free_temp(sub1);
     } else {
-        la_vpickev_w(sub1, src1, src1);
-        la_vpickev_w(sub2, src2, src2);
-        la_vpickod_w(add1, src1, src1);
-        la_vpickod_w(add2, src2, src2);
-        la_vfsub_s(sub1, sub1, sub2);
-        la_vfadd_s(add1, add1, add2);
-        la_vpickev_w(result, add1, sub1);
+        IR2_OPND signed_src2 = ra_alloc_ftemp();
+        IR2_OPND sign = ra_alloc_itemp();
+
+        li_d(sign, UINT64_C(0x0000000080000000));
+        la_vreplgr2vr_d(signed_src2, sign);
+        la_vxor_v(signed_src2, src2, signed_src2);
+        la_vfadd_s(result, src1, signed_src2);
+        ra_free_temp(sign);
+        ra_free_temp(signed_src2);
     }
-    ra_free_temp(add2);
-    ra_free_temp(add1);
-    ra_free_temp(sub2);
-    ra_free_temp(sub1);
 }
 
 static void translate_avx_hadd_lane_lsx(IR2_OPND result,
@@ -4240,6 +4359,8 @@ static void translate_avx_hadd_lane_lsx(IR2_OPND result,
             la_vfsub_d(result, even, odd);
         } else {
             la_vfadd_d(result, even, odd);
+            fix_vhaddpd_invalid_nan_lsx(result, even, odd, 0);
+            fix_vhaddpd_invalid_nan_lsx(result, even, odd, 1);
         }
     } else {
         la_vpickev_w(even, src2, src1);
@@ -4266,8 +4387,18 @@ static bool translate_avx_pairwise_lsx(IR1_INST *pir1,
     IR2_OPND result_low = ra_alloc_ftemp();
     LsxFpStatus status;
 
-    load_avx_lsx_operand(opnd1, ymm, &src1_low, &src1_high);
-    load_avx_lsx_operand(opnd2, ymm, &src2_low, &src2_high);
+    if (ir1_opnd_is_mem(opnd1)) {
+        src1_low = load_v128_from_ir1_mem_exact(opnd1);
+    } else {
+        src1_low = ra_alloc_ftemp();
+        la_vori_b(src1_low, ra_alloc_xmm(ir1_opnd_base_reg_num(opnd1)), 0);
+    }
+    if (ir1_opnd_is_mem(opnd2)) {
+        src2_low = load_v128_from_ir1_mem_exact(opnd2);
+    } else {
+        src2_low = ra_alloc_ftemp();
+        la_vori_b(src2_low, ra_alloc_xmm(ir1_opnd_base_reg_num(opnd2)), 0);
+    }
     lsx_fp_status_begin(&status);
     lsx_fp_apply_daz(src1_low, status.mxcsr, status.flags,
                      double_precision, double_precision ? 2 : 4);
@@ -4277,6 +4408,23 @@ static bool translate_avx_pairwise_lsx(IR1_INST *pir1,
     lsx_fp_apply_fz(result_low, status.mxcsr, status.flags,
                     double_precision, double_precision ? 2 : 4);
     if (ymm) {
+        la_vori_b(ra_alloc_xmm(ir1_opnd_base_reg_num(opnd0)), result_low, 0);
+        ra_free_temp(result_low);
+        ra_free_temp(src1_low);
+        ra_free_temp(src2_low);
+
+        if (ir1_opnd_is_mem(opnd1)) {
+            src1_high = load_v256_high_from_ir1_mem_exact(opnd1);
+        } else {
+            src1_high = load_ymm_high128_shadow(
+                ir1_opnd_base_reg_num(opnd1));
+        }
+        if (ir1_opnd_is_mem(opnd2)) {
+            src2_high = load_v256_high_from_ir1_mem_exact(opnd2);
+        } else {
+            src2_high = load_ymm_high128_shadow(
+                ir1_opnd_base_reg_num(opnd2));
+        }
         IR2_OPND result_high = ra_alloc_ftemp();
 
         lsx_fp_apply_daz(src1_high, status.mxcsr, status.flags,
@@ -4287,15 +4435,17 @@ static bool translate_avx_pairwise_lsx(IR1_INST *pir1,
         lsx_fp_apply_fz(result_high, status.mxcsr, status.flags,
                         double_precision, double_precision ? 2 : 4);
         lsx_fp_status_finish(pir1, &status);
-        store_avx_lsx_result(opnd0, result_low, result_high);
+        store_ymm_high128_shadow(result_high, ir1_opnd_base_reg_num(opnd0));
         ra_free_temp(result_high);
     } else {
         lsx_fp_status_finish(pir1, &status);
         store_avx_lsx_result(opnd0, result_low, result_low);
     }
-    ra_free_temp(result_low);
-    ra_free_temp(src1_low);
-    ra_free_temp(src2_low);
+    if (!ymm) {
+        ra_free_temp(result_low);
+        ra_free_temp(src1_low);
+        ra_free_temp(src2_low);
+    }
     if (ymm) {
         ra_free_temp(src1_high);
         ra_free_temp(src2_high);
@@ -4393,14 +4543,14 @@ static void translate_avx_minmax_lane_lsx(IR2_OPND result,
 
     if (is_double) {
         if (is_max) {
-            la_vfcmp_cond_d(mask, src1, src2, 0x3);
+            la_vfcmp_cond_d(mask, src2, src1, FCMP_COND_CLT);
         } else {
-            la_vfcmp_cond_d(mask, src2, src1, 0x3);
+            la_vfcmp_cond_d(mask, src1, src2, FCMP_COND_CLT);
         }
     } else if (is_max) {
-        la_vfcmp_cond_s(mask, src1, src2, 0x3);
+        la_vfcmp_cond_s(mask, src2, src1, FCMP_COND_CLT);
     } else {
-        la_vfcmp_cond_s(mask, src2, src1, 0x3);
+        la_vfcmp_cond_s(mask, src1, src2, FCMP_COND_CLT);
     }
     la_vand_v(selected1, src1, mask);
     la_vandn_v(selected2, mask, src2);
@@ -4539,9 +4689,107 @@ bool translate_vminss_lsx(IR1_INST *pir1)
 
 typedef IR2_INST *(*avx_lsx_fp_unary_fn)(IR2_OPND, IR2_OPND);
 
+/* x86 RCPPS/RSQRTPS retain only about 12 mantissa bits. */
+static void lsx_fp_truncate_rcp_estimate(IR2_OPND value)
+{
+    IR2_OPND mask = ra_alloc_itemp();
+    IR2_OPND vector_mask = ra_alloc_ftemp();
+
+    li_d(mask, UINT64_C(0x00000000fffff000));
+    la_vreplgr2vr_w(vector_mask, mask);
+    la_vand_v(value, value, vector_mask);
+    ra_free_temp(vector_mask);
+    ra_free_temp(mask);
+}
+
+/*
+ * The x86 estimate ROM is not simply a truncated exact reciprocal.  Its
+ * power-of-two entries sit just below the mathematical value, and denormal
+ * operands are treated as signed zero.  Match those architectural estimate
+ * values after the LSX instruction has supplied the normal approximation.
+ */
+static void lsx_fp_fix_rcp_estimate_lane(IR2_OPND value, IR2_OPND src,
+                                         bool rsqrt, int lane)
+{
+    IR2_OPND source = ra_alloc_itemp();
+    IR2_OPND result = ra_alloc_itemp();
+    IR2_OPND field = ra_alloc_itemp();
+    IR2_OPND subnormal = ra_alloc_label();
+    IR2_OPND normal = ra_alloc_label();
+    IR2_OPND done = ra_alloc_label();
+
+    la_vpickve2gr_w(source, src, lane);
+    li_d(field, UINT64_C(0x7f800000));
+    la_and(field, source, field);
+    la_beq(field, zero_ir2_opnd, subnormal);
+    li_d(result, UINT64_C(0x7f800000));
+    la_beq(field, result, done);
+
+    /* A normal power of two has no fraction bits. */
+    li_d(result, UINT64_C(0x007fffff));
+    la_and(result, source, result);
+    la_beq(result, zero_ir2_opnd, normal);
+    la_b(done);
+
+    la_label(subnormal);
+    li_d(result, UINT64_C(0x007fffff));
+    la_and(result, source, result);
+    la_beq(result, zero_ir2_opnd, done);
+    li_d(result, UINT64_C(0xff800000));
+    la_and(field, source, result);
+    li_d(result, UINT64_C(0x7f800000));
+    la_or(result, result, field);
+    la_vinsgr2vr_w(value, result, lane);
+    la_b(done);
+
+    la_label(normal);
+    la_vpickve2gr_w(result, value, lane);
+    li_d(field, UINT64_C(0x7fffffff));
+    la_and(result, result, field);
+    if (rsqrt) {
+        li_d(field, UINT64_C(0x00800000));
+        la_and(field, source, field);
+        IR2_OPND even_exponent = ra_alloc_label();
+        IR2_OPND adjusted = ra_alloc_label();
+
+        la_beq(field, zero_ir2_opnd, even_exponent);
+        li_d(field, 0x1000);
+        la_sub_w(result, result, field);
+        la_b(adjusted);
+        la_label(even_exponent);
+        la_addi_w(result, result, -0x800);
+        la_label(adjusted);
+        ra_free_temp(adjusted);
+        ra_free_temp(even_exponent);
+    } else {
+        li_d(field, 0x1000);
+        la_sub_w(result, result, field);
+    }
+    li_d(field, UINT64_C(0x80000000));
+    la_and(field, source, field);
+    la_or(result, result, field);
+    la_vinsgr2vr_w(value, result, lane);
+    la_label(done);
+    ra_free_temp(done);
+    ra_free_temp(normal);
+    ra_free_temp(subnormal);
+    ra_free_temp(field);
+    ra_free_temp(result);
+    ra_free_temp(source);
+}
+
+static void lsx_fp_fix_rcp_estimate(IR2_OPND value, IR2_OPND src,
+                                    bool rsqrt)
+{
+    for (int lane = 0; lane < 4; lane++) {
+        lsx_fp_fix_rcp_estimate_lane(value, src, rsqrt, lane);
+    }
+}
+
 static bool translate_avx_fp_unary_lsx(IR1_INST *pir1,
                                        avx_lsx_fp_unary_fn tr_inst,
-                                       bool double_precision)
+                                       bool double_precision,
+                                       bool approximate, bool rsqrt)
 {
     IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
     IR1_OPND *opnd1 = ir1_get_opnd(pir1, 1);
@@ -4555,6 +4803,10 @@ static bool translate_avx_fp_unary_lsx(IR1_INST *pir1,
     lsx_fp_apply_daz(src_low, status.mxcsr, status.flags,
                      double_precision, double_precision ? 2 : 4);
     tr_inst(result_low, src_low);
+    if (approximate) {
+        lsx_fp_truncate_rcp_estimate(result_low);
+        lsx_fp_fix_rcp_estimate(result_low, src_low, rsqrt);
+    }
     lsx_fp_apply_fz(result_low, status.mxcsr, status.flags,
                     double_precision, double_precision ? 2 : 4);
     if (ymm) {
@@ -4563,6 +4815,10 @@ static bool translate_avx_fp_unary_lsx(IR1_INST *pir1,
         lsx_fp_apply_daz(src_high, status.mxcsr, status.flags,
                          double_precision, double_precision ? 2 : 4);
         tr_inst(result_high, src_high);
+        if (approximate) {
+            lsx_fp_truncate_rcp_estimate(result_high);
+            lsx_fp_fix_rcp_estimate(result_high, src_high, rsqrt);
+        }
         lsx_fp_apply_fz(result_high, status.mxcsr, status.flags,
                         double_precision, double_precision ? 2 : 4);
         lsx_fp_status_finish(pir1, &status);
@@ -4616,12 +4872,12 @@ static bool translate_avx_fp_scalar_unary_lsx(IR1_INST *pir1,
 
 bool translate_vsqrtpd_lsx(IR1_INST *pir1)
 {
-    return translate_avx_fp_unary_lsx(pir1, la_vfsqrt_d, true);
+    return translate_avx_fp_unary_lsx(pir1, la_vfsqrt_d, true, false, false);
 }
 
 bool translate_vsqrtps_lsx(IR1_INST *pir1)
 {
-    return translate_avx_fp_unary_lsx(pir1, la_vfsqrt_s, false);
+    return translate_avx_fp_unary_lsx(pir1, la_vfsqrt_s, false, false, false);
 }
 
 bool translate_vsqrtsd_lsx(IR1_INST *pir1)
@@ -4636,7 +4892,7 @@ bool translate_vsqrtss_lsx(IR1_INST *pir1)
 
 bool translate_vrcpps_lsx(IR1_INST *pir1)
 {
-    return translate_avx_fp_unary_lsx(pir1, la_vfrecip_s, false);
+    return translate_avx_fp_unary_lsx(pir1, la_vfrecip_s, false, true, false);
 }
 
 bool translate_vrcpss_lsx(IR1_INST *pir1)
@@ -4646,7 +4902,7 @@ bool translate_vrcpss_lsx(IR1_INST *pir1)
 
 bool translate_vrsqrtps_lsx(IR1_INST *pir1)
 {
-    return translate_avx_fp_unary_lsx(pir1, la_vfrsqrt_s, false);
+    return translate_avx_fp_unary_lsx(pir1, la_vfrsqrt_s, false, true, true);
 }
 
 bool translate_vrsqrtss_lsx(IR1_INST *pir1)
@@ -4702,10 +4958,7 @@ static void translate_avx_dpps_lane_lsx(IR2_OPND result,
 {
     IR2_OPND selected1 = ra_alloc_ftemp();
     IR2_OPND selected2 = ra_alloc_ftemp();
-    IR2_OPND product = ra_alloc_ftemp();
-    IR2_OPND even = ra_alloc_ftemp();
-    IR2_OPND odd = ra_alloc_ftemp();
-    IR2_OPND sum = ra_alloc_ftemp();
+    IR2_OPND product;
 
     la_vxor_v(selected1, selected1, selected1);
     la_vxor_v(selected2, selected2, selected2);
@@ -4725,12 +4978,20 @@ static void translate_avx_dpps_lane_lsx(IR2_OPND result,
         la_vextrins_w(selected1, src1, VEXTRINS_IMM_4_0(3, 3));
         la_vextrins_w(selected2, src2, VEXTRINS_IMM_4_0(3, 3));
     }
+    product = ra_alloc_ftemp();
     la_vfmul_s(product, selected1, selected2);
-    la_vpickev_w(even, product, product);
-    la_vpickod_w(odd, product, product);
+    ra_free_temp(selected2);
+    ra_free_temp(selected1);
+
+    IR2_OPND even = ra_alloc_ftemp();
+    IR2_OPND odd = ra_alloc_ftemp();
+    la_vshuf4i_w(even, product, 0x88);
+    la_vshuf4i_w(odd, product, 0xdd);
+    ra_free_temp(product);
     la_vfadd_s(even, even, odd);
-    la_vpickev_d(sum, even, even);
-    la_vpickod_d(odd, even, even);
+    IR2_OPND sum = ra_alloc_ftemp();
+    la_vshuf4i_w(sum, even, 0x00);
+    la_vshuf4i_w(odd, even, 0x55);
     la_vfadd_s(sum, sum, odd);
     la_vxor_v(result, result, result);
     if (imm & 0x1) {
@@ -4748,9 +5009,6 @@ static void translate_avx_dpps_lane_lsx(IR2_OPND result,
     ra_free_temp(sum);
     ra_free_temp(odd);
     ra_free_temp(even);
-    ra_free_temp(product);
-    ra_free_temp(selected2);
-    ra_free_temp(selected1);
 }
 
 bool translate_vdppd_lsx(IR1_INST *pir1)
@@ -4787,14 +5045,36 @@ bool translate_vdpps_lsx(IR1_INST *pir1)
     IR2_OPND result_low = ra_alloc_ftemp();
     LsxFpStatus status;
 
-    load_avx_lsx_operand(opnd1, ymm, &src1_low, &src1_high);
-    load_avx_lsx_operand(opnd2, ymm, &src2_low, &src2_high);
+    if (ir1_opnd_is_mem(opnd1)) {
+        src1_low = load_v128_from_ir1_mem_exact(opnd1);
+    } else {
+        src1_low = ra_alloc_ftemp();
+        la_vori_b(src1_low, ra_alloc_xmm(ir1_opnd_base_reg_num(opnd1)), 0);
+    }
+    if (ir1_opnd_is_mem(opnd2)) {
+        src2_low = load_v128_from_ir1_mem_exact(opnd2);
+    } else {
+        src2_low = ra_alloc_ftemp();
+        la_vori_b(src2_low, ra_alloc_xmm(ir1_opnd_base_reg_num(opnd2)), 0);
+    }
     lsx_fp_status_begin(&status);
     lsx_fp_apply_daz(src1_low, status.mxcsr, status.flags, false, 4);
     lsx_fp_apply_daz(src2_low, status.mxcsr, status.flags, false, 4);
     translate_avx_dpps_lane_lsx(result_low, src1_low, src2_low, imm);
     lsx_fp_apply_fz(result_low, status.mxcsr, status.flags, false, 4);
     if (ymm) {
+        la_vori_b(ra_alloc_xmm(ir1_opnd_base_reg_num(opnd0)), result_low, 0);
+        ra_free_temp(result_low);
+        ra_free_temp(src1_low);
+        ra_free_temp(src2_low);
+
+        src1_high = load_ymm_high128_shadow(ir1_opnd_base_reg_num(opnd1));
+        if (ir1_opnd_is_mem(opnd2)) {
+            src2_high = load_v256_high_from_ir1_mem_exact(opnd2);
+        } else {
+            src2_high = load_ymm_high128_shadow(
+                ir1_opnd_base_reg_num(opnd2));
+        }
         IR2_OPND result_high = ra_alloc_ftemp();
 
         lsx_fp_apply_daz(src1_high, status.mxcsr, status.flags, false, 4);
@@ -4802,15 +5082,17 @@ bool translate_vdpps_lsx(IR1_INST *pir1)
         translate_avx_dpps_lane_lsx(result_high, src1_high, src2_high, imm);
         lsx_fp_apply_fz(result_high, status.mxcsr, status.flags, false, 4);
         lsx_fp_status_finish(pir1, &status);
-        store_avx_lsx_result(opnd0, result_low, result_high);
+        store_ymm_high128_shadow(result_high, ir1_opnd_base_reg_num(opnd0));
         ra_free_temp(result_high);
     } else {
         lsx_fp_status_finish(pir1, &status);
         store_avx_lsx_result(opnd0, result_low, result_low);
     }
-    ra_free_temp(result_low);
-    ra_free_temp(src1_low);
-    ra_free_temp(src2_low);
+    if (!ymm) {
+        ra_free_temp(result_low);
+        ra_free_temp(src1_low);
+        ra_free_temp(src2_low);
+    }
     if (ymm) {
         ra_free_temp(src1_high);
         ra_free_temp(src2_high);
