@@ -21,6 +21,7 @@ i386_ss.add(when: 'CONFIG_LATX', if_true: files(
   'tr-simd-cmp.c',
   'tr-simd-cvt.c',
   'tr-simd-mov.c',
+  'tr-simd-mov-lsx.c',
   'tr-simd-shift.c',
   'tr-simd-fma.c',
   'tr-simd-sha.c',

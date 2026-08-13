@@ -160,10 +160,6 @@ bool translate_vmovups_lsx(IR1_INST * pir1) {
         IR1_OPND *dest = ir1_get_opnd(pir1, 0);
         IR1_OPND *src = ir1_get_opnd(pir1, 1);
 
-        if (ir1_opnd_is_ymm(src)) {
-            tr_save_ymm_to_env(UINT16_MAX);
-        }
-
         if (ir1_opnd_size(dest) == 256 && ir1_opnd_is_mem(src)) {
             int dest_index = ir1_opnd_base_reg_num(dest);
             IR2_OPND low;
@@ -230,10 +226,6 @@ bool translate_vmovaps_lsx(IR1_INST *pir1)
         /* LSX-only path */
         IR1_OPND *dest = ir1_get_opnd(pir1, 0);
         IR1_OPND *src = ir1_get_opnd(pir1, 1);
-
-        if (ir1_opnd_is_ymm(src)) {
-            tr_save_ymm_to_env(UINT16_MAX);
-        }
 
         if (ir1_opnd_is_ymm(dest) && ir1_opnd_is_mem(src)) {
             int dest_index = ir1_opnd_base_reg_num(dest);
@@ -354,9 +346,6 @@ static bool translate_vmovmsk_lsx(IR1_INST *pir1, bool is_pd)
     lsassert(ir1_opnd_is_xmm(src_opnd) || ir1_opnd_is_ymm(src_opnd));
 
     src_index = ir1_opnd_base_reg_num(src_opnd);
-    if (ir1_opnd_is_ymm(src_opnd)) {
-        tr_save_ymm_to_env(UINT16_MAX);
-    }
     if (is_pd) {
         la_vmskltz_d(low_mask, ra_alloc_xmm(src_index));
     } else {
@@ -486,10 +475,6 @@ bool translate_vmovddup_lsx(IR1_INST * pir1) {
         IR1_OPND *dest = ir1_get_opnd(pir1, 0);
         IR1_OPND *src = ir1_get_opnd(pir1, 1);
         int dest_index = ir1_opnd_base_reg_num(dest);
-
-        if (ir1_opnd_is_ymm(src)) {
-            tr_save_ymm_to_env(UINT16_MAX);
-        }
 
         if (ir1_opnd_is_ymm(dest)) {
             IR2_OPND src_low;
@@ -656,9 +641,6 @@ bool translate_vpmovmskb_lsx(IR1_INST *pir1)
 
     lsassert(ir1_opnd_is_gpr(dest_opnd));
     lsassert(ir1_opnd_is_xmm(src_opnd) || ir1_opnd_is_ymm(src_opnd));
-    if (ir1_opnd_is_ymm(src_opnd)) {
-        tr_save_ymm_to_env(UINT16_MAX);
-    }
     la_vori_b(low, ra_alloc_xmm(src_index), 0);
     la_vmskltz_b(low_mask, low);
     la_movfr2gr_d(dest, low_mask);
@@ -748,10 +730,6 @@ bool translate_vmaskmovpx_lsx(IR1_INST *pir1)
     lsassert(ir1_opnd_is_xmm(mask_opnd) || ir1_opnd_is_ymm(mask_opnd));
     lsassert(ir1_opnd_is_xmm(value_opnd) || ir1_opnd_is_ymm(value_opnd) ||
              ir1_opnd_is_mem(value_opnd));
-
-    if (ir1_opnd_is_ymm(mask_opnd) || ir1_opnd_is_ymm(value_opnd)) {
-        tr_save_ymm_to_env(UINT16_MAX);
-    }
 
     if (is_ymm) {
         int mask_index = ir1_opnd_base_reg_num(mask_opnd);

@@ -13,7 +13,7 @@
 
 #ifdef CONFIG_LATX_AVX_OPT
 
-static bool translate_vmovaps_lasx(IR1_INST *pir1);
+static bool translate_vmovaps_lasx(IR1_INST *pir1, bool aligned);
 
 static void vmovaps_check_alignment(IR1_INST *pir1, IR1_OPND *mem,
                                     int alignment)
@@ -52,8 +52,7 @@ bool translate_vmovupd(IR1_INST * pir1) {
         return translate_vmovupd_lsx(pir1);
     }
 
-    translate_vmovaps_lasx(pir1);
-    return true;
+    return translate_vmovaps_lasx(pir1, false);
 }
 
 bool translate_vmovdqa(IR1_INST * pir1) {
@@ -61,7 +60,7 @@ bool translate_vmovdqa(IR1_INST * pir1) {
         return translate_vmovdqa_lsx(pir1);
     }
 
-    return translate_vmovaps_lasx(pir1);
+    return translate_vmovaps_lasx(pir1, true);
 }
 
 bool translate_vmovdqu(IR1_INST * pir1) {
@@ -69,7 +68,7 @@ bool translate_vmovdqu(IR1_INST * pir1) {
         return translate_vmovdqu_lsx(pir1);
     }
 
-    return translate_vmovaps_lasx(pir1);
+    return translate_vmovaps_lasx(pir1, false);
 }
 
 bool translate_vmovups(IR1_INST * pir1) {
@@ -77,7 +76,7 @@ bool translate_vmovups(IR1_INST * pir1) {
         return translate_vmovups_lsx(pir1);
     }
 
-    return translate_vmovaps_lasx(pir1);
+    return translate_vmovaps_lasx(pir1, false);
 }
 
 bool translate_vmovapd(IR1_INST * pir1) {
@@ -85,8 +84,7 @@ bool translate_vmovapd(IR1_INST * pir1) {
         return translate_vmovapd_lsx(pir1);
     }
 
-    translate_vmovaps_lasx(pir1);
-    return true;
+    return translate_vmovaps_lasx(pir1, true);
 }
 
 bool translate_vlddqu(IR1_INST * pir1) {
@@ -94,20 +92,23 @@ bool translate_vlddqu(IR1_INST * pir1) {
         return translate_vlddqu_lsx(pir1);
     }
 
-    translate_vmovaps_lasx(pir1);
-    return true;
+    return translate_vmovaps_lasx(pir1, false);
 }
 
-static bool translate_vmovaps_lasx(IR1_INST *pir1)
+static bool translate_vmovaps_lasx(IR1_INST *pir1, bool aligned)
 {
     IR1_OPND * dest = ir1_get_opnd(pir1, 0);
     IR1_OPND * src = ir1_get_opnd(pir1, 1);
     if (ir1_opnd_is_ymm(dest) && ir1_opnd_is_mem(src)) {
-        vmovaps_check_alignment(pir1, src, 32);
+        if (aligned) {
+            vmovaps_check_alignment(pir1, src, 32);
+        }
         load_freg256_from_ir1_mem(ra_alloc_xmm(ir1_opnd_base_reg_num(dest)),
             src);
     } else if (ir1_opnd_is_mem(dest) && ir1_opnd_is_ymm(src)) {
-        vmovaps_check_alignment(pir1, dest, 32);
+        if (aligned) {
+            vmovaps_check_alignment(pir1, dest, 32);
+        }
         store_freg256_to_ir1_mem(ra_alloc_xmm(ir1_opnd_base_reg_num(src)),
             dest);
     } else if (ir1_opnd_is_ymm(dest) && ir1_opnd_is_ymm(src)) {
@@ -116,12 +117,16 @@ static bool translate_vmovaps_lasx(IR1_INST *pir1)
     } else if (ir1_opnd_is_xmm(dest) && ir1_opnd_is_mem(src)) {
         IR2_OPND temp = ra_alloc_ftemp();
 
-        vmovaps_check_alignment(pir1, src, 16);
+        if (aligned) {
+            vmovaps_check_alignment(pir1, src, 16);
+        }
         load_freg128_from_ir1_mem(temp, src);
         set_high128_xreg_to_zero(temp);
         la_xvori_b(ra_alloc_xmm(ir1_opnd_base_reg_num(dest)), temp, 0);
     } else if (ir1_opnd_is_mem(dest) && ir1_opnd_is_xmm(src)) {
-        vmovaps_check_alignment(pir1, dest, 16);
+        if (aligned) {
+            vmovaps_check_alignment(pir1, dest, 16);
+        }
         store_freg128_to_ir1_mem(ra_alloc_xmm(ir1_opnd_base_reg_num(src)),
             dest);
     } else if (ir1_opnd_is_xmm(dest) && ir1_opnd_is_xmm(src)) {
@@ -145,7 +150,7 @@ bool translate_vmovaps(IR1_INST *pir1)
         return translate_vmovaps_lsx(pir1);
     }
 
-    return translate_vmovaps_lasx(pir1);
+    return translate_vmovaps_lasx(pir1, true);
 }
 
 bool translate_vmovmskps(IR1_INST * pir1) {
