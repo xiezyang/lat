@@ -1303,7 +1303,11 @@ void load_freg128_from_ir1_mem(IR2_OPND opnd2, IR1_OPND *opnd1){
     lsassert(ir2_opnd_is_freg(&opnd2));
 
     IR2_OPND mem_opnd = convert_mem(opnd1, &little_disp);
-    gen_test_page_flag_force_range(mem_opnd, little_disp, 16, PAGE_READ);
+    if (option_enable_lasx) {
+        gen_test_page_flag(mem_opnd, little_disp, PAGE_READ);
+    } else if (option_mem_test) {
+        gen_test_page_flag_force_range(mem_opnd, little_disp, 16, PAGE_READ);
+    }
     la_vld(opnd2, mem_opnd, little_disp);
     return;
 }
@@ -1315,8 +1319,12 @@ void store_freg128_to_ir1_mem(IR2_OPND opnd2, IR1_OPND *opnd1){
     lsassert(ir2_opnd_is_freg(&opnd2));
 
     IR2_OPND mem_opnd = convert_mem(opnd1, &little_disp);
-    gen_test_page_flag_force_range(mem_opnd, little_disp, 16,
-                                   PAGE_WRITE | PAGE_WRITE_ORG);
+    if (option_enable_lasx) {
+        gen_test_page_flag(mem_opnd, little_disp, PAGE_WRITE | PAGE_WRITE_ORG);
+    } else if (option_mem_test) {
+        gen_test_page_flag_force_range(mem_opnd, little_disp, 16,
+                                       PAGE_WRITE | PAGE_WRITE_ORG);
+    }
     la_vst(opnd2, mem_opnd, little_disp);
     return;
 }
@@ -1351,8 +1359,12 @@ void store_freg256_to_ir1_mem(IR2_OPND opnd2, IR1_OPND * opnd1) {
     lsassert(ir1_opnd_is_mem(opnd1));
     lsassert(ir2_opnd_is_freg( & opnd2));
     IR2_OPND mem_opnd = convert_mem(opnd1, & little_disp);
-    gen_test_page_flag_force_range(mem_opnd, little_disp, 32,
-                                   PAGE_WRITE | PAGE_WRITE_ORG);
+    if (option_enable_lasx) {
+        gen_test_page_flag(mem_opnd, little_disp, PAGE_WRITE | PAGE_WRITE_ORG);
+    } else if (option_mem_test) {
+        gen_test_page_flag_force_range(mem_opnd, little_disp, 32,
+                                       PAGE_WRITE | PAGE_WRITE_ORG);
+    }
     la_xvst(opnd2, mem_opnd, little_disp);
 }
 
@@ -1362,7 +1374,11 @@ void load_freg256_from_ir1_mem(IR2_OPND opnd2, IR1_OPND * opnd1) {
     lsassert(ir2_opnd_is_freg( & opnd2));
 
     IR2_OPND mem_opnd = convert_mem(opnd1, & little_disp);
-    gen_test_page_flag_force_range(mem_opnd, little_disp, 32, PAGE_READ);
+    if (option_enable_lasx) {
+        gen_test_page_flag(mem_opnd, little_disp, PAGE_READ);
+    } else if (option_mem_test) {
+        gen_test_page_flag_force_range(mem_opnd, little_disp, 32, PAGE_READ);
+    }
     la_xvld(opnd2, mem_opnd, little_disp);
 }
 

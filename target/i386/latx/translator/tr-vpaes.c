@@ -567,7 +567,13 @@ bool latx_translate_aesimc_vpaes(IR1_INST *pir1)
 bool latx_translate_vaesimc_vpaes(IR1_INST *pir1)
 {
     bool ret = latx_translate_aesimc_vpaes(pir1);
-    clear_ymm_high128_shadow(ir1_opnd_base_reg_num(ir1_get_opnd(pir1, 0)));
+    if (option_enable_lasx) {
+        set_high128_xreg_to_zero(
+            ra_alloc_xmm(ir1_opnd_base_reg_num(ir1_get_opnd(pir1, 0))));
+    } else {
+        clear_ymm_high128_shadow(
+            ir1_opnd_base_reg_num(ir1_get_opnd(pir1, 0)));
+    }
     return ret;
 }
 
@@ -606,6 +612,12 @@ bool latx_translate_aeskeygenassist_vpaes(IR1_INST *pir1)
 bool latx_translate_vaeskeygenassist_vpaes(IR1_INST *pir1)
 {
     bool ret = latx_translate_aeskeygenassist_vpaes(pir1);
-    clear_ymm_high128_shadow(ir1_opnd_base_reg_num(ir1_get_opnd(pir1, 0)));
+    if (option_enable_lasx) {
+        set_high128_xreg_to_zero(
+            ra_alloc_xmm(ir1_opnd_base_reg_num(ir1_get_opnd(pir1, 0))));
+    } else {
+        clear_ymm_high128_shadow(
+            ir1_opnd_base_reg_num(ir1_get_opnd(pir1, 0)));
+    }
     return ret;
 }

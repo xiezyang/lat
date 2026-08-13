@@ -1914,10 +1914,23 @@ bool ir1_translate(IR1_INST *ir1)
 {
     int tr_func_idx = ir1_opcode(ir1) - dt_X86_INS_INVALID;
 #ifdef CONFIG_LATX_AVX_OPT
-    if (!option_avx_cpuid && translate_functions[tr_func_idx].avx_isa) {
+    if (option_enable_lasx) {
+        switch (ir1_opcode(ir1)) {
+        case dt_X86_INS_VLDMXCSR:
+        case dt_X86_INS_VSTMXCSR:
+        case dt_X86_INS_XSAVE64:
+        case dt_X86_INS_XSAVEOPT64:
+        case dt_X86_INS_XRSTOR64:
+            return translate_invalid(ir1);
+        default:
+            break;
+        }
+    }
+    if (!option_enable_lasx && !option_avx_cpuid &&
+        translate_functions[tr_func_idx].avx_isa) {
         return translate_invalid(ir1);
     }
-    if (translate_functions[tr_func_idx].avx_opt_only) {
+    if (!option_enable_lasx && translate_functions[tr_func_idx].avx_opt_only) {
         latx_avx_trace_instrument(ir1);
     }
 #endif
@@ -3786,25 +3799,14 @@ void tr_save_ymm_to_env(uint16 ymm_to_save)
     tr_save_xmm64_to_env((uint8_t)(ymm_to_save >> 8));
 #endif
 
-    for (int i = 0; i < CPU_NB_REGS; ++i) {
-        IR2_OPND address;
-        IR2_OPND high;
-
-        if (!(ymm_to_save & (UINT16_C(1) << i))) {
-            continue;
-        }
-        high = load_ymm_high128_shadow(i);
-        address = ra_alloc_itemp();
-        li_d(address, lsenv_offset_of_xmm(lsenv, i) + 16);
-        la_add_d(address, env_ir2_opnd, address);
-        la_vst(high, address, 0);
-        ra_free_temp(address);
-        ra_free_temp(high);
-    }
 }
 
 void tr_load_ymm_high_from_env(uint16 ymm_to_load)
 {
+    if (option_enable_lasx) {
+        return;
+    }
+
     for (int i = 0; i < CPU_NB_REGS; ++i) {
         IR2_OPND address;
         IR2_OPND high;
@@ -4271,8 +4273,116 @@ static void gen_test_page_flag_internal(IR2_OPND mem_opnd, int mem_imm,
     }
 }
 
+static void gen_test_page_flag_lasx(IR2_OPND mem_opnd, int mem_imm, uint32_t flag)
+{
+    if (!option_mem_test) {
+        return;
+    }
+    TranslationBlock *tb __attribute__((unused)) = NULL;
+    if (option_aot) {
+        tb = (TranslationBlock *)lsenv->tr_data->curr_tb;
+    }
+
+    IR2_OPND label_exit = ra_alloc_label();
+    IR2_OPND label0 = ra_alloc_label();
+    IR2_OPND label1 = ra_alloc_label();
+    IR2_OPND label2 = ra_alloc_label();
+    bool need_restore0 = false;
+    bool need_restore1 = false;
+    bool need_restore2 = false;
+    IR2_OPND itemp0 = ra_alloc_itemp();
+    IR2_OPND itemp1 = ra_alloc_itemp();
+    IR2_OPND itemp2 = ra_alloc_itemp();
+    if (ir2_opnd_base_reg_num(&itemp0) == -1) {
+       need_restore0 = true;
+       itemp0 = a0_ir2_opnd;
+       helper_save_reg(itemp0);
+    }
+    if (ir2_opnd_base_reg_num(&itemp1) == -1) {
+       need_restore1 = true;
+       itemp1 = a1_ir2_opnd;
+       helper_save_reg(itemp1);
+    }
+    if (ir2_opnd_base_reg_num(&itemp2) == -1) {
+       need_restore2 = true;
+       itemp2 = a2_ir2_opnd;
+       helper_save_reg(itemp2);
+    }
+
+    IR2_OPND mem_addr = ra_alloc_statics(S_UD1);
+    la_addi_d(mem_addr, mem_opnd, mem_imm);
+    aot_load_host_addr(itemp0, (ADDR)&pageflags_root,
+        LOAD_PAGEFLAGS_ROOT, 0);
+    la_addi_d(itemp0, itemp0,
+            offsetof(IntervalTreeRoot, rb_root) + offsetof(RBRoot, rb_node));
+    la_ld_d(itemp0, itemp0, 0);
+    la_beq(itemp0, zero_ir2_opnd, label_exit);
+
+    la_label(label0);
+    la_ld_d(itemp1, itemp0, 0x10);
+    la_beq(itemp1, zero_ir2_opnd, label1);
+    la_ld_d(itemp2, itemp1, 0x28);
+    la_bltu(itemp2, mem_addr, label1);
+    la_mov64(itemp0, itemp1);
+    la_b(label0);
+
+    la_label(label1);
+    la_ld_d(itemp1, itemp0, 0x18);
+    la_bltu(mem_addr, itemp1, label_exit);
+    la_ld_d(itemp1, itemp0, 0x20);
+    la_bgeu(itemp1, mem_addr, label2);
+    la_ld_d(itemp0, itemp0, 0x8);
+    la_beq(itemp0, zero_ir2_opnd, label_exit);
+    la_ld_d(itemp1, itemp0, 0x28);
+    la_bgeu(itemp1, mem_addr, label0);
+    la_b(label_exit);
+
+    la_label(label2);
+    la_ld_w(itemp0, itemp0, 0x30);
+    la_andi(itemp0, itemp0, flag & 0xff);
+    la_bne(itemp0, zero_ir2_opnd, label_exit);
+
+    IR2_OPND s_env = ra_alloc_statics(S_ENV);
+#ifdef TARGET_X86_64
+    la_st_d(mem_addr, s_env, offsetof(CPUX86State, cr[2]));
+#else
+    la_st_w(mem_addr, s_env, offsetof(CPUX86State, cr[2]));
+#endif
+    if (need_restore1) {
+        helper_restore_reg(itemp1);
+    }
+    /* Raise a SIGSEGV. */
+    if (flag & PAGE_WRITE) {
+        la_st_w(a1_ir2_opnd, zero_ir2_opnd, 0);
+    } else {
+        la_ld_w(a1_ir2_opnd, zero_ir2_opnd, 0);
+    }
+    la_code_align(4, 0x03400000);
+    la_label(label_exit);
+
+    if (need_restore0) {
+        helper_restore_reg(itemp0);
+    } else {
+        ra_free_temp(itemp0);
+    }
+    if (need_restore1) {
+        helper_restore_reg(itemp1);
+    } else {
+        ra_free_temp(itemp1);
+    }
+    if (need_restore2) {
+        helper_restore_reg(itemp2);
+    } else {
+        ra_free_temp(itemp2);
+    }
+}
+
 void gen_test_page_flag(IR2_OPND mem_opnd, int mem_imm, uint32_t flag)
 {
+    if (option_enable_lasx) {
+        gen_test_page_flag_lasx(mem_opnd, mem_imm, flag);
+        return;
+    }
     if (!option_mem_test) {
         return;
     }
@@ -4281,6 +4391,10 @@ void gen_test_page_flag(IR2_OPND mem_opnd, int mem_imm, uint32_t flag)
 
 void gen_test_page_flag_force(IR2_OPND mem_opnd, int mem_imm, uint32_t flag)
 {
+    if (option_enable_lasx) {
+        gen_test_page_flag_lasx(mem_opnd, mem_imm, flag);
+        return;
+    }
     gen_test_page_flag_internal(mem_opnd, mem_imm, flag);
 }
 
@@ -4296,7 +4410,7 @@ void tr_gen_call_to_helper_vfll(ADDR func, IR2_OPND arg1, IR2_OPND arg2,
     helper_save_reg(arg2);
     /* prologue */
     tr_gen_call_to_helper_prologue(use_fp);
-    if (sync_ymm) {
+    if (sync_ymm && !option_enable_lasx) {
         tr_save_ymm_to_env(UINT16_MAX);
     }
 
