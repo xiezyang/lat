@@ -3727,6 +3727,7 @@ void tr_load_xmm64_from_env(uint8 xmm_to_load)
 #endif
 
 static inline void helper_save_reg(IR2_OPND opnd);
+static inline void helper_restore_reg(IR2_OPND opnd);
 
 static void tr_save_ymm_to_env_lsx(uint16 ymm_to_save)
 {
@@ -3767,6 +3768,10 @@ static void tr_save_ymm_to_env_lsx(uint16 ymm_to_save)
         la_vst(high, a2_ir2_opnd, 0);
         ra_free_temp(high);
     }
+    /* $a2 maps guest r8 on x86-64.  It is used above as an address scratch
+     * register, so restore the guest mapping before returning to the TB. */
+    helper_restore_reg(a2_ir2_opnd);
+    helper_restore_reg(a1_ir2_opnd);
 }
 
 void tr_save_ymm_to_env(uint16 ymm_to_save)

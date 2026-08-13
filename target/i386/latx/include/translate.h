@@ -1627,6 +1627,7 @@ void store_v128_to_guest_addr_exact(IR2_OPND value, IR2_OPND address);
 void store_v128_to_ir1_mem_exact(IR2_OPND value, IR1_OPND *opnd);
 void load_v256_from_ir1_mem_exact(IR1_OPND *opnd,
                                   IR2_OPND *low, IR2_OPND *high);
+IR2_OPND load_v256_high_from_ir1_mem_exact(IR1_OPND *opnd);
 void store_v256_to_ir1_mem_exact(IR2_OPND low, IR2_OPND high,
                                  IR1_OPND *opnd);
 void store_freg256_to_ir1_mem(IR2_OPND opnd2,IR1_OPND *opnd1);

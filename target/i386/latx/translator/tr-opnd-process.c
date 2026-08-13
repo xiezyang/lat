@@ -1682,6 +1682,15 @@ IR2_OPND load_v128_from_ir1_mem_exact(IR1_OPND *opnd)
 
     lsassert(ir1_opnd_is_mem(opnd) && ir1_opnd_size(opnd) == 128);
     address = convert_mem_to_itemp(opnd);
+    /* Ordinary complete-vector operands match LSX vld/vst semantics.  The
+     * strict mode below remains available for explicit page-flag testing. */
+    if (!option_mem_test) {
+        IR2_OPND value = ra_alloc_ftemp();
+
+        la_vld(value, address, 0);
+        ra_free_temp(address);
+        return value;
+    }
     check_guest_mem_range(address, 16, PAGE_READ);
     q0 = load_u64_from_guest_addr(address, 0);
     q1 = load_u64_from_guest_addr(address, 8);
@@ -1708,6 +1717,11 @@ void store_v128_to_ir1_mem_exact(IR2_OPND value, IR1_OPND *opnd)
     lsassert(ir2_opnd_is_freg(&value));
     lsassert(ir1_opnd_is_mem(opnd) && ir1_opnd_size(opnd) == 128);
     address = convert_mem_to_itemp(opnd);
+    if (!option_mem_test) {
+        la_vst(value, address, 0);
+        ra_free_temp(address);
+        return;
+    }
     check_guest_mem_range(address, 16, PAGE_WRITE | PAGE_WRITE_ORG);
     q = ra_alloc_itemp();
     la_vpickve2gr_du(q, value, 0);
@@ -1741,6 +1755,14 @@ void load_v256_from_ir1_mem_exact(IR1_OPND *opnd,
 
     lsassert(ir1_opnd_is_mem(opnd) && ir1_opnd_size(opnd) == 256);
     address = convert_mem_to_itemp(opnd);
+    if (!option_mem_test) {
+        *low = ra_alloc_ftemp();
+        *high = ra_alloc_ftemp();
+        la_vld(*low, address, 0);
+        la_vld(*high, address, 16);
+        ra_free_temp(address);
+        return;
+    }
     check_guest_mem_range(address, 32, PAGE_READ);
     q0 = load_u64_from_guest_addr(address, 0);
     q1 = load_u64_from_guest_addr(address, 8);
@@ -1749,6 +1771,28 @@ void load_v256_from_ir1_mem_exact(IR1_OPND *opnd,
     q1 = load_u64_from_guest_addr(address, 24);
     *high = build_v128_from_u64(q0, q1);
     ra_free_temp(address);
+}
+
+IR2_OPND load_v256_high_from_ir1_mem_exact(IR1_OPND *opnd)
+{
+    IR2_OPND address;
+    IR2_OPND q0;
+    IR2_OPND q1;
+
+    lsassert(ir1_opnd_is_mem(opnd) && ir1_opnd_size(opnd) == 256);
+    address = convert_mem_to_itemp(opnd);
+    if (!option_mem_test) {
+        IR2_OPND high = ra_alloc_ftemp();
+
+        la_vld(high, address, 16);
+        ra_free_temp(address);
+        return high;
+    }
+    check_guest_mem_range(address, 32, PAGE_READ);
+    q0 = load_u64_from_guest_addr(address, 16);
+    q1 = load_u64_from_guest_addr(address, 24);
+    ra_free_temp(address);
+    return build_v128_from_u64(q0, q1);
 }
 
 void store_v256_to_ir1_mem_exact(IR2_OPND low, IR2_OPND high,
@@ -1760,6 +1804,12 @@ void store_v256_to_ir1_mem_exact(IR2_OPND low, IR2_OPND high,
     lsassert(ir2_opnd_is_freg(&low) && ir2_opnd_is_freg(&high));
     lsassert(ir1_opnd_is_mem(opnd) && ir1_opnd_size(opnd) == 256);
     address = convert_mem_to_itemp(opnd);
+    if (!option_mem_test) {
+        la_vst(low, address, 0);
+        la_vst(high, address, 16);
+        ra_free_temp(address);
+        return;
+    }
     check_guest_mem_range(address, 32, PAGE_WRITE | PAGE_WRITE_ORG);
     q = ra_alloc_itemp();
     la_vpickve2gr_du(q, low, 0);
