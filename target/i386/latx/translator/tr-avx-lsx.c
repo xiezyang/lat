@@ -1007,23 +1007,23 @@ static bool translate_avx_integer_3op_custom_lsx(
     lsassert(ir1_opnd_size(opnd0) == ir1_opnd_size(opnd1));
     lsassert(ir1_opnd_size(opnd0) == ir1_opnd_size(opnd2));
 
-    if (ir1_opnd_is_ymm(opnd0)) {
-        tr_save_ymm_to_env(UINT16_MAX);
-    }
     la_vori_b(src1_low, ra_alloc_xmm(src1_index), 0);
     if (ir1_opnd_is_mem(opnd2)) {
         if (ir1_opnd_is_ymm(opnd0)) {
+            src2_low = load_v128_from_ir1_mem_exact(opnd2);
+            lsx_op(result_low, src1_low, src2_low);
+            la_vori_b(ra_alloc_xmm(dest_index), result_low, 0);
+            ra_free_temp(result_low);
+            ra_free_temp(src1_low);
+            ra_free_temp(src2_low);
+
             IR2_OPND src1_high = load_ymm_high128_shadow(src1_index);
             IR2_OPND src2_high;
+            src2_high = load_v256_high_from_ir1_mem_exact(opnd2);
             IR2_OPND result_high = ra_alloc_ftemp();
-
-            load_v256_from_ir1_mem_exact(opnd2, &src2_low, &src2_high);
-            lsx_op(result_low, src1_low, src2_low);
             lsx_op(result_high, src1_high, src2_high);
-            la_vori_b(ra_alloc_xmm(dest_index), result_low, 0);
             store_ymm_high128_shadow(result_high, dest_index);
             ra_free_temp(src1_high);
-            ra_free_temp(src2_low);
             ra_free_temp(src2_high);
             ra_free_temp(result_high);
         } else {
@@ -1041,14 +1041,15 @@ static bool translate_avx_integer_3op_custom_lsx(
         la_vori_b(src2_low, ra_alloc_xmm(src2_index), 0);
         if (ir1_opnd_is_ymm(opnd0)) {
             lsx_op(result_low, src1_low, src2_low);
+            la_vori_b(ra_alloc_xmm(dest_index), result_low, 0);
+            ra_free_temp(result_low);
+            ra_free_temp(src1_low);
+            ra_free_temp(src2_low);
 
-            /* Keep high-half sources out of the low-half helper's temp set. */
             IR2_OPND src1_high = load_ymm_high128_shadow(src1_index);
             IR2_OPND src2_high = load_ymm_high128_shadow(src2_index);
             IR2_OPND result_high = ra_alloc_ftemp();
-
             lsx_op(result_high, src1_high, src2_high);
-            la_vori_b(ra_alloc_xmm(dest_index), result_low, 0);
             store_ymm_high128_shadow(result_high, dest_index);
             ra_free_temp(src1_high);
             ra_free_temp(src2_high);
@@ -1058,10 +1059,14 @@ static bool translate_avx_integer_3op_custom_lsx(
             la_vori_b(ra_alloc_xmm(dest_index), result_low, 0);
             clear_ymm_high128_shadow(dest_index);
         }
-        ra_free_temp(src2_low);
+        if (!ir1_opnd_is_ymm(opnd0)) {
+            ra_free_temp(src2_low);
+        }
     }
-    ra_free_temp(result_low);
-    ra_free_temp(src1_low);
+    if (!ir1_opnd_is_ymm(opnd0)) {
+        ra_free_temp(result_low);
+        ra_free_temp(src1_low);
+    }
     return true;
 }
 
