@@ -53,7 +53,7 @@ bool translate_vcvtsi2ss_lsx(IR1_INST *pir1)
     } else {
         la_ffint_s_w(converted, converted);
     }
-    la_vinsgr2vr_w(dest, converted, 0);
+    la_vextrins_w(dest, converted, VEXTRINS_IMM_4_0(0, 0));
     la_vori_b(ra_alloc_xmm(ir1_opnd_base_reg_num(dest_opnd)), dest, 0);
     clear_ymm_high128_shadow(ir1_opnd_base_reg_num(dest_opnd));
     set_fpu_rounding_mode(fcsr);

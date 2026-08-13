@@ -12,6 +12,19 @@
 #include "translate.h"
 
 #ifdef CONFIG_LATX_AVX_OPT
+static void sync_ymm_high128_from_env_lsx(int index)
+{
+    IR2_OPND address = ra_alloc_itemp();
+    IR2_OPND high = ra_alloc_ftemp();
+
+    li_d(address, lsenv_offset_of_xmm(lsenv, index) + 16);
+    la_add_d(address, env_ir2_opnd, address);
+    la_vld(high, address, 0);
+    store_ymm_high128_shadow(high, index);
+    ra_free_temp(high);
+    ra_free_temp(address);
+}
+
 bool translate_vcvtph2ps_lsx(IR1_INST *pir1)
 {
     IR1_OPND *dest_opnd = ir1_get_opnd(pir1, 0);
@@ -23,6 +36,7 @@ bool translate_vcvtph2ps_lsx(IR1_INST *pir1)
     if (ir1_opnd_is_ymm(dest_opnd)) {
         helper = (ADDR)helper_cvtph2ps_ymm;
         rel_kind = LOAD_HELPER_CVTPH2PS_YMM;
+        tr_save_ymm_to_env(UINT16_MAX);
     } else {
         helper = (ADDR)helper_cvtph2ps_xmm;
         rel_kind = LOAD_HELPER_CVTPH2PS_XMM;
@@ -44,6 +58,9 @@ bool translate_vcvtph2ps_lsx(IR1_INST *pir1)
         la_vori_b(scratch, saved, 0);
         ra_free_temp(saved);
     }
+    if (ir1_opnd_is_ymm(dest_opnd)) {
+        sync_ymm_high128_from_env_lsx(dest_index);
+    }
     if (ir1_opnd_is_xmm(dest_opnd)) {
         clear_ymm_high128_shadow(dest_index);
     }
@@ -62,6 +79,7 @@ bool translate_vcvtps2ph_lsx(IR1_INST *pir1)
     if (ir1_opnd_is_ymm(src_opnd)) {
         helper = (ADDR)helper_cvtps2ph_ymm;
         rel_kind = LOAD_HELPER_CVTPS2PH_YMM;
+        tr_save_ymm_to_env(UINT16_MAX);
     } else {
         helper = (ADDR)helper_cvtps2ph_xmm;
         rel_kind = LOAD_HELPER_CVTPS2PH_XMM;

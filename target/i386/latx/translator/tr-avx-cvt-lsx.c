@@ -12,6 +12,19 @@
 
 #ifdef CONFIG_LATX_AVX_OPT
 
+static bool avx_lsx_vex_256(IR1_INST *pir1)
+{
+    const uint8_t *bytes = pir1->info->bytes;
+
+    if (bytes[0] == 0xc5) {
+        return bytes[1] & 0x04;
+    }
+    if (bytes[0] == 0xc4) {
+        return bytes[2] & 0x04;
+    }
+    return false;
+}
+
 /* Keep a 256-bit guest value as two LSX registers.  The high half is kept in
  * ymmh[] while LASX is disabled, so never use load_freg256_from_ir1() here. */
 static void load_avx_cvt_value_lsx(IR1_OPND *opnd, bool ymm,
@@ -20,7 +33,12 @@ static void load_avx_cvt_value_lsx(IR1_OPND *opnd, bool ymm,
     *high = (IR2_OPND){ 0 };
     if (ir1_opnd_is_mem(opnd)) {
         if (ymm) {
-            load_v256_from_ir1_mem_exact(opnd, low, high);
+            /* VEX.L carries the width for these destination-narrowing
+             * conversions, while IR1 may retain a 128-bit memory size. */
+            IR1_OPND wide = *opnd;
+
+            wide.size = 32;
+            load_v256_from_ir1_mem_exact(&wide, low, high);
         } else {
             *low = load_v128_from_ir1_mem_exact(opnd);
         }
@@ -145,7 +163,7 @@ static bool translate_vcvtpd2x_lsx(IR1_INST *pir1, bool truncate)
 {
     IR1_OPND *dest_opnd = ir1_get_opnd(pir1, 0);
     IR1_OPND *src_opnd = ir1_get_opnd(pir1, 1);
-    bool src_ymm = ir1_opnd_is_ymm(src_opnd);
+    bool src_ymm = ir1_opnd_is_ymm(src_opnd) || avx_lsx_vex_256(pir1);
     IR2_OPND src_low;
     IR2_OPND src_high;
     IR2_OPND result_low = ra_alloc_ftemp();
@@ -194,7 +212,7 @@ bool translate_vcvtpd2ps_lsx(IR1_INST *pir1)
 {
     IR1_OPND *dest_opnd = ir1_get_opnd(pir1, 0);
     IR1_OPND *src_opnd = ir1_get_opnd(pir1, 1);
-    bool src_ymm = ir1_opnd_is_ymm(src_opnd);
+    bool src_ymm = ir1_opnd_is_ymm(src_opnd) || avx_lsx_vex_256(pir1);
     IR2_OPND src_low;
     IR2_OPND src_high;
     IR2_OPND result_low = ra_alloc_ftemp();
@@ -243,6 +261,27 @@ static bool translate_vcvtps2dq_lsx_common(IR1_INST *pir1, bool truncate)
         if (ymm) {
             la_vftint_w_s(result_high, src_high);
         }
+    }
+    {
+        IR2_OPND invalid = ra_alloc_ftemp();
+        IR2_OPND overflow = ra_alloc_ftemp();
+        IR2_OPND mask = ra_alloc_ftemp();
+        IR2_OPND value = ra_alloc_itemp();
+
+        li_d(value, UINT64_C(0x0000000080000000));
+        la_vreplgr2vr_w(invalid, value);
+        li_d(value, UINT64_C(0x000000004f000000));
+        la_vreplgr2vr_w(overflow, value);
+        la_vfcmp_cond_s(mask, overflow, src_low, FCMP_COND_CULE);
+        la_vbitsel_v(result_low, result_low, invalid, mask);
+        if (ymm) {
+            la_vfcmp_cond_s(mask, overflow, src_high, FCMP_COND_CULE);
+            la_vbitsel_v(result_high, result_high, invalid, mask);
+        }
+        ra_free_temp(value);
+        ra_free_temp(mask);
+        ra_free_temp(overflow);
+        ra_free_temp(invalid);
     }
     store_avx_cvt_value_lsx(result_low, result_high,
                              ir1_opnd_base_reg_num(dest_opnd), ymm);
