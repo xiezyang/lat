@@ -50,8 +50,14 @@ static LatxLsxFmaValue load_lsx_fma_value(IR1_OPND *opnd)
 
     value.wide = ir1_opnd_is_ymm(opnd) ||
                  (ir1_opnd_is_mem(opnd) && ir1_opnd_size(opnd) == 256);
-    if (value.wide && ir1_opnd_is_mem(opnd)) {
-        load_v256_from_ir1_mem_exact(opnd, &value.low, &value.high);
+    if (ir1_opnd_is_mem(opnd)) {
+        if (value.wide) {
+            load_v256_from_ir1_mem_exact(opnd, &value.low, &value.high);
+        } else {
+            value.low = load_v128_from_ir1_mem_exact(opnd);
+            value.high = ra_alloc_ftemp();
+            la_vxor_v(value.high, value.high, value.high);
+        }
     } else {
         value.low = load_lsx_fma_scalar(opnd);
         if (value.wide) {
@@ -70,17 +76,25 @@ static IR2_OPND load_lsx_fma_half(IR1_OPND *opnd, bool high)
     bool wide = ir1_opnd_is_ymm(opnd) ||
                 (ir1_opnd_is_mem(opnd) && ir1_opnd_size(opnd) == 256);
 
-    if (ir1_opnd_is_mem(opnd) && wide) {
-        IR2_OPND low;
-        IR2_OPND high_value;
+    if (ir1_opnd_is_mem(opnd)) {
+        if (wide) {
+            if (high) {
+                return load_v256_high_from_ir1_mem_exact(opnd);
+            }
+            IR2_OPND low;
+            IR2_OPND high_value;
 
-        load_v256_from_ir1_mem_exact(opnd, &low, &high_value);
-        if (high) {
-            ra_free_temp(low);
-            return high_value;
+            load_v256_from_ir1_mem_exact(opnd, &low, &high_value);
+            ra_free_temp(high_value);
+            return low;
         }
-        ra_free_temp(high_value);
-        return low;
+        if (!high) {
+            return load_v128_from_ir1_mem_exact(opnd);
+        }
+        IR2_OPND value = ra_alloc_ftemp();
+
+        la_vxor_v(value, value, value);
+        return value;
     }
     if (high) {
         if (wide) {
@@ -561,6 +575,7 @@ static bool translate_lsx_fma(IR1_INST *pir1, bool double_precision,
         IR2_OPND low;
         IR2_OPND high;
         int dest_index = ir1_opnd_base_reg_num(opnd0);
+        bool ymm = ir1_opnd_is_ymm(opnd0);
 
         a.wide = b.wide = c.wide = true;
         a.low = load_lsx_fma_half(opnd0, false);
@@ -588,7 +603,12 @@ static bool translate_lsx_fma(IR1_INST *pir1, bool double_precision,
                                  double_precision, negate_product, subtract,
                                  alternating);
         la_vori_b(ra_alloc_xmm(dest_index), low, 0);
-        store_ymm_high128_shadow(high, dest_index);
+        /* VEX.128 FMA instructions always zero the upper YMM half. */
+        if (ymm) {
+            store_ymm_high128_shadow(high, dest_index);
+        } else {
+            clear_ymm_high128_shadow(dest_index);
+        }
         ra_free_temp(c.high);
         ra_free_temp(b.high);
         ra_free_temp(a.high);
