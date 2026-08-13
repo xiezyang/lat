@@ -2090,9 +2090,6 @@ static bool translate_avx_pack_lsx(IR1_INST *pir1,
     lsassert(ir1_opnd_is_xmm(opnd1) == !ymm ||
              ir1_opnd_is_ymm(opnd1) == ymm);
     lsassert(ir1_opnd_size(opnd0) == ir1_opnd_size(opnd2));
-    if (ymm) {
-        tr_save_ymm_to_env(UINT16_MAX);
-    }
     load_avx_lsx_operand(opnd1, ymm, &src1_low, &src1_high);
     load_avx_lsx_operand(opnd2, ymm, &src2_low, &src2_high);
     if (negative_cmp_inst) {
@@ -2109,6 +2106,20 @@ static bool translate_avx_pack_lsx(IR1_INST *pir1,
     la_vilvl_d(result_low, narrow2_low, narrow1_low);
 
     if (ymm) {
+        /*
+         * Keep copies of both high halves while writing the low result, then
+         * release every low-half temporary before starting the high half.
+         * The LSX backend has eight floating temporaries.  Keeping the five
+         * low temporaries live while allocating the five high temporaries
+         * aliases a high temporary with a live low value.
+         */
+        la_vori_b(ra_alloc_xmm(ir1_opnd_base_reg_num(opnd0)), result_low, 0);
+        ra_free_temp(result_low);
+        ra_free_temp(narrow1_low);
+        ra_free_temp(narrow2_low);
+        ra_free_temp(src1_low);
+        ra_free_temp(src2_low);
+
         IR2_OPND narrow1_high = ra_alloc_ftemp();
         IR2_OPND narrow2_high = ra_alloc_ftemp();
         IR2_OPND result_high = ra_alloc_ftemp();
@@ -2124,18 +2135,20 @@ static bool translate_avx_pack_lsx(IR1_INST *pir1,
         cvt_inst(narrow1_high, narrow1_high, 0);
         cvt_inst(narrow2_high, narrow2_high, 0);
         la_vilvl_d(result_high, narrow2_high, narrow1_high);
-        store_avx_lsx_result(opnd0, result_low, result_high);
+        store_ymm_high128_shadow(result_high, ir1_opnd_base_reg_num(opnd0));
         ra_free_temp(result_high);
         ra_free_temp(narrow1_high);
         ra_free_temp(narrow2_high);
+        ra_free_temp(src1_high);
+        ra_free_temp(src2_high);
     } else {
         store_avx_lsx_result(opnd0, result_low, result_low);
+        ra_free_temp(result_low);
+        ra_free_temp(narrow1_low);
+        ra_free_temp(narrow2_low);
+        ra_free_temp(src1_low);
+        ra_free_temp(src2_low);
     }
-    ra_free_temp(result_low);
-    ra_free_temp(narrow1_low);
-    ra_free_temp(narrow2_low);
-    ra_free_temp(src1_low);
-    ra_free_temp(src2_low);
     return true;
 }
 
@@ -3368,7 +3381,7 @@ bool translate_vzeroall_lsx(IR1_INST *pir1)
 #endif
     la_vxor_v(zero, zero, zero);
     for (int i = 0; i < reg_xmm; ++i) {
-        la_vxor_v(ra_alloc_xmm(i), ra_alloc_xmm(i), zero);
+        la_vori_b(ra_alloc_xmm(i), zero, 0);
     }
     clear_all_ymm_high128_shadows();
     ra_free_temp(zero);
@@ -3522,6 +3535,12 @@ static void emit_pclmul_lsx_lane(IR2_OPND dest, IR2_OPND src1,
     li_d(rhs_lane_op, rhs_lane);
     la_vreplve_d(ftemp, src2, rhs_lane_op);
     la_vpickve2gr_d(rhs, ftemp, 0);
+
+    /* The lane selectors are dead before the carry-less multiply loop.
+     * Free them here: the loop needs two integer temporaries and the LSX
+     * temporary pool only has seven registers on x86-64 builds. */
+    ra_free_temp(lhs_lane_op);
+    ra_free_temp(rhs_lane_op);
     emit_pclmul_ctz_loop(lhs, rhs, res_lo, res_hi);
     la_vxor_v(dest, dest, dest);
     la_vinsgr2vr_d(dest, res_lo, 0);
@@ -3532,8 +3551,6 @@ static void emit_pclmul_lsx_lane(IR2_OPND dest, IR2_OPND src1,
     ra_free_temp(rhs);
     ra_free_temp(res_lo);
     ra_free_temp(res_hi);
-    ra_free_temp(lhs_lane_op);
-    ra_free_temp(rhs_lane_op);
 }
 
 bool translate_vpclmulqdq_lsx(IR1_INST *pir1)
@@ -3555,7 +3572,6 @@ bool translate_vpclmulqdq_lsx(IR1_INST *pir1)
         return true;
     }
 
-    tr_save_ymm_to_env(UINT16_MAX);
     int dest_index = ir1_opnd_base_reg_num(opnd0);
     int src1_index = ir1_opnd_base_reg_num(opnd1);
     IR2_OPND src1_low = ra_alloc_xmm(src1_index);
@@ -4867,9 +4883,18 @@ static void translate_avx_gather_lane_lsx(IR2_OPND dest,
 
     if (index64) {
         la_vpickve2gr_d(index_value, index_values, index_lane);
-        la_vpickve2gr_d(mask_value, mask_values, lane);
     } else {
         la_vpickve2gr_w(index_value, index_values, index_lane);
+    }
+
+    /*
+     * The mask has one element per gathered value, not per VSIB index.
+     * VPGATHERQD/VGATHERQPS use qword indices with dword masks, while
+     * VPGATHERDQ/VGATHERDPD use dword indices with qword masks.
+     */
+    if (value64) {
+        la_vpickve2gr_d(mask_value, mask_values, lane);
+    } else {
         la_vpickve2gr_w(mask_value, mask_values, lane);
     }
 
@@ -4944,7 +4969,6 @@ static bool translate_avx_gather_lsx(IR1_INST *pir1,
     lsassert(!ymm || ymm_allowed);
     if (ymm) {
         lsassert(ir1_opnd_is_ymm(opnd0) && ir1_opnd_is_ymm(opnd2));
-        tr_save_ymm_to_env(UINT16_MAX);
     }
     index_ymm = ir1_index_reg_is_ymm(opnd1);
 
@@ -4968,8 +4992,18 @@ static bool translate_avx_gather_lsx(IR1_INST *pir1,
         ra_free_temp(mask_high);
     }
 
-    int lanes_per_half = value64 ? 2 : 4;
+    /*
+     * A gather has one result lane per index lane.  The mixed-width forms
+     * VPGATHERQD/VGATHERQPS have only two qword indices in their XMM index
+     * operand, even though their result elements are dwords.
+     */
+    int lanes_per_half = (index64 || value64) ? 2 : 4;
     int half_count = ymm ? 2 : 1;
+
+    /* VPGATHERQD and VGATHERQPS define the unused XMM high qword as zero. */
+    if (index64 && !value64) {
+        la_vinsgr2vr_d(dest_low, zero_ir2_opnd, 1);
+    }
     for (int half = 0; half < half_count; ++half) {
         IR2_OPND index_values = index_low;
         IR2_OPND mask_values = mask_low_values;
@@ -5000,6 +5034,8 @@ static bool translate_avx_gather_lsx(IR1_INST *pir1,
         }
     }
 
+    /* A successfully completed gather clears every mask element. */
+    la_vxor_v(mask_low_store, mask_low_store, mask_low_store);
     if (ymm) {
         clear_ymm_high128_shadow(mask_index);
         ra_free_temp(index_high_values);
