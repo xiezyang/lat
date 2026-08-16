@@ -3010,7 +3010,7 @@ bool translate_xsetbv(IR1_INST *pir1)
     la_bstrins_d(temp_rfbm, eax_opnd, 31, 0);
     la_bstrins_d(temp_rfbm, edx_opnd, 63, 32);
     tr_gen_call_to_helper_vfll((ADDR)helper_xsetbv, ecx_opnd, temp_rfbm, 0,
-            LOAD_HELPER_XSETBV);
+            false, LOAD_HELPER_XSETBV);
     return true;
 }
 
@@ -3025,7 +3025,7 @@ bool translate_xsave(IR1_INST *pir1)
     la_bstrins_d(temp_rfbm, eax_opnd, 31, 0);
     la_bstrins_d(temp_rfbm, edx_opnd, 63, 32);
     tr_gen_call_to_helper_vfll((ADDR)helper_xsave, mem_opnd, temp_rfbm, 1,
-            LOAD_HELPER_XSAVE);
+            true, LOAD_HELPER_XSAVE);
     return true;
 }
 
@@ -3040,7 +3040,7 @@ bool translate_xsaveopt(IR1_INST *pir1)
     la_bstrins_d(temp_rfbm, eax_opnd, 31, 0);
     la_bstrins_d(temp_rfbm, edx_opnd, 63, 32);
     tr_gen_call_to_helper_vfll((ADDR)helper_xsaveopt, mem_opnd, temp_rfbm, 1,
-            LOAD_HELPER_XSAVEOPT);
+            true, LOAD_HELPER_XSAVEOPT);
     return true;
 }
 
@@ -3055,7 +3055,8 @@ bool translate_xrstor(IR1_INST *pir1)
     la_bstrins_d(temp_rfbm, eax_opnd, 31, 0);
     la_bstrins_d(temp_rfbm, edx_opnd, 63, 32);
     tr_gen_call_to_helper_vfll((ADDR)helper_xrstor, mem_opnd, temp_rfbm, 1,
-            LOAD_HELPER_XRSTOR);
+            false, LOAD_HELPER_XRSTOR);
+    tr_load_ymm_high_from_env(UINT16_MAX);
     return true;
 }
 

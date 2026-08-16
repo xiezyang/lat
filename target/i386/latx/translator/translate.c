@@ -1362,7 +1362,7 @@ static bool (*translate_functions[])(IR1_INST *) = {
     TRANS_FUNC_GEN(VPINSRB, vpinsrx),
     TRANS_FUNC_GEN(VPINSRW, vpinsrx),
     TRANS_FUNC_GEN(VPINSRD, vpinsrx),
-    TRANS_FUNC_GEN(VPINSRQ, vpinsrx),
+    TRANS_FUNC_GEN(VPINSRQ, vpinsrq),
     TRANS_FUNC_GEN(VPMINSD, vpminxx),
     TRANS_FUNC_GEN(VPMINSW, vpminxx),
     TRANS_FUNC_GEN(VPMINSB, vpminxx),
@@ -3673,6 +3673,92 @@ void tr_load_xmm64_from_env(uint8 xmm_to_load)
 }
 #endif
 
+static inline void helper_save_reg(IR2_OPND opnd);
+static inline void helper_restore_reg(IR2_OPND opnd);
+
+static void tr_save_ymm_to_env_lsx(uint16 ymm_to_save)
+{
+    helper_save_reg(a1_ir2_opnd);
+    helper_save_reg(a2_ir2_opnd);
+
+    /* Keep the fixed env pointer out of the LSX fault-save scratch path. */
+    for (int i = 0; i < 8; ++i) {
+        if (ymm_to_save & (UINT16_C(1) << i)) {
+            la_vst(ra_alloc_xmm(i), env_ir2_opnd,
+                   lsenv_offset_of_xmm(lsenv, i));
+        }
+    }
+#ifdef TARGET_X86_64
+    if (ymm_to_save >> 8) {
+        la_addi_d(a1_ir2_opnd, env_ir2_opnd, 0x7f0);
+        for (int i = 0; i < 8; ++i) {
+            if (ymm_to_save & (UINT16_C(1) << (i + 8))) {
+                la_vst(ra_alloc_xmm(i + 8), a1_ir2_opnd,
+                       lsenv_offset_of_xmm(lsenv, i + 8) - 0x7f0);
+            }
+        }
+    }
+#endif
+
+    for (int i = 0; i < CPU_NB_REGS; ++i) {
+        IR2_OPND high;
+
+        if (!(ymm_to_save & (UINT16_C(1) << i))) {
+            continue;
+        }
+        high = ra_alloc_ftemp();
+        li_d(a1_ir2_opnd, lsenv_offset_of_ymmh(lsenv, i));
+        la_add_d(a1_ir2_opnd, env_ir2_opnd, a1_ir2_opnd);
+        la_vld(high, a1_ir2_opnd, 0);
+        li_d(a2_ir2_opnd, lsenv_offset_of_xmm(lsenv, i) + 16);
+        la_add_d(a2_ir2_opnd, env_ir2_opnd, a2_ir2_opnd);
+        la_vst(high, a2_ir2_opnd, 0);
+        ra_free_temp(high);
+    }
+    /* $a2 maps guest r8 on x86-64.  It is used above as an address scratch
+     * register, so restore the guest mapping before returning to the TB. */
+    helper_restore_reg(a2_ir2_opnd);
+    helper_restore_reg(a1_ir2_opnd);
+}
+
+void tr_save_ymm_to_env(uint16 ymm_to_save)
+{
+    if (!option_enable_lasx) {
+        tr_save_ymm_to_env_lsx(ymm_to_save);
+        return;
+    }
+
+    tr_save_xmm_to_env((uint8_t)ymm_to_save);
+#ifdef TARGET_X86_64
+    tr_save_xmm64_to_env((uint8_t)(ymm_to_save >> 8));
+#endif
+
+}
+
+void tr_load_ymm_high_from_env(uint16 ymm_to_load)
+{
+    if (option_enable_lasx) {
+        return;
+    }
+
+    for (int i = 0; i < CPU_NB_REGS; ++i) {
+        IR2_OPND address;
+        IR2_OPND high;
+
+        if (!(ymm_to_load & (UINT16_C(1) << i))) {
+            continue;
+        }
+        address = ra_alloc_itemp();
+        high = ra_alloc_ftemp();
+        li_d(address, lsenv_offset_of_xmm(lsenv, i) + 16);
+        la_add_d(address, env_ir2_opnd, address);
+        la_vld(high, address, 0);
+        store_ymm_high128_shadow(high, i);
+        ra_free_temp(address);
+        ra_free_temp(high);
+    }
+}
+
 void tr_save_registers_to_env(uint8 gpr_to_save, uint8 fpr_to_save,
                               uint8 xmm_to_save, uint8 vreg_to_save)
 {
@@ -4015,7 +4101,113 @@ static inline void helper_restore_reg(IR2_OPND opnd)
             lsenv_offset_of_all_gpr(lsenv, ir2_opnd_base_reg_num(&opnd)));
 }
 
-void gen_test_page_flag(IR2_OPND mem_opnd, int mem_imm, uint32_t flag)
+static void gen_test_page_flag_internal(IR2_OPND mem_opnd, int mem_imm,
+                                        uint32_t flag)
+{
+    TranslationBlock *tb __attribute__((unused)) = NULL;
+    if (option_aot) {
+        tb = (TranslationBlock *)lsenv->tr_data->curr_tb;
+    }
+
+    IR2_OPND label_exit = ra_alloc_label();
+    IR2_OPND label0 = ra_alloc_label();
+    IR2_OPND label1 = ra_alloc_label();
+    IR2_OPND label2 = ra_alloc_label();
+    bool need_restore0 = false;
+    bool need_restore1 = false;
+    bool need_restore2 = false;
+    IR2_OPND itemp0 = ra_alloc_itemp();
+    IR2_OPND itemp1 = ra_alloc_itemp();
+    IR2_OPND itemp2 = ra_alloc_itemp();
+    if (ir2_opnd_base_reg_num(&itemp0) == -1) {
+       need_restore0 = true;
+       itemp0 = a0_ir2_opnd;
+       helper_save_reg(itemp0);
+    }
+    if (ir2_opnd_base_reg_num(&itemp1) == -1) {
+       need_restore1 = true;
+       itemp1 = a1_ir2_opnd;
+       helper_save_reg(itemp1);
+    }
+    if (ir2_opnd_base_reg_num(&itemp2) == -1) {
+       need_restore2 = true;
+       itemp2 = a2_ir2_opnd;
+       helper_save_reg(itemp2);
+    }
+
+    IR2_OPND mem_addr = ra_alloc_statics(S_UD1);
+    la_addi_d(mem_addr, mem_opnd, mem_imm);
+    aot_load_host_addr(itemp0, (ADDR)&pageflags_root,
+        LOAD_PAGEFLAGS_ROOT, 0);
+    la_addi_d(itemp0, itemp0,
+            offsetof(IntervalTreeRoot, rb_root) + offsetof(RBRoot, rb_node));
+    la_ld_d(itemp0, itemp0, 0);
+    la_beq(itemp0, zero_ir2_opnd, label_exit);
+
+    la_label(label0);
+    la_ld_d(itemp1, itemp0, 0x10);
+    la_beq(itemp1, zero_ir2_opnd, label1);
+    la_ld_d(itemp2, itemp1, 0x28);
+    la_bltu(itemp2, mem_addr, label1);
+    la_mov64(itemp0, itemp1);
+    la_b(label0);
+
+    la_label(label1);
+    la_ld_d(itemp1, itemp0, 0x18);
+    la_bltu(mem_addr, itemp1, label_exit);
+    la_ld_d(itemp1, itemp0, 0x20);
+    la_bgeu(itemp1, mem_addr, label2);
+    la_ld_d(itemp0, itemp0, 0x8);
+    la_beq(itemp0, zero_ir2_opnd, label_exit);
+    la_ld_d(itemp1, itemp0, 0x28);
+    la_bgeu(itemp1, mem_addr, label0);
+    la_b(label_exit);
+
+    la_label(label2);
+    la_ld_w(itemp0, itemp0, 0x30);
+    la_andi(itemp0, itemp0, flag & 0xff);
+    la_bne(itemp0, zero_ir2_opnd, label_exit);
+
+    IR2_OPND s_env = ra_alloc_statics(S_ENV);
+#ifdef TARGET_X86_64
+    la_st_d(mem_addr, s_env, offsetof(CPUX86State, cr[2]));
+#else
+    la_st_w(mem_addr, s_env, offsetof(CPUX86State, cr[2]));
+#endif
+    if (need_restore1) {
+        helper_restore_reg(itemp1);
+    }
+    /* Signal frames export YMM high halves from env->xmm_regs. */
+    tr_save_ymm_to_env(UINT16_MAX);
+    /* The host signal bridge recognizes the synthetic null access and uses
+     * env->cr[2] as the guest fault address. */
+    IR2_OPND fault_addr = zero_ir2_opnd;
+    if (flag & PAGE_WRITE) {
+        la_st_w(a1_ir2_opnd, fault_addr, 0);
+    } else {
+        la_ld_w(a1_ir2_opnd, fault_addr, 0);
+    }
+    la_code_align(4, 0x03400000);
+    la_label(label_exit);
+
+    if (need_restore0) {
+        helper_restore_reg(itemp0);
+    } else {
+        ra_free_temp(itemp0);
+    }
+    if (need_restore1) {
+        helper_restore_reg(itemp1);
+    } else {
+        ra_free_temp(itemp1);
+    }
+    if (need_restore2) {
+        helper_restore_reg(itemp2);
+    } else {
+        ra_free_temp(itemp2);
+    }
+}
+
+static void gen_test_page_flag_lasx(IR2_OPND mem_opnd, int mem_imm, uint32_t flag)
 {
     if (!option_mem_test) {
         return;
@@ -4119,8 +4311,29 @@ void gen_test_page_flag(IR2_OPND mem_opnd, int mem_imm, uint32_t flag)
     }
 }
 
-void tr_gen_call_to_helper_vfll(ADDR func, IR2_OPND arg1, IR2_OPND arg2, int use_fp,
-        enum aot_rel_kind REL_KIND)
+void gen_test_page_flag(IR2_OPND mem_opnd, int mem_imm, uint32_t flag)
+{
+    if (option_enable_lasx) {
+        gen_test_page_flag_lasx(mem_opnd, mem_imm, flag);
+        return;
+    }
+    if (!option_mem_test) {
+        return;
+    }
+    gen_test_page_flag_internal(mem_opnd, mem_imm, flag);
+}
+
+void gen_test_page_flag_force(IR2_OPND mem_opnd, int mem_imm, uint32_t flag)
+{
+    if (option_enable_lasx) {
+        gen_test_page_flag_lasx(mem_opnd, mem_imm, flag);
+        return;
+    }
+    gen_test_page_flag_internal(mem_opnd, mem_imm, flag);
+}
+
+void tr_gen_call_to_helper_vfll(ADDR func, IR2_OPND arg1, IR2_OPND arg2,
+        int use_fp, bool sync_ymm, enum aot_rel_kind REL_KIND)
 {
     /* aot relocation requires the tb struct */
     TranslationBlock *tb __attribute__((unused)) = NULL;
@@ -4131,6 +4344,9 @@ void tr_gen_call_to_helper_vfll(ADDR func, IR2_OPND arg1, IR2_OPND arg2, int use
     helper_save_reg(arg2);
     /* prologue */
     tr_gen_call_to_helper_prologue(use_fp);
+    if (sync_ymm && !option_enable_lasx) {
+        tr_save_ymm_to_env(UINT16_MAX);
+    }
 
     helper_restore_reg(arg1);
     helper_restore_reg(arg2);

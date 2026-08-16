@@ -3121,6 +3121,9 @@ static bool translate_xsave_softfpu(IR1_INST *pir1)
 
     la_bstrins_d(temp_rfbm, eax_opnd, 31, 0);
     la_bstrins_d(temp_rfbm, edx_opnd, 63, 32);
+    if (!option_enable_lasx) {
+        tr_save_ymm_to_env(UINT16_MAX);
+    }
     gen_softfpu_helper3_ll((ADDR)helper_xsave, mem_opnd, temp_rfbm);
     return true;
 }
@@ -3135,6 +3138,9 @@ static bool translate_xsaveopt_softfpu(IR1_INST *pir1)
 
     la_bstrins_d(temp_rfbm, eax_opnd, 31, 0);
     la_bstrins_d(temp_rfbm, edx_opnd, 63, 32);
+    if (!option_enable_lasx) {
+        tr_save_ymm_to_env(UINT16_MAX);
+    }
     gen_softfpu_helper3_ll((ADDR)helper_xsaveopt, mem_opnd, temp_rfbm);
     return true;
 }
