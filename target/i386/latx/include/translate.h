@@ -34,6 +34,80 @@ bool TRANS_FUNC(name)(IR1_INST * pir1)
 #define TRANS_FUNC_GEN(opcode, function) \
 TRANS_FUNC_GEN_REAL(opcode, TRANS_FUNC(function))
 
+/*
+ * AVX integer operations that can be evaluated independently in each 128-bit
+ * half. The operation token is also used by the LSX implementation generator.
+ */
+#define LATX_AVX_INTEGER_3OP_LSX_TABLE(X) \
+    X(VPADDB, paddb, la_vadd_b) \
+    X(VPADDW, paddw, la_vadd_h) \
+    X(VPADDD, paddd, la_vadd_w) \
+    X(VPADDQ, paddq, la_vadd_d) \
+    X(VPADDSB, paddsb, la_vsadd_b) \
+    X(VPADDSW, paddsw, la_vsadd_h) \
+    X(VPADDUSB, paddusb, la_vsadd_bu) \
+    X(VPADDUSW, paddusw, la_vsadd_hu) \
+    X(VPSUBB, psubb, la_vsub_b) \
+    X(VPSUBW, psubw, la_vsub_h) \
+    X(VPSUBD, psubd, la_vsub_w) \
+    X(VPSUBQ, psubq, la_vsub_d) \
+    X(VPSUBSB, psubsb, la_vssub_b) \
+    X(VPSUBSW, psubsw, la_vssub_h) \
+    X(VPSUBUSB, psubusb, la_vssub_bu) \
+    X(VPSUBUSW, psubusw, la_vssub_hu) \
+    X(VPMINUB, pminub, la_vmin_bu) \
+    X(VPMINUW, pminuw, la_vmin_hu) \
+    X(VPMINUD, pminud, la_vmin_wu) \
+    X(VPMINSB, pminsb, la_vmin_b) \
+    X(VPMINSW, pminsw, la_vmin_h) \
+    X(VPMINSD, pminsd, la_vmin_w) \
+    X(VPMAXUB, pmaxub, la_vmax_bu) \
+    X(VPMAXUW, pmaxuw, la_vmax_hu) \
+    X(VPMAXUD, pmaxud, la_vmax_wu) \
+    X(VPMAXSB, pmaxsb, la_vmax_b) \
+    X(VPMAXSW, pmaxsw, la_vmax_h) \
+    X(VPMAXSD, pmaxsd, la_vmax_w)
+
+/* Remaining AVX integer operations with a direct LSX 3-operand form. */
+#define LATX_AVX_INTEGER_REMAINING_3OP_LSX_TABLE(X) \
+    X(VPAVGB, pavgb, la_vavgr_bu) \
+    X(VPAVGW, pavgw, la_vavgr_hu) \
+    X(VPMULDQ, pmuldq, la_vmulwev_d_w) \
+    X(VPMULHUW, pmulhuw, la_vmuh_hu) \
+    X(VPMULHW, pmulhw, la_vmuh_h) \
+    X(VPMULLD, pmulld, la_vmul_w) \
+    X(VPMULLW, pmullw, la_vmul_h) \
+    X(VPMULUDQ, pmuludq, la_vmulwev_d_wu)
+
+/* AVX integer comparisons whose two 128-bit halves can be translated alone. */
+#define LATX_AVX_INTEGER_CMP_LSX_TABLE(X) \
+    X(VPCMPEQB, pcmpeqb, la_vseq_b, false) \
+    X(VPCMPEQW, pcmpeqw, la_vseq_h, false) \
+    X(VPCMPEQD, pcmpeqd, la_vseq_w, false) \
+    X(VPCMPEQQ, pcmpeqq, la_vseq_d, false) \
+    X(VPCMPGTB, pcmpgtb, la_vslt_b, true) \
+    X(VPCMPGTW, pcmpgtw, la_vslt_h, true) \
+    X(VPCMPGTD, pcmpgtd, la_vslt_w, true) \
+    X(VPCMPGTQ, pcmpgtq, la_vslt_d, true)
+
+/* AVX integer shifts that operate independently in each 128-bit half. */
+#define LATX_AVX_INTEGER_SHIFT_LSX_TABLE(X) \
+    X(VPSLLDQ, vpslldq_lsx) \
+    X(VPSLLD, vpsllx_lsx) \
+    X(VPSLLQ, vpsllx_lsx) \
+    X(VPSLLVD, vpsllvd_lsx) \
+    X(VPSLLVQ, vpsllvq_lsx) \
+    X(VPSLLW, vpsllx_lsx) \
+    X(VPSRAD, vpsrax_lsx) \
+    X(VPSRAVD, vpsravd_lsx) \
+    X(VPSRAW, vpsrax_lsx) \
+    X(VPSRLD, vpsrlx_lsx) \
+    X(VPSRLDQ, vpsrldq_lsx) \
+    X(VPSRLQ, vpsrlx_lsx) \
+    X(VPSRLVD, vpsrlvd_lsx) \
+    X(VPSRLVQ, vpsrlvq_lsx) \
+    X(VPSRLW, vpsrlx_lsx)
+
 #define TRANS_FPU_WRAP_GEN_NO_PROLOGUE(function)    \
 bool translate_##function##_wrap(IR1_INST *pir1)    \
 {                                                   \
