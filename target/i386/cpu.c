@@ -58,12 +58,9 @@
 #include "disas/capstone.h"
 
 #ifdef CONFIG_LATX
-extern int option_anonym;
+#include "latx-options.h"
 #endif
 
-#ifdef CONFIG_LATX_AVX_OPT
-extern int option_avx_cpuid;
-#endif
 
 /* Helpers for building CPUID[2] descriptors: */
 

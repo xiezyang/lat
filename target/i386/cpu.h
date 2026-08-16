@@ -1035,6 +1035,7 @@ typedef uint64_t FeatureWordArray[FEATURE_WORDS];
 #define EXCP10_COPR	16
 #define EXCP11_ALGN	17
 #define EXCP12_MCHK	18
+#define EXCP13_XM	19
 
 #define EXCP_VMEXIT     0x100 /* only for system emulation */
 #define EXCP_SYSCALL    0x101 /* only for user emulation */

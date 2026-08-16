@@ -339,6 +339,27 @@ void cpu_loop(CPUX86State *env)
             gen_signal(env, TARGET_SIGFPE, si_code, env->eip);
         }
             break;
+        case EXCP13_XM:
+        {
+            int flags = env->error_code;
+            int si_code = TARGET_FPE_FLTUNK;
+
+            if (flags & (1 << 0)) {
+                si_code = TARGET_FPE_FLTINV;
+            } else if (flags & (1 << 1)) {
+                si_code = TARGET_FPE_FLTUND;
+            } else if (flags & (1 << 2)) {
+                si_code = TARGET_FPE_FLTDIV;
+            } else if (flags & (1 << 3)) {
+                si_code = TARGET_FPE_FLTOVF;
+            } else if (flags & (1 << 4)) {
+                si_code = TARGET_FPE_FLTUND;
+            } else if (flags & (1 << 5)) {
+                si_code = TARGET_FPE_FLTRES;
+            }
+            gen_signal(env, TARGET_SIGFPE, si_code, env->eip);
+        }
+            break;
         case EXCP01_DB:
         case EXCP03_INT3:
 #ifndef TARGET_X86_64
