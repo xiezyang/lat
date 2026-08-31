@@ -198,10 +198,8 @@ bool translate_vcmpeqpd(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_d(temp, src1, src2, X86_FCMP_COND_EQ);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_d(dest, src1, src2, X86_FCMP_COND_EQ);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -224,10 +222,8 @@ bool translate_vcmpltpd(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_d(temp, src1, src2, X86_FCMP_COND_LT);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_d(dest, src1, src2, X86_FCMP_COND_LT);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -250,10 +246,8 @@ bool translate_vcmplepd(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_d(temp, src1, src2, X86_FCMP_COND_LE);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_d(dest, src1, src2, X86_FCMP_COND_LE);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -276,10 +270,8 @@ bool translate_vcmpunordpd(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_d(temp, src1, src2, X86_FCMP_COND_UNORD);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_d(dest, src1, src2, X86_FCMP_COND_UNORD);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -302,10 +294,8 @@ bool translate_vcmpneqpd(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_d(temp, src1, src2, X86_FCMP_COND_NEQ);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_d(dest, src1, src2, X86_FCMP_COND_NEQ);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -329,10 +319,8 @@ bool translate_vcmpnltpd(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_d(temp, src2, src1, X86_FCMP_COND_NLT);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_d(dest, src2, src1, X86_FCMP_COND_NLT);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -355,10 +343,8 @@ bool translate_vcmpnlepd(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_d(temp, src2, src1, X86_FCMP_COND_NLE);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_d(dest, src2, src1, X86_FCMP_COND_NLE);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -381,10 +367,8 @@ bool translate_vcmpordpd(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_d(temp, src1, src2, X86_FCMP_COND_ORD);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_d(dest, src1, src2, X86_FCMP_COND_ORD);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -407,10 +391,8 @@ bool translate_vcmpeq_uqpd(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_d(temp, src1, src2, X86_FCMP_COND_EQ_UQ);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_d(dest, src1, src2, X86_FCMP_COND_EQ_UQ);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -433,10 +415,8 @@ bool translate_vcmpngepd(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_d(temp, src1, src2, X86_FCMP_COND_NGE);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_d(dest, src1, src2, X86_FCMP_COND_NGE);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -459,10 +439,8 @@ bool translate_vcmpngtpd(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_d(temp, src1, src2, X86_FCMP_COND_NGT);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_d(dest, src1, src2, X86_FCMP_COND_NGT);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -485,10 +463,8 @@ bool translate_vcmpfalsepd(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_d(temp, src1, src2, X86_FCMP_COND_FALSE);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_d(dest, src1, src2, X86_FCMP_COND_FALSE);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -511,10 +487,8 @@ bool translate_vcmpneq_oqpd(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_d(temp, src1, src2, X86_FCMP_COND_NEQ_OQ);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_d(dest, src1, src2, X86_FCMP_COND_NEQ_OQ);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -537,10 +511,8 @@ bool translate_vcmpgepd(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_d(temp, src2, src1, X86_FCMP_COND_GE);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_d(dest, src2, src1, X86_FCMP_COND_GE);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -563,10 +535,8 @@ bool translate_vcmpgtpd(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_d(temp, src2, src1, X86_FCMP_COND_GT);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_d(dest, src2, src1, X86_FCMP_COND_GT);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -591,11 +561,9 @@ bool translate_vcmptruepd(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_d(temp, src1, src2, X86_FCMP_COND_TRUE);
-        la_xvori_b(temp, temp, 0xff);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_d(dest, src1, src2, X86_FCMP_COND_TRUE);
+        la_xvori_b(dest, dest, 0xff);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -618,10 +586,8 @@ bool translate_vcmpeq_ospd(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_d(temp, src1, src2, X86_FCMP_COND_EQ_OS);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_d(dest, src1, src2, X86_FCMP_COND_EQ_OS);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -644,10 +610,8 @@ bool translate_vcmplt_oqpd(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_d(temp, src1, src2, X86_FCMP_COND_LT_OQ);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_d(dest, src1, src2, X86_FCMP_COND_LT_OQ);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -670,10 +634,8 @@ bool translate_vcmple_oqpd(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_d(temp, src1, src2, X86_FCMP_COND_LE_OQ);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_d(dest, src1, src2, X86_FCMP_COND_LE_OQ);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -696,10 +658,8 @@ bool translate_vcmpunord_spd(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_d(temp, src1, src2, X86_FCMP_COND_UNORD_S);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_d(dest, src1, src2, X86_FCMP_COND_UNORD_S);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -722,10 +682,8 @@ bool translate_vcmpneq_uspd(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_d(temp, src1, src2, X86_FCMP_COND_NEQ_US);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_d(dest, src1, src2, X86_FCMP_COND_NEQ_US);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -748,10 +706,8 @@ bool translate_vcmpnlt_uqpd(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_d(temp, src2, src1, X86_FCMP_COND_NLT_UQ);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_d(dest, src2, src1, X86_FCMP_COND_NLT_UQ);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -774,10 +730,8 @@ bool translate_vcmpnle_uqpd(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_d(temp, src2, src1, X86_FCMP_COND_NLE_UQ);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_d(dest, src2, src1, X86_FCMP_COND_NLE_UQ);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -800,10 +754,8 @@ bool translate_vcmpord_spd(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_d(temp, src1, src2, X86_FCMP_COND_ORD_S);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_d(dest, src1, src2, X86_FCMP_COND_ORD_S);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -826,10 +778,8 @@ bool translate_vcmpeq_uspd(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_d(temp, src1, src2, X86_FCMP_COND_EQ_US);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_d(dest, src1, src2, X86_FCMP_COND_EQ_US);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -852,10 +802,8 @@ bool translate_vcmpnge_uqpd(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_d(temp, src1, src2, X86_FCMP_COND_NGE_UQ);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_d(dest, src1, src2, X86_FCMP_COND_NGE_UQ);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -878,10 +826,8 @@ bool translate_vcmpngt_uqpd(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_d(temp, src1, src2, X86_FCMP_COND_NGT_UQ);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_d(dest, src1, src2, X86_FCMP_COND_NGT_UQ);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -904,10 +850,8 @@ bool translate_vcmpfalse_ospd(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_d(temp, src1, src2, X86_FCMP_COND_FALSE_OS);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_d(dest, src1, src2, X86_FCMP_COND_FALSE_OS);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -930,10 +874,8 @@ bool translate_vcmpneq_ospd(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_d(temp, src1, src2, X86_FCMP_COND_NEQ_OS);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_d(dest, src1, src2, X86_FCMP_COND_NEQ_OS);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -956,10 +898,8 @@ bool translate_vcmpge_oqpd(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_d(temp, src2, src1, X86_FCMP_COND_GE_OQ);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_d(dest, src2, src1, X86_FCMP_COND_GE_OQ);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -982,10 +922,8 @@ bool translate_vcmpgt_oqpd(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_d(temp, src2, src1, X86_FCMP_COND_GT_OQ);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_d(dest, src2, src1, X86_FCMP_COND_GT_OQ);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1010,11 +948,9 @@ bool translate_vcmptrue_uspd(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_d(temp, src1, src2, X86_FCMP_COND_TRUE_US);
-        la_xvori_b(temp, temp, 0xff);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_d(dest, src1, src2, X86_FCMP_COND_TRUE_US);
+        la_xvori_b(dest, dest, 0xff);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1120,10 +1056,8 @@ bool translate_vcmpeqps(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_s(temp, src1, src2, X86_FCMP_COND_EQ);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_s(dest, src1, src2, X86_FCMP_COND_EQ);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1146,10 +1080,8 @@ bool translate_vcmpltps(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_s(temp, src1, src2, X86_FCMP_COND_LT);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_s(dest, src1, src2, X86_FCMP_COND_LT);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1172,10 +1104,8 @@ bool translate_vcmpleps(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_s(temp, src1, src2, X86_FCMP_COND_LE);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_s(dest, src1, src2, X86_FCMP_COND_LE);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1198,10 +1128,8 @@ bool translate_vcmpunordps(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_s(temp, src1, src2, X86_FCMP_COND_UNORD);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_s(dest, src1, src2, X86_FCMP_COND_UNORD);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1224,10 +1152,8 @@ bool translate_vcmpneqps(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_s(temp, src1, src2, X86_FCMP_COND_NEQ);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_s(dest, src1, src2, X86_FCMP_COND_NEQ);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1251,10 +1177,8 @@ bool translate_vcmpnltps(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_s(temp, src2, src1, X86_FCMP_COND_NLT);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_s(dest, src2, src1, X86_FCMP_COND_NLT);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1277,10 +1201,8 @@ bool translate_vcmpnleps(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_s(temp, src2, src1, X86_FCMP_COND_NLE);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_s(dest, src2, src1, X86_FCMP_COND_NLE);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1303,10 +1225,8 @@ bool translate_vcmpordps(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_s(temp, src1, src2, X86_FCMP_COND_ORD);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_s(dest, src1, src2, X86_FCMP_COND_ORD);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1329,10 +1249,8 @@ bool translate_vcmpeq_uqps(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_s(temp, src1, src2, X86_FCMP_COND_EQ_UQ);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_s(dest, src1, src2, X86_FCMP_COND_EQ_UQ);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1355,10 +1273,8 @@ bool translate_vcmpngeps(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_s(temp, src1, src2, X86_FCMP_COND_NGE);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_s(dest, src1, src2, X86_FCMP_COND_NGE);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1381,10 +1297,8 @@ bool translate_vcmpngtps(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_s(temp, src1, src2, X86_FCMP_COND_NGT);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_s(dest, src1, src2, X86_FCMP_COND_NGT);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1407,10 +1321,8 @@ bool translate_vcmpfalseps(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_s(temp, src1, src2, X86_FCMP_COND_FALSE);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_s(dest, src1, src2, X86_FCMP_COND_FALSE);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1433,10 +1345,8 @@ bool translate_vcmpneq_oqps(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_s(temp, src1, src2, X86_FCMP_COND_NEQ_OQ);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_s(dest, src1, src2, X86_FCMP_COND_NEQ_OQ);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1459,10 +1369,8 @@ bool translate_vcmpgeps(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_s(temp, src2, src1, X86_FCMP_COND_GE);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_s(dest, src2, src1, X86_FCMP_COND_GE);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1485,10 +1393,8 @@ bool translate_vcmpgtps(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_s(temp, src2, src1, X86_FCMP_COND_GT);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_s(dest, src2, src1, X86_FCMP_COND_GT);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1513,11 +1419,9 @@ bool translate_vcmptrueps(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_s(temp, src1, src2, X86_FCMP_COND_TRUE);
-        la_xvori_b(temp, temp, 0xff);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_s(dest, src1, src2, X86_FCMP_COND_TRUE);
+        la_xvori_b(dest, dest, 0xff);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1540,10 +1444,8 @@ bool translate_vcmpeq_osps(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_s(temp, src1, src2, X86_FCMP_COND_EQ_OS);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_s(dest, src1, src2, X86_FCMP_COND_EQ_OS);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1566,10 +1468,8 @@ bool translate_vcmplt_oqps(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_s(temp, src1, src2, X86_FCMP_COND_LT_OQ);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_s(dest, src1, src2, X86_FCMP_COND_LT_OQ);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1592,10 +1492,8 @@ bool translate_vcmple_oqps(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_s(temp, src1, src2, X86_FCMP_COND_LE_OQ);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_s(dest, src1, src2, X86_FCMP_COND_LE_OQ);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1618,10 +1516,8 @@ bool translate_vcmpunord_sps(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_s(temp, src1, src2, X86_FCMP_COND_UNORD_S);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_s(dest, src1, src2, X86_FCMP_COND_UNORD_S);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1644,10 +1540,8 @@ bool translate_vcmpneq_usps(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_s(temp, src1, src2, X86_FCMP_COND_NEQ_US);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_s(dest, src1, src2, X86_FCMP_COND_NEQ_US);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1670,10 +1564,8 @@ bool translate_vcmpnlt_uqps(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_s(temp, src2, src1, X86_FCMP_COND_NLT_UQ);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_s(dest, src2, src1, X86_FCMP_COND_NLT_UQ);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1696,10 +1588,8 @@ bool translate_vcmpnle_uqps(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_s(temp, src2, src1, X86_FCMP_COND_NLE_UQ);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_s(dest, src2, src1, X86_FCMP_COND_NLE_UQ);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1722,10 +1612,8 @@ bool translate_vcmpord_sps(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_s(temp, src1, src2, X86_FCMP_COND_ORD_S);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_s(dest, src1, src2, X86_FCMP_COND_ORD_S);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1748,10 +1636,8 @@ bool translate_vcmpeq_usps(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_s(temp, src1, src2, X86_FCMP_COND_EQ_US);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_s(dest, src1, src2, X86_FCMP_COND_EQ_US);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1774,10 +1660,8 @@ bool translate_vcmpnge_uqps(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_s(temp, src1, src2, X86_FCMP_COND_NGE_UQ);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_s(dest, src1, src2, X86_FCMP_COND_NGE_UQ);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1800,10 +1684,8 @@ bool translate_vcmpngt_uqps(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_s(temp, src1, src2, X86_FCMP_COND_NGT_UQ);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_s(dest, src1, src2, X86_FCMP_COND_NGT_UQ);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1826,10 +1708,8 @@ bool translate_vcmpfalse_osps(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_s(temp, src1, src2, X86_FCMP_COND_FALSE_OS);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_s(dest, src1, src2, X86_FCMP_COND_FALSE_OS);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1852,10 +1732,8 @@ bool translate_vcmpneq_osps(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_s(temp, src1, src2, X86_FCMP_COND_NEQ_OS);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_s(dest, src1, src2, X86_FCMP_COND_NEQ_OS);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1878,10 +1756,8 @@ bool translate_vcmpge_oqps(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_s(temp, src2, src1, X86_FCMP_COND_GE_OQ);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_s(dest, src2, src1, X86_FCMP_COND_GE_OQ);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1904,10 +1780,8 @@ bool translate_vcmpgt_oqps(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_s(temp, src2, src1, X86_FCMP_COND_GT_OQ);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_s(dest, src2, src1, X86_FCMP_COND_GT_OQ);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1932,11 +1806,9 @@ bool translate_vcmptrue_usps(IR1_INST * pir1) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_vfcmp_cond_s(temp, src1, src2, X86_FCMP_COND_TRUE_US);
-        la_xvori_b(temp, temp, 0xff);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vfcmp_cond_s(dest, src1, src2, X86_FCMP_COND_TRUE_US);
+        la_xvori_b(dest, dest, 0xff);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
