@@ -4508,6 +4508,12 @@ void smc_store_helper_restore_cpu_state(void *_env)
     for (i = 0; i < nb_xmm_regs; i++) {
         if (option_enable_lasx) {
             __vst256_native_vreg(&(env->xmm_regs[i].ZMM_Q(0)), i);
+        } else if (latx_no_lbt_mode_enabled()) {
+            uint64_t tmp[2] QEMU_ALIGNED(16);
+
+            __vst128_native_vreg(tmp, i);
+            env->xmm_regs[i].ZMM_Q(0) = tmp[0];
+            env->xmm_regs[i].ZMM_Q(1) = tmp[1];
         } else {
             __vst128_native_vreg(&(env->xmm_regs[i].ZMM_Q(0)), i);
         }
