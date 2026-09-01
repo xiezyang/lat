@@ -120,6 +120,8 @@ static void test_no_lbt_helper_source_audit(void)
     g_autofree char *flag_source = NULL;
     g_autofree char *eflag_process_path = NULL;
     g_autofree char *eflag_process = NULL;
+    g_autofree char *opnd_process_path = NULL;
+    g_autofree char *opnd_process = NULL;
     g_autofree char *options_path = NULL;
     g_autofree char *options_source = NULL;
     g_autofree char *main_path = NULL;
@@ -182,6 +184,24 @@ static void test_no_lbt_helper_source_audit(void)
                             "ra_free_temp(tmp);\n    la_x86mtflag(zf, ZF_USEDEF_BIT);"));
     g_assert_nonnull(strstr(eflag_process,
                             "if (generate_xcomisx_eflags(src0, src1, pir1))"));
+
+    opnd_process_path = g_test_build_filename(G_TEST_DIST,
+                                              "target", "i386", "latx",
+                                              "translator", "tr-opnd-process.c",
+                                              NULL);
+    g_assert_true(g_file_get_contents(opnd_process_path, &opnd_process,
+                                      &length, NULL));
+    g_assert_nonnull(strstr(opnd_process, "void latx_load_v128"));
+    g_assert_nonnull(strstr(opnd_process,
+                            "if (!latx_no_lbt_mode_enabled())"));
+    g_assert_nonnull(strstr(opnd_process,
+                            "la_vinsgr2vr_d(dest, scratch, 1);"));
+    g_assert_nonnull(strstr(opnd_process,
+                            "la_vpickve2gr_du(scratch, src, 1);"));
+    g_assert_nonnull(strstr(opnd_process,
+                            "latx_load_v128(opnd2, mem_opnd, little_disp);"));
+    g_assert_nonnull(strstr(opnd_process,
+                            "latx_store_v128(opnd2, mem_opnd, little_disp);"));
 
     options_path = g_test_build_filename(G_TEST_DIST,
                                          "target", "i386", "latx",

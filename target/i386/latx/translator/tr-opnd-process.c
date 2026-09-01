@@ -1292,6 +1292,86 @@ void set_fpu_rounding_mode(IR2_OPND rm)
     la_movgr2fcsr(fcsr3_ir2_opnd, rm);
 }
 
+void latx_load_v128(IR2_OPND dest, IR2_OPND base, int disp)
+{
+    IR2_OPND address;
+    IR2_OPND scratch;
+    IR2_OPND scalar;
+    IR2_OPND done;
+
+    if (!latx_no_lbt_mode_enabled()) {
+        la_vld(dest, base, disp);
+        return;
+    }
+
+    scalar = ra_alloc_label();
+    done = ra_alloc_label();
+    address = ra_alloc_itemp();
+    scratch = ra_alloc_itemp();
+    if (si12_overflow(disp)) {
+        li_d(scratch, disp);
+        la_add_d(address, base, scratch);
+    } else if (disp) {
+        la_addi_d(address, base, disp);
+    } else {
+        la_or(address, base, zero_ir2_opnd);
+    }
+    la_andi(scratch, address, 0xf);
+    la_bne(scratch, zero_ir2_opnd, scalar);
+    la_vld(dest, address, 0);
+    la_b(done);
+
+    la_label(scalar);
+    la_ld_d(scratch, address, 0);
+    la_vinsgr2vr_d(dest, scratch, 0);
+    la_ld_d(scratch, address, 8);
+    la_vinsgr2vr_d(dest, scratch, 1);
+
+    la_label(done);
+    ra_free_temp(scratch);
+    ra_free_temp(address);
+}
+
+void latx_store_v128(IR2_OPND src, IR2_OPND base, int disp)
+{
+    IR2_OPND address;
+    IR2_OPND scratch;
+    IR2_OPND scalar;
+    IR2_OPND done;
+
+    if (!latx_no_lbt_mode_enabled()) {
+        la_vst(src, base, disp);
+        return;
+    }
+
+    scalar = ra_alloc_label();
+    done = ra_alloc_label();
+    address = ra_alloc_itemp();
+    scratch = ra_alloc_itemp();
+    if (si12_overflow(disp)) {
+        li_d(scratch, disp);
+        la_add_d(address, base, scratch);
+    } else if (disp) {
+        la_addi_d(address, base, disp);
+    } else {
+        la_or(address, base, zero_ir2_opnd);
+    }
+    la_andi(scratch, address, 0xf);
+    la_bne(scratch, zero_ir2_opnd, scalar);
+    la_vst(src, address, 0);
+    la_b(done);
+
+    la_label(scalar);
+    la_vpickve2gr_du(scratch, src, 0);
+    la_st_d(scratch, address, 0);
+    la_vpickve2gr_du(scratch, src, 1);
+    la_st_d(scratch, address, 8);
+
+    la_label(done);
+    ra_free_temp(scratch);
+    ra_free_temp(address);
+}
+
 void load_freg128_from_ir1_mem(IR2_OPND opnd2, IR1_OPND *opnd1){
     int little_disp;
 
@@ -1300,7 +1380,7 @@ void load_freg128_from_ir1_mem(IR2_OPND opnd2, IR1_OPND *opnd1){
 
     IR2_OPND mem_opnd = convert_mem(opnd1, &little_disp);
     gen_test_page_flag(mem_opnd, little_disp, PAGE_READ);
-    la_vld(opnd2, mem_opnd, little_disp);
+    latx_load_v128(opnd2, mem_opnd, little_disp);
     return;
 }
 
@@ -1312,7 +1392,7 @@ void store_freg128_to_ir1_mem(IR2_OPND opnd2, IR1_OPND *opnd1){
 
     IR2_OPND mem_opnd = convert_mem(opnd1, &little_disp);
     gen_test_page_flag(mem_opnd, little_disp, PAGE_WRITE | PAGE_WRITE_ORG);
-    la_vst(opnd2, mem_opnd, little_disp);
+    latx_store_v128(opnd2, mem_opnd, little_disp);
     return;
 }
 
@@ -1403,7 +1483,7 @@ IR2_OPND load_ymm_high128_shadow(int index)
     IR2_OPND dest = ra_alloc_ftemp();
     IR2_OPND addr = get_ymm_high128_shadow_addr(index);
 
-    la_vld(dest, addr, 0);
+    latx_load_v128(dest, addr, 0);
     ra_free_temp(addr);
     return dest;
 }
@@ -1412,7 +1492,7 @@ void store_ymm_high128_shadow(IR2_OPND src, int index)
 {
     IR2_OPND addr = get_ymm_high128_shadow_addr(index);
 
-    la_vst(src, addr, 0);
+    latx_store_v128(src, addr, 0);
     ra_free_temp(addr);
 }
 
@@ -1514,7 +1594,7 @@ IR2_OPND load_v128_from_ir1_mem_exact(IR1_OPND *opnd)
     address = convert_mem_to_itemp(opnd);
     value = ra_alloc_ftemp();
     gen_test_page_flag(address, 0, PAGE_READ);
-    la_vld(value, address, 0);
+    latx_load_v128(value, address, 0);
     ra_free_temp(address);
     return value;
 }
@@ -1524,7 +1604,7 @@ IR2_OPND load_v128_from_guest_addr_exact(IR2_OPND address)
     IR2_OPND value = ra_alloc_ftemp();
 
     gen_test_page_flag(address, 0, PAGE_READ);
-    la_vld(value, address, 0);
+    latx_load_v128(value, address, 0);
     return value;
 }
 
@@ -1536,7 +1616,7 @@ void store_v128_to_ir1_mem_exact(IR2_OPND value, IR1_OPND *opnd)
     lsassert(ir1_opnd_is_mem(opnd) && ir1_opnd_size(opnd) == 128);
     address = convert_mem_to_itemp(opnd);
     gen_test_page_flag(address, 0, PAGE_WRITE | PAGE_WRITE_ORG);
-    la_vst(value, address, 0);
+    latx_store_v128(value, address, 0);
     ra_free_temp(address);
 }
 
@@ -1544,7 +1624,7 @@ void store_v128_to_guest_addr_exact(IR2_OPND value, IR2_OPND address)
 {
     lsassert(ir2_opnd_is_freg(&value));
     gen_test_page_flag(address, 0, PAGE_WRITE | PAGE_WRITE_ORG);
-    la_vst(value, address, 0);
+    latx_store_v128(value, address, 0);
 }
 
 void load_v256_from_ir1_mem_exact(IR1_OPND *opnd,
@@ -1557,8 +1637,8 @@ void load_v256_from_ir1_mem_exact(IR1_OPND *opnd,
     *low = ra_alloc_ftemp();
     *high = ra_alloc_ftemp();
     gen_test_page_flag(address, 0, PAGE_READ);
-    la_vld(*low, address, 0);
-    la_vld(*high, address, 16);
+    latx_load_v128(*low, address, 0);
+    latx_load_v128(*high, address, 16);
     ra_free_temp(address);
 }
 
@@ -1571,7 +1651,7 @@ IR2_OPND load_v256_high_from_ir1_mem_exact(IR1_OPND *opnd)
     address = convert_mem_to_itemp(opnd);
     high = ra_alloc_ftemp();
     gen_test_page_flag(address, 0, PAGE_READ);
-    la_vld(high, address, 16);
+    latx_load_v128(high, address, 16);
     ra_free_temp(address);
     return high;
 }
@@ -1585,8 +1665,8 @@ void store_v256_to_ir1_mem_exact(IR2_OPND low, IR2_OPND high,
     lsassert(ir1_opnd_is_mem(opnd) && ir1_opnd_size(opnd) == 256);
     address = convert_mem_to_itemp(opnd);
     gen_test_page_flag(address, 0, PAGE_WRITE | PAGE_WRITE_ORG);
-    la_vst(low, address, 0);
-    la_vst(high, address, 16);
+    latx_store_v128(low, address, 0);
+    latx_store_v128(high, address, 16);
     ra_free_temp(address);
 }
 
@@ -1598,7 +1678,7 @@ void store_v256_low_to_ir1_mem_exact(IR2_OPND low, IR1_OPND *opnd)
     lsassert(ir1_opnd_is_mem(opnd) && ir1_opnd_size(opnd) == 256);
     address = convert_mem_to_itemp(opnd);
     gen_test_page_flag(address, 0, PAGE_WRITE | PAGE_WRITE_ORG);
-    la_vst(low, address, 0);
+    latx_store_v128(low, address, 0);
     ra_free_temp(address);
 }
 
@@ -1610,6 +1690,6 @@ void store_v256_high_to_ir1_mem_exact(IR2_OPND high, IR1_OPND *opnd)
     lsassert(ir1_opnd_is_mem(opnd) && ir1_opnd_size(opnd) == 256);
     address = convert_mem_to_itemp(opnd);
     gen_test_page_flag(address, 0, PAGE_WRITE | PAGE_WRITE_ORG);
-    la_vst(high, address, 16);
+    latx_store_v128(high, address, 16);
     ra_free_temp(address);
 }

@@ -173,8 +173,8 @@ static void save_xmm(void)
     int save_no = 8;
 #endif
     for (int i = 0; i < save_no; i++) {
-        la_vst(ra_alloc_xmm(i), tmp_env,
-                lsenv_offset_of_xmm(lsenv, i) - 0x7f0);
+        latx_store_v128(ra_alloc_xmm(i), tmp_env,
+                        lsenv_offset_of_xmm(lsenv, i) - 0x7f0);
     }
     ra_free_temp(tmp_env);
 }
@@ -189,8 +189,8 @@ static void restore_xmm(void)
     int save_no = 8;
 #endif
     for (int i = 0; i < save_no; i++) {
-        la_vld(ra_alloc_xmm(i), tmp_env,
-                lsenv_offset_of_xmm(lsenv, i) - 0x7f0);
+        latx_load_v128(ra_alloc_xmm(i), tmp_env,
+                       lsenv_offset_of_xmm(lsenv, i) - 0x7f0);
     }
     ra_free_temp(tmp_env);
 }
@@ -306,7 +306,7 @@ static void save_float80_to_stn(IR2_OPND stm_opnd, int stn)
 {
     IR2_OPND stn_opnd_addr = get_stn_opnd_addr(stn);
 
-    la_vst(stm_opnd, stn_opnd_addr, 0);
+    latx_store_v128(stm_opnd, stn_opnd_addr, 0);
 
     ra_free_temp(stn_opnd_addr);
 }
@@ -315,7 +315,7 @@ static void get_float80_from_stn(IR2_OPND stm_opnd, int stn)
 {
     IR2_OPND stn_opnd_addr = get_stn_opnd_addr(stn);
 
-    la_vld(stm_opnd, stn_opnd_addr, 0);
+    latx_load_v128(stm_opnd, stn_opnd_addr, 0);
 
     ra_free_temp(stn_opnd_addr);
 }

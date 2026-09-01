@@ -3600,8 +3600,8 @@ void tr_save_xmm_to_env(uint8 xmm_to_save)
                 la_xvst(ra_alloc_xmm(i),
                                      env_ir2_opnd, lsenv_offset_of_xmm(lsenv, i));
             } else {
-                la_vst(ra_alloc_xmm(i),
-                                     env_ir2_opnd, lsenv_offset_of_xmm(lsenv, i));
+                latx_store_v128(ra_alloc_xmm(i), env_ir2_opnd,
+                                lsenv_offset_of_xmm(lsenv, i));
 
             }
         }
@@ -3615,8 +3615,8 @@ void tr_save_xmm_to_env(uint8 xmm_to_save)
                 la_xvst(ra_alloc_xmm(i),
                                      tmp_env_opnd, lsenv_offset_of_xmm(lsenv, i) - 0x7f0);
             } else {
-                la_vst(ra_alloc_xmm(i),
-                                     tmp_env_opnd, lsenv_offset_of_xmm(lsenv, i) - 0x7f0);
+                latx_store_v128(ra_alloc_xmm(i), tmp_env_opnd,
+                                lsenv_offset_of_xmm(lsenv, i) - 0x7f0);
             }
         }
     }
@@ -3632,7 +3632,8 @@ void tr_load_xmm_from_env(uint8 xmm_to_load)
             if (option_enable_lasx) {
                 la_xvld(ra_alloc_xmm(i), env_ir2_opnd, lsenv_offset_of_xmm(lsenv, i));
             } else {
-                la_vld(ra_alloc_xmm(i), env_ir2_opnd, lsenv_offset_of_xmm(lsenv, i));
+                latx_load_v128(ra_alloc_xmm(i), env_ir2_opnd,
+                               lsenv_offset_of_xmm(lsenv, i));
             }
         }
     }
@@ -3645,8 +3646,8 @@ void tr_load_xmm_from_env(uint8 xmm_to_load)
                 la_xvld(ra_alloc_xmm(i), tmp_env_opnd,
                                      lsenv_offset_of_xmm(lsenv, i) - 0x7f0);
             } else {
-                la_vld(ra_alloc_xmm(i), tmp_env_opnd,
-                                     lsenv_offset_of_xmm(lsenv, i) - 0x7f0);
+                latx_load_v128(ra_alloc_xmm(i), tmp_env_opnd,
+                               lsenv_offset_of_xmm(lsenv, i) - 0x7f0);
             }
         }
     }
@@ -3666,8 +3667,8 @@ void tr_save_xmm64_to_env(uint8 xmm_to_save)
                 la_xvst(ra_alloc_xmm(i + 8), tmp_env_opnd,
                     lsenv_offset_of_xmm(lsenv, i + 8) - 0x7f0);
             } else {
-                la_vst(ra_alloc_xmm(i + 8), tmp_env_opnd,
-                    lsenv_offset_of_xmm(lsenv, i + 8) - 0x7f0);
+                latx_store_v128(ra_alloc_xmm(i + 8), tmp_env_opnd,
+                                lsenv_offset_of_xmm(lsenv, i + 8) - 0x7f0);
             }
         }
     }
@@ -3685,8 +3686,8 @@ void tr_load_xmm64_from_env(uint8 xmm_to_load)
                 la_xvld(ra_alloc_xmm(i + 8), tmp_env_opnd,
                     lsenv_offset_of_xmm(lsenv, i + 8) - 0x7f0);
             } else {
-                la_vld(ra_alloc_xmm(i + 8), tmp_env_opnd,
-                    lsenv_offset_of_xmm(lsenv, i + 8) - 0x7f0);
+                latx_load_v128(ra_alloc_xmm(i + 8), tmp_env_opnd,
+                               lsenv_offset_of_xmm(lsenv, i + 8) - 0x7f0);
             }
         }
     }
@@ -3705,8 +3706,8 @@ static void tr_save_ymm_to_env_lsx(uint16 ymm_to_save)
     /* Keep the fixed env pointer out of the LSX fault-save scratch path. */
     for (int i = 0; i < 8; ++i) {
         if (ymm_to_save & (UINT16_C(1) << i)) {
-            la_vst(ra_alloc_xmm(i), env_ir2_opnd,
-                   lsenv_offset_of_xmm(lsenv, i));
+            latx_store_v128(ra_alloc_xmm(i), env_ir2_opnd,
+                            lsenv_offset_of_xmm(lsenv, i));
         }
     }
 #ifdef TARGET_X86_64
@@ -3714,8 +3715,8 @@ static void tr_save_ymm_to_env_lsx(uint16 ymm_to_save)
         la_addi_d(a1_ir2_opnd, env_ir2_opnd, 0x7f0);
         for (int i = 0; i < 8; ++i) {
             if (ymm_to_save & (UINT16_C(1) << (i + 8))) {
-                la_vst(ra_alloc_xmm(i + 8), a1_ir2_opnd,
-                       lsenv_offset_of_xmm(lsenv, i + 8) - 0x7f0);
+                latx_store_v128(ra_alloc_xmm(i + 8), a1_ir2_opnd,
+                                lsenv_offset_of_xmm(lsenv, i + 8) - 0x7f0);
             }
         }
     }
@@ -3730,10 +3731,10 @@ static void tr_save_ymm_to_env_lsx(uint16 ymm_to_save)
         high = ra_alloc_ftemp();
         li_d(a1_ir2_opnd, lsenv_offset_of_ymmh(lsenv, i));
         la_add_d(a1_ir2_opnd, env_ir2_opnd, a1_ir2_opnd);
-        la_vld(high, a1_ir2_opnd, 0);
+        latx_load_v128(high, a1_ir2_opnd, 0);
         li_d(a2_ir2_opnd, lsenv_offset_of_xmm(lsenv, i) + 16);
         la_add_d(a2_ir2_opnd, env_ir2_opnd, a2_ir2_opnd);
-        la_vst(high, a2_ir2_opnd, 0);
+        latx_store_v128(high, a2_ir2_opnd, 0);
         ra_free_temp(high);
     }
     /* $a2 maps guest r8 on x86-64.  It is used above as an address scratch
@@ -3773,7 +3774,7 @@ void tr_load_ymm_high_from_env(uint16 ymm_to_load)
         high = ra_alloc_ftemp();
         li_d(address, lsenv_offset_of_xmm(lsenv, i) + 16);
         la_add_d(address, env_ir2_opnd, address);
-        la_vld(high, address, 0);
+        latx_load_v128(high, address, 0);
         store_ymm_high128_shadow(high, i);
         ra_free_temp(address);
         ra_free_temp(high);
