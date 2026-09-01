@@ -34,6 +34,199 @@ static void test_target_config_files(void)
 #endif
 }
 
+static void test_host_hwcap_parser(void)
+{
+    unsigned long value = 0;
+
+    g_assert_true(latx_parse_host_hwcap_arg("0x1234", &value));
+    g_assert_cmpuint(value, ==, 0x1234UL);
+    g_assert_false(latx_parse_host_hwcap_arg("garbage", &value));
+}
+
+static void test_no_lbt_restrictions(void)
+{
+    options_init();
+    option_enable_lbt = 1;
+    option_enable_lasx = 1;
+    option_tu = 1;
+    option_aot = 1;
+    option_load_aot = 1;
+    option_jr_ra = 1;
+    option_jr_ra_stack = 1;
+    option_tunnel_lib = 1;
+    option_fputag = 1;
+    option_softfpu = 0;
+#ifdef CONFIG_LATX_INSTS_PATTERN
+    option_instptn = 0x3ffffff;
+#endif
+#ifdef CONFIG_LATX_AVX_OPT
+    option_avx_cpuid = 1;
+#endif
+#ifdef CONFIG_LATX_KZT
+    option_kzt = 1;
+#endif
+
+    latx_apply_no_lbt_restrictions();
+
+    g_assert_true(latx_no_lbt_mode_enabled());
+    g_assert_cmpint(option_enable_lbt, ==, 0);
+    g_assert_cmpint(option_enable_lasx, ==, 0);
+    g_assert_cmpint(option_tu, ==, 0);
+    g_assert_cmpint(option_aot, ==, 0);
+    g_assert_cmpint(option_load_aot, ==, 0);
+    g_assert_cmpint(option_jr_ra, ==, 0);
+    g_assert_cmpint(option_jr_ra_stack, ==, 0);
+    g_assert_cmpint(option_tunnel_lib, ==, 0);
+    g_assert_cmpint(option_fputag, ==, 0);
+    g_assert_cmpint(option_softfpu, ==, 0);
+#ifdef CONFIG_LATX_INSTS_PATTERN
+    g_assert_cmpint(option_instptn, ==, 0);
+#endif
+#ifdef CONFIG_LATX_AVX_OPT
+    g_assert_cmpint(option_avx_cpuid, ==, 0);
+#endif
+#ifdef CONFIG_LATX_KZT
+    g_assert_cmpint(option_kzt, ==, 0);
+#endif
+}
+
+static void test_no_lbt_host_hwcap_application(void)
+{
+    options_init();
+#if defined(__loongarch__)
+    latx_apply_host_hwcap(0);
+    g_assert_true(latx_no_lbt_mode_enabled());
+    g_assert_cmpint(option_enable_lbt, ==, 0);
+    g_assert_cmpint(option_enable_lasx, ==, 0);
+    g_assert_cmpint(option_tu, ==, 0);
+    g_assert_cmpint(option_aot, ==, 0);
+    g_assert_cmpint(option_load_aot, ==, 0);
+    g_assert_cmpint(option_jr_ra, ==, 0);
+    g_assert_cmpint(option_jr_ra_stack, ==, 0);
+    g_assert_cmpint(option_tunnel_lib, ==, 0);
+    g_assert_cmpint(option_softfpu, ==, 0);
+#else
+    g_test_skip("host hwcap application only changes LATX feature policy on LoongArch");
+#endif
+}
+
+static void test_no_lbt_helper_source_audit(void)
+{
+    g_autofree char *flag_header_path = NULL;
+    g_autofree char *flag_header = NULL;
+    g_autofree char *flag_wrap_path = NULL;
+    g_autofree char *flag_wrap = NULL;
+    g_autofree char *flag_source_path = NULL;
+    g_autofree char *flag_source = NULL;
+    g_autofree char *eflag_process_path = NULL;
+    g_autofree char *eflag_process = NULL;
+    g_autofree char *options_path = NULL;
+    g_autofree char *options_source = NULL;
+    g_autofree char *main_path = NULL;
+    g_autofree char *main_source = NULL;
+    g_autofree char *config_path = NULL;
+    g_autofree char *config_source = NULL;
+    g_autofree char *fctrl_path = NULL;
+    g_autofree char *fctrl_source = NULL;
+    g_autofree char *extcontext_path = NULL;
+    g_autofree char *extcontext_source = NULL;
+    gsize length = 0;
+
+    flag_header_path = g_test_build_filename(G_TEST_DIST,
+                                             "target", "i386", "latx",
+                                             "include", "flag-lbt.h", NULL);
+    g_assert_true(g_file_get_contents(flag_header_path, &flag_header,
+                                      &length, NULL));
+    flag_wrap_path = g_test_build_filename(G_TEST_DIST,
+                                            "target", "i386", "latx",
+                                            "include", "flag-lbt-wrap.h", NULL);
+    g_assert_true(g_file_get_contents(flag_wrap_path, &flag_wrap,
+                                      &length, NULL));
+    g_assert_nonnull(strstr(flag_wrap,
+                            "#define la_x86mtflag(value, mask) latx_write_eflags((value), (mask))"));
+    g_assert_nonnull(strstr(flag_wrap,
+                            "latx_set_eflag_condition((dest), (condition))"));
+
+    flag_source_path =
+        g_test_build_filename(G_TEST_DIST, "target", "i386", "latx",
+                              "optimization", "flag-lbt.c", NULL);
+    g_assert_true(g_file_get_contents(flag_source_path, &flag_source,
+                                      &length, NULL));
+    g_assert_nonnull(strstr(flag_source,
+                            "la_bstrins_d(eflags, zero_ir2_opnd, OF_BIT_INDEX"));
+    g_assert_nonnull(strstr(flag_source,
+                            "latx_set_eflag_condition(*cond, COND_NO);"));
+    g_assert_nonnull(strstr(flag_source,
+                            "latx_read_eflags(*cond, 0x8);"));
+    g_assert_null(strstr(flag_source,
+                         "la_andi(eflags, eflags, (~eflags_mask) & 0xfff);"));
+    g_assert_null(strstr(flag_source, "IR2_OPND clear_mask;"));
+    g_assert_nonnull(strstr(flag_source, "IR2_OPND selected;"));
+
+    eflag_process_path = g_test_build_filename(G_TEST_DIST,
+                                               "target", "i386", "latx",
+                                               "translator", "tr-eflag-process.c", NULL);
+    g_assert_true(g_file_get_contents(eflag_process_path, &eflag_process,
+                                      &length, NULL));
+    g_assert_null(strstr(eflag_process, "static uint16_t usedef_to_eflags_mask"));
+    g_assert_null(strstr(eflag_process, "static void latx_write_eflags"));
+    g_assert_null(strstr(eflag_process, "static void latx_read_eflags"));
+    g_assert_nonnull(strstr(eflag_process, "la_and(of, first, of);"));
+    g_assert_null(strstr(eflag_process, "la_and(of, first, second);"));
+    g_assert_nonnull(strstr(eflag_process, "la_and(of, lhs, of);"));
+    g_assert_nonnull(strstr(eflag_process, "soft_flag_materialize"));
+    g_assert_null(strstr(eflag_process, "IR2_OPND second = ra_alloc_itemp();"));
+    g_assert_null(strstr(eflag_process, "IR2_OPND product = ra_alloc_itemp();"));
+    g_assert_null(strstr(eflag_process, "IR2_OPND check = ra_alloc_itemp();"));
+    g_assert_nonnull(strstr(eflag_process,
+                            "ra_free_temp(tmp);\n    la_x86mtflag(zf, ZF_USEDEF_BIT);"));
+    g_assert_nonnull(strstr(eflag_process,
+                            "if (generate_xcomisx_eflags(src0, src1, pir1))"));
+
+    options_path = g_test_build_filename(G_TEST_DIST,
+                                         "target", "i386", "latx",
+                                         "latx-options.c", NULL);
+    g_assert_true(g_file_get_contents(options_path, &options_source,
+                                      &length, NULL));
+    g_assert_nonnull(strstr(options_source, "option_fputag = 0;"));
+
+    main_path = g_test_build_filename(G_TEST_DIST,
+                                      "linux-user", "main.c", NULL);
+    g_assert_true(g_file_get_contents(main_path, &main_source, &length, NULL));
+    g_assert_nonnull(strstr(main_source,
+                            "options_set(target_argv);"));
+    g_assert_nonnull(strstr(main_source,
+                            "if (option_host_hwcap_override) {\n"
+                            "        latx_apply_host_hwcap(option_host_hwcap);"));
+    g_assert_nonnull(strstr(main_source,
+                            "LATX: software state mode enabled "
+                            "(LSX=1 LASX=0 LBT_X86=0)"));
+
+    config_path = g_test_build_filename(G_TEST_DIST,
+                                        "target", "i386", "latx",
+                                        "latx-config.c", NULL);
+    g_assert_true(g_file_get_contents(config_path, &config_source,
+                                      &length, NULL));
+    g_assert_nonnull(strstr(config_source,
+                            "Non-TU translation still uses tu_data bookkeeping"));
+    g_assert_nonnull(strstr(config_source, "tu_control_init();"));
+
+    fctrl_path = g_test_build_filename(G_TEST_DIST,
+                                       "target", "i386", "latx",
+                                       "translator", "tr-fctrl.c", NULL);
+    g_assert_true(g_file_get_contents(fctrl_path, &fctrl_source,
+                                      &length, NULL));
+    g_assert_nonnull(strstr(fctrl_source,
+                            "if (option_enable_lbt) {\n        la_x86settm();\n    }"));
+
+    extcontext_path = g_test_build_filename(G_TEST_DIST,
+                                            "include", "loongarch-extcontext.h", NULL);
+    g_assert_true(g_file_get_contents(extcontext_path, &extcontext_source,
+                                      &length, NULL));
+    g_assert_nonnull(strstr(extcontext_source,
+                            "UC_LBT(_uc) ? (*(_type *)&UC_LBT(_uc)->eflags) : 0;"));
+}
+
 static void test_release_loader_prefix_config(void)
 {
     g_assert_true(config_option_registered("LAT_LD_PREFIX"));
@@ -183,6 +376,14 @@ int main(int argc, char **argv)
                     test_single_byte_filename_buffer);
     g_test_add_func("/latx/config/filename-path-and-extension",
                     test_filename_path_and_extension);
+    g_test_add_func("/latx/config/host-hwcap-parser",
+                    test_host_hwcap_parser);
+    g_test_add_func("/latx/config/no-lbt-restrictions",
+                    test_no_lbt_restrictions);
+    g_test_add_func("/latx/config/no-lbt-host-hwcap-application",
+                    test_no_lbt_host_hwcap_application);
+    g_test_add_func("/latx/config/no-lbt-helper-source-audit",
+                    test_no_lbt_helper_source_audit);
     g_test_add_func("/latx/config/target-config-files",
                     test_target_config_files);
     g_test_add_func("/latx/config/release-loader-prefix",

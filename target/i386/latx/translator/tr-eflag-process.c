@@ -169,9 +169,9 @@ static void generate_pf(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1)
     la_andi(low_byte, dest, 0xff);
     la_add_d(low_byte, pf_opnd, low_byte);
     la_ld_bu(pf_opnd, low_byte, 0);
+    ra_free_temp(low_byte);
     la_x86mtflag(pf_opnd, 0x2);
     ra_free_temp(pf_opnd);
-    ra_free_temp(low_byte);
 }
 
 static void generate_af(IR2_OPND dest, IR2_OPND src0,
@@ -213,9 +213,9 @@ static void generate_zf(IR2_OPND dest, IR2_OPND src0,
         la_masknez(zf, tmp, zf);
     }
 
+    ra_free_temp(tmp);
     la_x86mtflag(zf, ZF_USEDEF_BIT);
     ra_free_temp(zf);
-    ra_free_temp(tmp);
 }
 
 static void generate_sf(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1)
@@ -361,6 +361,21 @@ static IR2_OPND soft_flag_operand(IR2_OPND value, IR1_INST *pir1, int index,
     return result;
 }
 
+static IR2_OPND soft_flag_materialize(IR2_OPND value, IR1_INST *pir1,
+                                      int index, bool *allocated)
+{
+    IR2_OPND result = value;
+
+    *allocated = false;
+    if (ir2_opnd_is_imm(&value)) {
+        result = ra_alloc_itemp();
+        load_ireg_from_ir1_2(result, ir1_get_opnd(pir1, index),
+                             ZERO_EXTENSION, false);
+        *allocated = true;
+    }
+    return result;
+}
+
 static IR2_OPND generate_common_result(IR2_OPND src0, IR2_OPND src1,
                                        IR1_INST *pir1, bool *handled)
 {
@@ -480,8 +495,6 @@ static void generate_multiply_overflow(IR2_OPND overflow, IR2_OPND src0,
 {
     IR2_OPND lhs = ra_alloc_itemp();
     IR2_OPND rhs = ra_alloc_itemp();
-    IR2_OPND product = ra_alloc_itemp();
-    IR2_OPND check = ra_alloc_itemp();
     int size = ir1_opnd_size(ir1_get_opnd(pir1, 0));
     bool is_signed = ir1_opcode(pir1) == dt_X86_INS_IMUL;
 
@@ -504,27 +517,26 @@ static void generate_multiply_overflow(IR2_OPND overflow, IR2_OPND src0,
             la_slli_d(rhs, rhs, 64 - size);
             la_srai_d(rhs, rhs, 64 - size);
         }
-        la_mul_d(product, lhs, rhs);
+        la_mul_d(overflow, lhs, rhs);
         if (is_signed) {
-            la_bstrpick_d(check, product, size - 1, 0);
-            la_slli_d(check, check, 64 - size);
-            la_srai_d(check, check, 64 - size);
-            la_xor(check, check, product);
+            la_bstrpick_d(lhs, overflow, size - 1, 0);
+            la_slli_d(lhs, lhs, 64 - size);
+            la_srai_d(lhs, lhs, 64 - size);
+            la_xor(lhs, lhs, overflow);
         } else {
-            la_srli_d(check, product, size);
+            la_srli_d(lhs, overflow, size);
         }
     } else if (is_signed) {
-        la_mul_d(product, lhs, rhs);
-        la_mulh_d(check, lhs, rhs);
-        la_srai_d(product, product, 63);
-        la_xor(check, check, product);
+        la_mulh_d(overflow, lhs, rhs);
+        la_mul_d(lhs, lhs, rhs);
+        la_srai_d(lhs, lhs, 63);
+        la_xor(lhs, overflow, lhs);
     } else {
-        la_mulh_du(check, lhs, rhs);
+        la_mulh_du(overflow, lhs, rhs);
+        la_or(lhs, overflow, zero_ir2_opnd);
     }
-    la_sltu(overflow, zero_ir2_opnd, check);
+    la_sltu(overflow, zero_ir2_opnd, lhs);
 
-    ra_free_temp(check);
-    ra_free_temp(product);
     ra_free_temp(rhs);
     ra_free_temp(lhs);
 }
@@ -532,48 +544,62 @@ static void generate_multiply_overflow(IR2_OPND overflow, IR2_OPND src0,
 static bool generate_common_cf(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
                                IR1_INST *pir1)
 {
-    IR2_OPND result;
-    IR2_OPND lhs;
-    IR2_OPND rhs;
+    IR2_OPND result = dest;
+    IR2_OPND lhs = src0;
+    IR2_OPND rhs = src1;
     IR2_OPND cf;
-    bool result_allocated;
-    bool lhs_allocated;
-    bool rhs_allocated;
+    bool lhs_allocated = false;
+    bool rhs_allocated = false;
     int size = ir1_opnd_size(ir1_get_opnd(pir1, 0));
-    bool handled = true;
 
-    result = soft_flag_operand(dest, pir1, 0, size, &result_allocated);
-    lhs = soft_flag_operand(src0, pir1, 0, size, &lhs_allocated);
-    rhs = soft_flag_operand(src1, pir1, 1, size, &rhs_allocated);
+    if (ir1_opcode(pir1) == dt_X86_INS_MUL ||
+        ir1_opcode(pir1) == dt_X86_INS_IMUL) {
+        cf = ra_alloc_itemp();
+        generate_multiply_overflow(cf, src0, src1, pir1);
+        latx_write_eflags(cf, CF_USEDEF_BIT);
+        ra_free_temp(cf);
+        return true;
+    }
+
     if (ir1_opcode(pir1) == dt_X86_INS_INC ||
         ir1_opcode(pir1) == dt_X86_INS_DEC) {
-        if (rhs_allocated) {
-            ra_free_temp(rhs);
-        }
-        rhs = ra_alloc_itemp();
-        li_d(rhs, 1);
-        rhs_allocated = true;
+        return true; /* INC/DEC preserve CF. */
     }
-    cf = ra_alloc_itemp();
 
     switch (ir1_opcode(pir1)) {
     case dt_X86_INS_XADD:
-    case dt_X86_INS_ADD:
-        la_sltu(cf, result, lhs);
+    case dt_X86_INS_ADD: {
+        lhs = soft_flag_materialize(lhs, pir1, 0, &lhs_allocated);
+        cf = ra_alloc_itemp();
+        if (size < 64) {
+            la_bstrpick_d(cf, lhs, size - 1, 0);
+            la_sltu(cf, result, cf);
+        } else {
+            la_sltu(cf, result, lhs);
+        }
         break;
+    }
     case dt_X86_INS_ADC: {
-        IR2_OPND partial = ra_alloc_itemp();
-        IR2_OPND first = ra_alloc_itemp();
-        IR2_OPND second = ra_alloc_itemp();
-        la_add_d(partial, lhs, rhs);
+        IR2_OPND partial;
+
+        lhs = soft_flag_materialize(lhs, pir1, 0, &lhs_allocated);
+        rhs = soft_flag_materialize(rhs, pir1, 1, &rhs_allocated);
+        cf = ra_alloc_itemp();
+        partial = ra_alloc_itemp();
+        if (size < 64) {
+            la_bstrpick_d(cf, lhs, size - 1, 0);
+            la_bstrpick_d(partial, rhs, size - 1, 0);
+        } else {
+            la_or(cf, lhs, zero_ir2_opnd);
+            la_or(partial, rhs, zero_ir2_opnd);
+        }
+        la_add_d(partial, cf, partial);
         if (size < 64) {
             la_bstrpick_d(partial, partial, size - 1, 0);
         }
-        la_sltu(first, partial, lhs);
-        la_sltu(second, result, partial);
-        la_or(cf, first, second);
-        ra_free_temp(second);
-        ra_free_temp(first);
+        la_sltu(cf, partial, cf);
+        la_sltu(partial, result, partial);
+        la_or(cf, cf, partial);
         ra_free_temp(partial);
         break;
     }
@@ -588,27 +614,51 @@ static bool generate_common_cf(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
     case dt_X86_INS_CMPXCHG:
     case dt_X86_INS_NEG:
     case dt_X86_INS_CMP:
-    case dt_X86_INS_SUB:
-        la_sltu(cf, lhs, rhs);
-        break;
-    case dt_X86_INS_SBB: {
-        IR2_OPND partial = ra_alloc_itemp();
-        IR2_OPND first = ra_alloc_itemp();
-        IR2_OPND second = ra_alloc_itemp();
-        IR2_OPND carry = ra_alloc_itemp();
-        la_sub_d(partial, lhs, rhs);
+    case dt_X86_INS_SUB: {
+        IR2_OPND rhs_value;
+
+        lhs = soft_flag_materialize(lhs, pir1, 0, &lhs_allocated);
+        rhs = soft_flag_materialize(rhs, pir1, 1, &rhs_allocated);
+        cf = ra_alloc_itemp();
+        rhs_value = ra_alloc_itemp();
         if (size < 64) {
-            la_bstrpick_d(partial, partial, size - 1, 0);
+            la_bstrpick_d(cf, lhs, size - 1, 0);
+            la_bstrpick_d(rhs_value, rhs, size - 1, 0);
+        } else {
+            la_or(cf, lhs, zero_ir2_opnd);
+            la_or(rhs_value, rhs, zero_ir2_opnd);
         }
-        la_sltu(first, lhs, rhs);
-        latx_read_eflags(carry, CF_USEDEF_BIT);
-        la_andi(carry, carry, CF_BIT);
-        la_sltu(second, partial, carry);
-        la_or(cf, first, second);
-        ra_free_temp(carry);
-        ra_free_temp(second);
-        ra_free_temp(first);
-        ra_free_temp(partial);
+        la_sltu(cf, cf, rhs_value);
+        ra_free_temp(rhs_value);
+        break;
+    }
+    case dt_X86_INS_SBB: {
+        IR2_OPND rhs_value;
+        IR2_OPND borrow;
+
+        lhs = soft_flag_materialize(lhs, pir1, 0, &lhs_allocated);
+        rhs = soft_flag_materialize(rhs, pir1, 1, &rhs_allocated);
+        cf = ra_alloc_itemp();
+        rhs_value = ra_alloc_itemp();
+        borrow = ra_alloc_itemp();
+        if (size < 64) {
+            la_bstrpick_d(cf, lhs, size - 1, 0);
+            la_bstrpick_d(rhs_value, rhs, size - 1, 0);
+        } else {
+            la_or(cf, lhs, zero_ir2_opnd);
+            la_or(rhs_value, rhs, zero_ir2_opnd);
+        }
+        la_sltu(borrow, cf, rhs_value);
+        la_sub_d(cf, cf, rhs_value);
+        if (size < 64) {
+            la_bstrpick_d(cf, cf, size - 1, 0);
+        }
+        latx_read_eflags(rhs_value, CF_USEDEF_BIT);
+        la_andi(rhs_value, rhs_value, CF_BIT);
+        la_sltu(cf, cf, rhs_value);
+        la_or(cf, borrow, cf);
+        ra_free_temp(borrow);
+        ra_free_temp(rhs_value);
         break;
     }
     case dt_X86_INS_TEST:
@@ -616,6 +666,7 @@ static bool generate_common_cf(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
     case dt_X86_INS_AND:
     case dt_X86_INS_ANDN:
     case dt_X86_INS_OR:
+        cf = ra_alloc_itemp();
         la_or(cf, zero_ir2_opnd, zero_ir2_opnd);
         break;
     case dt_X86_INS_SAL:
@@ -624,6 +675,10 @@ static bool generate_common_cf(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
     case dt_X86_INS_SAR: {
         IR2_OPND count = ra_alloc_itemp();
         IR2_OPND shift = ra_alloc_itemp();
+
+        lhs = soft_flag_materialize(lhs, pir1, 0, &lhs_allocated);
+        rhs = soft_flag_materialize(rhs, pir1, 1, &rhs_allocated);
+        cf = ra_alloc_itemp();
         la_andi(count, rhs, size == 64 ? 0x3f : 0x1f);
         if (ir1_opcode(pir1) == dt_X86_INS_SAL ||
             ir1_opcode(pir1) == dt_X86_INS_SHL) {
@@ -638,74 +693,80 @@ static bool generate_common_cf(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
         ra_free_temp(count);
         break;
     }
-    case dt_X86_INS_MUL:
-    case dt_X86_INS_IMUL:
-        generate_multiply_overflow(cf, src0, src1, pir1);
-        break;
-    case dt_X86_INS_INC:
-    case dt_X86_INS_DEC:
-        handled = true; /* INC/DEC preserve CF. */
-        goto out;
     default:
-        handled = false;
-        goto out;
+        return false;
     }
-    latx_write_eflags(cf, CF_USEDEF_BIT);
 
-out:
-    ra_free_temp(cf);
     if (rhs_allocated) {
         ra_free_temp(rhs);
     }
     if (lhs_allocated) {
         ra_free_temp(lhs);
     }
-    if (result_allocated) {
-        ra_free_temp(result);
-    }
-    return handled;
+    latx_write_eflags(cf, CF_USEDEF_BIT);
+    ra_free_temp(cf);
+    return true;
 }
 
 static bool generate_common_of(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
                                IR1_INST *pir1)
 {
-    IR2_OPND result;
-    IR2_OPND lhs;
-    IR2_OPND rhs;
-    IR2_OPND first;
-    IR2_OPND second;
-    IR2_OPND of;
-    bool result_allocated;
-    bool lhs_allocated;
-    bool rhs_allocated;
+    IR2_OPND result = dest;
+    IR2_OPND lhs = src0;
+    IR2_OPND rhs = src1;
+    IR2_OPND first = { 0 };
+    IR2_OPND of = { 0 };
+    bool first_allocated = false;
+    bool of_allocated = false;
+    bool lhs_allocated = false;
+    bool rhs_allocated = false;
     int size = ir1_opnd_size(ir1_get_opnd(pir1, 0));
     bool handled = true;
 
-    result = soft_flag_operand(dest, pir1, 0, size, &result_allocated);
-    lhs = soft_flag_operand(src0, pir1, 0, size, &lhs_allocated);
-    rhs = soft_flag_operand(src1, pir1, 1, size, &rhs_allocated);
-    if (ir1_opcode(pir1) == dt_X86_INS_INC ||
-        ir1_opcode(pir1) == dt_X86_INS_DEC) {
-        if (rhs_allocated) {
-            ra_free_temp(rhs);
-        }
+    if (ir1_opcode(pir1) == dt_X86_INS_MUL ||
+        ir1_opcode(pir1) == dt_X86_INS_IMUL) {
+        of = ra_alloc_itemp();
+        generate_multiply_overflow(of, src0, src1, pir1);
+        la_slli_d(of, of, OF_BIT_INDEX);
+        latx_write_eflags(of, OF_USEDEF_BIT);
+        ra_free_temp(of);
+        return true;
+    }
+
+    lsassert(!ir2_opnd_is_imm(&result));
+    if (ir2_opnd_is_imm(&lhs)) {
+        lhs = ra_alloc_itemp();
+        load_ireg_from_ir1_2(lhs, ir1_get_opnd(pir1, 0),
+                             ZERO_EXTENSION, false);
+        lhs_allocated = true;
+    }
+    if (ir1_opcode(pir1) != dt_X86_INS_INC &&
+        ir1_opcode(pir1) != dt_X86_INS_DEC &&
+        ir2_opnd_is_imm(&rhs)) {
         rhs = ra_alloc_itemp();
-        li_d(rhs, 1);
+        load_ireg_from_ir1_2(rhs, ir1_get_opnd(pir1, 1),
+                             ZERO_EXTENSION, false);
         rhs_allocated = true;
     }
-    first = ra_alloc_itemp();
-    second = ra_alloc_itemp();
-    of = ra_alloc_itemp();
 
     switch (ir1_opcode(pir1)) {
     case dt_X86_INS_XADD:
     case dt_X86_INS_ADD:
     case dt_X86_INS_ADC:
-    case dt_X86_INS_INC:
+        first = ra_alloc_itemp();
+        of = ra_alloc_itemp();
+        first_allocated = true;
+        of_allocated = true;
         la_xor(first, lhs, rhs);
         la_nor(first, first, zero_ir2_opnd);
-        la_xor(second, lhs, result);
-        la_and(of, first, second);
+        la_xor(of, lhs, result);
+        la_and(of, first, of);
+        break;
+    case dt_X86_INS_INC:
+        of = ra_alloc_itemp();
+        of_allocated = true;
+        la_nor(of, lhs, zero_ir2_opnd);
+        la_and(of, of, result);
         break;
     case dt_X86_INS_CMPSB:
     case dt_X86_INS_CMPSW:
@@ -720,16 +781,27 @@ static bool generate_common_of(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
     case dt_X86_INS_CMP:
     case dt_X86_INS_SUB:
     case dt_X86_INS_SBB:
-    case dt_X86_INS_DEC:
+        first = ra_alloc_itemp();
+        of = ra_alloc_itemp();
+        first_allocated = true;
+        of_allocated = true;
         la_xor(first, lhs, rhs);
-        la_xor(second, lhs, result);
-        la_and(of, first, second);
+        la_xor(of, lhs, result);
+        la_and(of, first, of);
+        break;
+    case dt_X86_INS_DEC:
+        of = ra_alloc_itemp();
+        of_allocated = true;
+        la_nor(of, result, zero_ir2_opnd);
+        la_and(of, lhs, of);
         break;
     case dt_X86_INS_TEST:
     case dt_X86_INS_XOR:
     case dt_X86_INS_AND:
     case dt_X86_INS_ANDN:
     case dt_X86_INS_OR:
+        of = ra_alloc_itemp();
+        of_allocated = true;
         la_or(of, zero_ir2_opnd, zero_ir2_opnd);
         break;
     case dt_X86_INS_SAL:
@@ -739,59 +811,69 @@ static bool generate_common_of(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
         IR2_OPND count = ra_alloc_itemp();
         IR2_OPND one = ra_alloc_itemp();
         IR2_OPND done = ra_alloc_label();
+        of = ra_alloc_itemp();
+        of_allocated = true;
         la_andi(count, rhs, size == 64 ? 0x3f : 0x1f);
         li_d(one, 1);
         la_bne(count, one, done);
         if (ir1_opcode(pir1) == dt_X86_INS_SAL ||
             ir1_opcode(pir1) == dt_X86_INS_SHL) {
-            IR2_OPND cf = ra_alloc_itemp();
-            IR2_OPND msb = ra_alloc_itemp();
-            latx_read_eflags(cf, CF_USEDEF_BIT);
-            la_andi(cf, cf, CF_BIT);
-            la_bstrpick_d(msb, result, size - 1, size - 1);
-            la_xor(of, msb, cf);
-            ra_free_temp(msb);
-            ra_free_temp(cf);
+            latx_read_eflags(one, CF_USEDEF_BIT);
+            la_andi(one, one, CF_BIT);
+            la_bstrpick_d(count, result, size - 1, size - 1);
+            la_xor(of, count, one);
         } else if (ir1_opcode(pir1) == dt_X86_INS_SHR) {
             la_bstrpick_d(of, lhs, size - 1, size - 1);
         } else {
             la_or(of, zero_ir2_opnd, zero_ir2_opnd);
         }
         la_slli_d(of, of, OF_BIT_INDEX);
-        latx_write_eflags(of, OF_USEDEF_BIT);
-        la_label(done);
         ra_free_temp(one);
         ra_free_temp(count);
-        handled = true;
+        if (rhs_allocated) {
+            ra_free_temp(rhs);
+            rhs_allocated = false;
+        }
+        if (lhs_allocated) {
+            ra_free_temp(lhs);
+            lhs_allocated = false;
+        }
+        latx_write_eflags(of, OF_USEDEF_BIT);
+        la_label(done);
         goto out;
     }
-    case dt_X86_INS_MUL:
-    case dt_X86_INS_IMUL:
-        generate_multiply_overflow(of, src0, src1, pir1);
-        la_slli_d(of, of, OF_BIT_INDEX);
-        latx_write_eflags(of, OF_USEDEF_BIT);
-        handled = true;
-        goto out;
     default:
         handled = false;
         goto out;
     }
     la_bstrpick_d(of, of, size - 1, size - 1);
     la_slli_d(of, of, OF_BIT_INDEX);
+    if (first_allocated) {
+        ra_free_temp(first);
+        first_allocated = false;
+    }
+    if (rhs_allocated) {
+        ra_free_temp(rhs);
+        rhs_allocated = false;
+    }
+    if (lhs_allocated) {
+        ra_free_temp(lhs);
+        lhs_allocated = false;
+    }
     latx_write_eflags(of, OF_USEDEF_BIT);
 
 out:
-    ra_free_temp(of);
-    ra_free_temp(second);
-    ra_free_temp(first);
+    if (of_allocated) {
+        ra_free_temp(of);
+    }
+    if (first_allocated) {
+        ra_free_temp(first);
+    }
     if (rhs_allocated) {
         ra_free_temp(rhs);
     }
     if (lhs_allocated) {
         ra_free_temp(lhs);
-    }
-    if (result_allocated) {
-        ra_free_temp(result);
     }
     return handled;
 }
@@ -901,6 +983,32 @@ static void generate_of_not_sx(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1)
 }
 
 #define WRAP(ins) (dt_X86_INS_##ins)
+#ifdef CONFIG_LATX_XCOMISX_OPT
+static bool generate_xcomisx_eflags(IR2_OPND src0, IR2_OPND src1,
+                                    IR1_INST *pir1)
+{
+    uint8_t use_flags =
+        ir1_get_eflag_def(pir1) & (~lsenv->tr_data->curr_ir1_skipped_eflags);
+
+    switch (ir1_opcode(pir1)) {
+    case WRAP(COMISS):
+        generate_xcomisx(src0, src1, false, true, use_flags);
+        return true;
+    case WRAP(COMISD):
+        generate_xcomisx(src0, src1, true, true, use_flags);
+        return true;
+    case WRAP(UCOMISS):
+        generate_xcomisx(src0, src1, false, false, use_flags);
+        return true;
+    case WRAP(UCOMISD):
+        generate_xcomisx(src0, src1, true, false, use_flags);
+        return true;
+    default:
+        return false;
+    }
+}
+#endif
+
 void generate_eflag_calculation(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
                                 IR1_INST *pir1, bool flags)
 {
@@ -927,11 +1035,24 @@ void generate_eflag_calculation(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
         return;
     }
 
+#ifdef CONFIG_LATX_XCOMISX_OPT
+    if (generate_xcomisx_eflags(src0, src1, pir1)) {
+        return;
+    }
+#endif
+
     if (!option_enable_lbt) {
         bool soft_result_handled;
         IR2_OPND soft_result =
             generate_common_result(src0, src1, pir1, &soft_result_handled);
-        IR2_OPND flag_result = soft_result_handled ? soft_result : dest;
+        IR2_OPND flag_result;
+
+        if (soft_result_handled) {
+            flag_result = soft_result;
+        } else {
+            ra_free_temp(soft_result);
+            flag_result = dest;
+        }
 
         if (ir1_need_calculate_pf(pir1)) {
             generate_pf(flag_result, src0, src1);
@@ -953,7 +1074,9 @@ void generate_eflag_calculation(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
             !generate_common_of(flag_result, src0, src1, pir1)) {
             generate_of(flag_result, src0, src1, pir1);
         }
-        ra_free_temp(soft_result);
+        if (soft_result_handled) {
+            ra_free_temp(soft_result);
+        }
         return;
     }
 
@@ -967,26 +1090,6 @@ void generate_eflag_calculation(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
         }
         return;
     }
-#ifdef CONFIG_LATX_XCOMISX_OPT
-    uint8_t use_flags =
-        ir1_get_eflag_def(pir1) & (~(lsenv->tr_data->curr_ir1_skipped_eflags));
-    switch (ir1_opcode(pir1)) {
-    case WRAP(COMISS):
-        generate_xcomisx(src0, src1, false, true, use_flags);
-        return;
-    case WRAP(COMISD):
-        generate_xcomisx(src0, src1, true, true, use_flags);
-        return;
-    case WRAP(UCOMISS):
-        generate_xcomisx(src0, src1, false, false, use_flags);
-        return;
-    case WRAP(UCOMISD):
-        generate_xcomisx(src0, src1, true, false, use_flags);
-        return;
-    default:
-        break;
-    }
-#endif
     /* extension mode does not affect pf, af and zf */
     if (ir1_need_calculate_pf(pir1))
         generate_pf(dest, src0, src1);
