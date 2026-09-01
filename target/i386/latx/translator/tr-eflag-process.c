@@ -342,6 +342,319 @@ static void generate_of(IR2_OPND dest, IR2_OPND src0,
               ir1_name(ir1_opcode(pir1)));
 }
 
+static IR2_OPND soft_flag_operand(IR2_OPND value, IR1_INST *pir1, int index,
+                                  int size, bool *allocated)
+{
+    IR2_OPND result = value;
+
+    *allocated = false;
+    if (ir2_opnd_is_imm(&value)) {
+        result = ra_alloc_itemp();
+        load_ireg_from_ir1_2(result, ir1_get_opnd(pir1, index),
+                             ZERO_EXTENSION, false);
+        *allocated = true;
+    } else if (size < 64) {
+        result = ra_alloc_itemp();
+        la_bstrpick_d(result, value, size - 1, 0);
+        *allocated = true;
+    }
+    return result;
+}
+
+static IR2_OPND generate_common_result(IR2_OPND src0, IR2_OPND src1,
+                                       IR1_INST *pir1, bool *handled)
+{
+    IR2_OPND lhs;
+    IR2_OPND rhs;
+    IR2_OPND result;
+    bool lhs_allocated;
+    bool rhs_allocated;
+    int size = ir1_opnd_size(ir1_get_opnd(pir1, 0));
+
+    *handled = true;
+    lhs = soft_flag_operand(src0, pir1, 0, size, &lhs_allocated);
+    rhs = soft_flag_operand(src1, pir1, 1, size, &rhs_allocated);
+    if (ir1_opcode(pir1) == dt_X86_INS_INC ||
+        ir1_opcode(pir1) == dt_X86_INS_DEC) {
+        if (rhs_allocated) {
+            ra_free_temp(rhs);
+        }
+        rhs = ra_alloc_itemp();
+        li_d(rhs, 1);
+        rhs_allocated = true;
+    }
+    result = ra_alloc_itemp();
+
+    switch (ir1_opcode(pir1)) {
+    case dt_X86_INS_XADD:
+    case dt_X86_INS_ADD:
+    case dt_X86_INS_INC:
+        la_add_d(result, lhs, rhs);
+        break;
+    case dt_X86_INS_ADC: {
+        IR2_OPND carry = ra_alloc_itemp();
+        latx_read_eflags(carry, CF_USEDEF_BIT);
+        la_andi(carry, carry, CF_BIT);
+        la_add_d(result, lhs, rhs);
+        la_add_d(result, result, carry);
+        ra_free_temp(carry);
+        break;
+    }
+    case dt_X86_INS_CMPSB:
+    case dt_X86_INS_CMPSW:
+    case dt_X86_INS_CMPSD:
+    case dt_X86_INS_CMPSQ:
+    case dt_X86_INS_SCASB:
+    case dt_X86_INS_SCASW:
+    case dt_X86_INS_SCASD:
+    case dt_X86_INS_SCASQ:
+    case dt_X86_INS_CMPXCHG:
+    case dt_X86_INS_NEG:
+    case dt_X86_INS_CMP:
+    case dt_X86_INS_SUB:
+    case dt_X86_INS_DEC:
+        la_sub_d(result, lhs, rhs);
+        break;
+    case dt_X86_INS_SBB: {
+        IR2_OPND carry = ra_alloc_itemp();
+        latx_read_eflags(carry, CF_USEDEF_BIT);
+        la_andi(carry, carry, CF_BIT);
+        la_sub_d(result, lhs, rhs);
+        la_sub_d(result, result, carry);
+        ra_free_temp(carry);
+        break;
+    }
+    case dt_X86_INS_TEST:
+    case dt_X86_INS_AND:
+    case dt_X86_INS_ANDN:
+        la_and(result, lhs, rhs);
+        break;
+    case dt_X86_INS_XOR:
+        la_xor(result, lhs, rhs);
+        break;
+    case dt_X86_INS_OR:
+        la_or(result, lhs, rhs);
+        break;
+    default:
+        *handled = false;
+        la_or(result, zero_ir2_opnd, zero_ir2_opnd);
+        break;
+    }
+    if (size < 64) {
+        la_bstrpick_d(result, result, size - 1, 0);
+    }
+    if (rhs_allocated) {
+        ra_free_temp(rhs);
+    }
+    if (lhs_allocated) {
+        ra_free_temp(lhs);
+    }
+    return result;
+}
+
+static bool generate_common_cf(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
+                               IR1_INST *pir1)
+{
+    IR2_OPND result;
+    IR2_OPND lhs;
+    IR2_OPND rhs;
+    IR2_OPND cf;
+    bool result_allocated;
+    bool lhs_allocated;
+    bool rhs_allocated;
+    int size = ir1_opnd_size(ir1_get_opnd(pir1, 0));
+    bool handled = true;
+
+    result = soft_flag_operand(dest, pir1, 0, size, &result_allocated);
+    lhs = soft_flag_operand(src0, pir1, 0, size, &lhs_allocated);
+    rhs = soft_flag_operand(src1, pir1, 1, size, &rhs_allocated);
+    if (ir1_opcode(pir1) == dt_X86_INS_INC ||
+        ir1_opcode(pir1) == dt_X86_INS_DEC) {
+        if (rhs_allocated) {
+            ra_free_temp(rhs);
+        }
+        rhs = ra_alloc_itemp();
+        li_d(rhs, 1);
+        rhs_allocated = true;
+    }
+    cf = ra_alloc_itemp();
+
+    switch (ir1_opcode(pir1)) {
+    case dt_X86_INS_XADD:
+    case dt_X86_INS_ADD:
+        la_sltu(cf, result, lhs);
+        break;
+    case dt_X86_INS_ADC: {
+        IR2_OPND partial = ra_alloc_itemp();
+        IR2_OPND first = ra_alloc_itemp();
+        IR2_OPND second = ra_alloc_itemp();
+        la_add_d(partial, lhs, rhs);
+        if (size < 64) {
+            la_bstrpick_d(partial, partial, size - 1, 0);
+        }
+        la_sltu(first, partial, lhs);
+        la_sltu(second, result, partial);
+        la_or(cf, first, second);
+        ra_free_temp(second);
+        ra_free_temp(first);
+        ra_free_temp(partial);
+        break;
+    }
+    case dt_X86_INS_CMPSB:
+    case dt_X86_INS_CMPSW:
+    case dt_X86_INS_CMPSD:
+    case dt_X86_INS_CMPSQ:
+    case dt_X86_INS_SCASB:
+    case dt_X86_INS_SCASW:
+    case dt_X86_INS_SCASD:
+    case dt_X86_INS_SCASQ:
+    case dt_X86_INS_CMPXCHG:
+    case dt_X86_INS_NEG:
+    case dt_X86_INS_CMP:
+    case dt_X86_INS_SUB:
+        la_sltu(cf, lhs, rhs);
+        break;
+    case dt_X86_INS_SBB: {
+        IR2_OPND partial = ra_alloc_itemp();
+        IR2_OPND first = ra_alloc_itemp();
+        IR2_OPND second = ra_alloc_itemp();
+        IR2_OPND carry = ra_alloc_itemp();
+        la_sub_d(partial, lhs, rhs);
+        if (size < 64) {
+            la_bstrpick_d(partial, partial, size - 1, 0);
+        }
+        la_sltu(first, lhs, rhs);
+        latx_read_eflags(carry, CF_USEDEF_BIT);
+        la_andi(carry, carry, CF_BIT);
+        la_sltu(second, partial, carry);
+        la_or(cf, first, second);
+        ra_free_temp(carry);
+        ra_free_temp(second);
+        ra_free_temp(first);
+        ra_free_temp(partial);
+        break;
+    }
+    case dt_X86_INS_TEST:
+    case dt_X86_INS_XOR:
+    case dt_X86_INS_AND:
+    case dt_X86_INS_ANDN:
+    case dt_X86_INS_OR:
+        la_or(cf, zero_ir2_opnd, zero_ir2_opnd);
+        break;
+    case dt_X86_INS_INC:
+    case dt_X86_INS_DEC:
+        handled = true; /* INC/DEC preserve CF. */
+        goto out;
+    default:
+        handled = false;
+        goto out;
+    }
+    latx_write_eflags(cf, CF_USEDEF_BIT);
+
+out:
+    ra_free_temp(cf);
+    if (rhs_allocated) {
+        ra_free_temp(rhs);
+    }
+    if (lhs_allocated) {
+        ra_free_temp(lhs);
+    }
+    if (result_allocated) {
+        ra_free_temp(result);
+    }
+    return handled;
+}
+
+static bool generate_common_of(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
+                               IR1_INST *pir1)
+{
+    IR2_OPND result;
+    IR2_OPND lhs;
+    IR2_OPND rhs;
+    IR2_OPND first;
+    IR2_OPND second;
+    IR2_OPND of;
+    bool result_allocated;
+    bool lhs_allocated;
+    bool rhs_allocated;
+    int size = ir1_opnd_size(ir1_get_opnd(pir1, 0));
+    bool handled = true;
+
+    result = soft_flag_operand(dest, pir1, 0, size, &result_allocated);
+    lhs = soft_flag_operand(src0, pir1, 0, size, &lhs_allocated);
+    rhs = soft_flag_operand(src1, pir1, 1, size, &rhs_allocated);
+    if (ir1_opcode(pir1) == dt_X86_INS_INC ||
+        ir1_opcode(pir1) == dt_X86_INS_DEC) {
+        if (rhs_allocated) {
+            ra_free_temp(rhs);
+        }
+        rhs = ra_alloc_itemp();
+        li_d(rhs, 1);
+        rhs_allocated = true;
+    }
+    first = ra_alloc_itemp();
+    second = ra_alloc_itemp();
+    of = ra_alloc_itemp();
+
+    switch (ir1_opcode(pir1)) {
+    case dt_X86_INS_XADD:
+    case dt_X86_INS_ADD:
+    case dt_X86_INS_ADC:
+    case dt_X86_INS_INC:
+        la_xor(first, lhs, rhs);
+        la_nor(first, first, zero_ir2_opnd);
+        la_xor(second, lhs, result);
+        la_and(of, first, second);
+        break;
+    case dt_X86_INS_CMPSB:
+    case dt_X86_INS_CMPSW:
+    case dt_X86_INS_CMPSD:
+    case dt_X86_INS_CMPSQ:
+    case dt_X86_INS_SCASB:
+    case dt_X86_INS_SCASW:
+    case dt_X86_INS_SCASD:
+    case dt_X86_INS_SCASQ:
+    case dt_X86_INS_CMPXCHG:
+    case dt_X86_INS_NEG:
+    case dt_X86_INS_CMP:
+    case dt_X86_INS_SUB:
+    case dt_X86_INS_SBB:
+    case dt_X86_INS_DEC:
+        la_xor(first, lhs, rhs);
+        la_xor(second, lhs, result);
+        la_and(of, first, second);
+        break;
+    case dt_X86_INS_TEST:
+    case dt_X86_INS_XOR:
+    case dt_X86_INS_AND:
+    case dt_X86_INS_ANDN:
+    case dt_X86_INS_OR:
+        la_or(of, zero_ir2_opnd, zero_ir2_opnd);
+        break;
+    default:
+        handled = false;
+        goto out;
+    }
+    la_bstrpick_d(of, of, size - 1, size - 1);
+    la_slli_d(of, of, OF_BIT_INDEX);
+    latx_write_eflags(of, OF_USEDEF_BIT);
+
+out:
+    ra_free_temp(of);
+    ra_free_temp(second);
+    ra_free_temp(first);
+    if (rhs_allocated) {
+        ra_free_temp(rhs);
+    }
+    if (lhs_allocated) {
+        ra_free_temp(lhs);
+    }
+    if (result_allocated) {
+        ra_free_temp(result);
+    }
+    return handled;
+}
+
 static void generate_cf_not_sx(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1)
 {
 #if 0
@@ -470,6 +783,36 @@ void generate_eflag_calculation(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
 #endif
 
     if (!need_calc_flag) {
+        return;
+    }
+
+    if (!option_enable_lbt) {
+        bool soft_result_handled;
+        IR2_OPND soft_result =
+            generate_common_result(src0, src1, pir1, &soft_result_handled);
+        IR2_OPND flag_result = soft_result_handled ? soft_result : dest;
+
+        if (ir1_need_calculate_pf(pir1)) {
+            generate_pf(flag_result, src0, src1);
+        }
+        if (ir1_need_calculate_af(pir1)) {
+            generate_af(flag_result, src0, src1, pir1);
+        }
+        if (ir1_need_calculate_zf(pir1)) {
+            generate_zf(flag_result, src0, src1, pir1);
+        }
+        if (ir1_need_calculate_sf(pir1)) {
+            generate_sf(flag_result, src0, src1);
+        }
+        if (ir1_need_calculate_cf(pir1) &&
+            !generate_common_cf(flag_result, src0, src1, pir1)) {
+            generate_cf(flag_result, src0, src1, pir1);
+        }
+        if (ir1_need_calculate_of(pir1) &&
+            !generate_common_of(flag_result, src0, src1, pir1)) {
+            generate_of(flag_result, src0, src1, pir1);
+        }
+        ra_free_temp(soft_result);
         return;
     }
 
