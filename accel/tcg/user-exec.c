@@ -44,6 +44,7 @@
 #endif
 #ifdef CONFIG_LATX_DEBUG
 #include "latx-debug.h"
+#include "reg-map.h"
 #if defined(CONFIG_LATX_KZT)
 #include "debug.h"
 #endif
@@ -125,11 +126,15 @@ static void show_sig_x86_eflags(ucontext_t *uc)
     fprintf(stderr, "=================== EFLAGS ===================\n");
     unsigned int eflags;
 #if defined(__loongarch__)
-    __asm__ __volatile__ (
-            "    .word 0x17 << 18 | 0x3f << 10 | 0 << 5 | 0xc\n"
-            "    or %[eflags], $zero, $t0\n"
-            : [eflags] "=&r" (eflags)
-            : );
+    if (latx_no_lbt_mode_enabled()) {
+        eflags = UC_GR(uc)[la_a6];
+    } else {
+        __asm__ __volatile__ (
+                "    .word 0x17 << 18 | 0x3f << 10 | 0 << 5 | 0xc\n"
+                "    or %[eflags], $zero, $t0\n"
+                : [eflags] "=&r" (eflags)
+                : );
+    }
 #elif defined(__mips__)
     __asm__ __volatile__ (
             "    .word ((0x70004034) | (0xc) << 16) | (0x3f) << 6\n"
