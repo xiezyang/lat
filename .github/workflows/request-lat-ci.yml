@@ -4,12 +4,25 @@ on:
   push:
     branches-ignore:
       - master
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
   workflow_dispatch:
     inputs:
       pr_number:
-        description: "Open pull request number in lat-opensource/lat"
+        description: "Open pull request number in the selected target repository"
         required: true
         type: string
+      target_repository:
+        description: "PR target: xiezyang/lat for a fork-only PR, or lat-opensource/lat"
+        required: true
+        type: choice
+        default: lat-opensource/lat
+        options:
+          - xiezyang/lat
+          - lat-opensource/lat
       requested_suite_keys:
         description: "Optional comma-separated extra suites, for example spec2000/164-gzip"
         required: false
@@ -20,9 +33,16 @@ permissions:
   contents: read
   pull-requests: read
 
+concurrency:
+  group: request-lat-ci-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
-  resolve-upstream-pr:
-    name: Resolve the upstream pull request
+  resolve-pr:
+    name: Resolve the pull request
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     outputs:
       should_dispatch: ${{ steps.resolve.outputs.should_dispatch }}
@@ -31,14 +51,18 @@ jobs:
       head_sha: ${{ steps.resolve.outputs.head_sha }}
       base_sha: ${{ steps.resolve.outputs.base_sha }}
       head_ref: ${{ steps.resolve.outputs.head_ref }}
+      target_repository: ${{ steps.resolve.outputs.target_repository }}
 
     steps:
-      - name: Find and validate the authoritative upstream pull request
+      - name: Find and validate the authoritative pull request
         id: resolve
         env:
           EVENT_NAME: ${{ github.event_name }}
           BRANCH_NAME: ${{ github.ref_name }}
+          PR_EVENT_NUMBER: ${{ github.event.pull_request.number }}
+          PR_EVENT_TARGET_REPOSITORY: ${{ github.repository }}
           MANUAL_PR_NUMBER: ${{ inputs.pr_number }}
+          MANUAL_TARGET_REPOSITORY: ${{ inputs.target_repository }}
         run: |
           python3 - <<'PY'
           import json
@@ -48,8 +72,8 @@ jobs:
           import urllib.parse
           import urllib.request
 
-          upstream = "lat-opensource/lat"
           source = "xiezyang/lat"
+          allowed_targets = (source, "lat-opensource/lat")
           event_name = os.environ["EVENT_NAME"]
           branch = os.environ["BRANCH_NAME"]
 
@@ -61,10 +85,19 @@ jobs:
               with urllib.request.urlopen(request, timeout=30) as response:
                   return json.load(response)
 
-          if event_name == "push":
-              matches = get_json(f"repos/{upstream}/pulls", {"state": "open", "head": f"xiezyang:{branch}", "per_page": "2"})
+          if event_name == "pull_request":
+              value = os.environ["PR_EVENT_NUMBER"].strip()
+              if not re.fullmatch(r"[1-9][0-9]*", value):
+                  raise SystemExit("pull_request event does not contain a valid PR number")
+              pr_number = int(value)
+              target = os.environ["PR_EVENT_TARGET_REPOSITORY"].strip()
+              if target != source:
+                  raise SystemExit("pull_request target_repository must be xiezyang/lat")
+          elif event_name == "push":
+              target = "lat-opensource/lat"
+              matches = get_json(f"repos/{target}/pulls", {"state": "open", "head": f"xiezyang:{branch}", "per_page": "2"})
               if not isinstance(matches, list) or len(matches) != 1:
-                  print(f"No unique open upstream PR for xiezyang:{branch}; CI request skipped.")
+                  print(f"No unique open {target} PR for xiezyang:{branch}; CI request skipped.")
                   with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
                       print("should_dispatch=false", file=output)
                   raise SystemExit(0)
@@ -74,20 +107,23 @@ jobs:
               if not re.fullmatch(r"[1-9][0-9]*", value):
                   raise SystemExit("pr_number must be a positive integer")
               pr_number = int(value)
+              target = os.environ["MANUAL_TARGET_REPOSITORY"].strip()
+              if target not in allowed_targets:
+                  raise SystemExit(f"target_repository must be one of: {', '.join(allowed_targets)}")
 
-          pr = get_json(f"repos/{upstream}/pulls/{pr_number}")
+          pr = get_json(f"repos/{target}/pulls/{pr_number}")
           head = pr.get("head") if isinstance(pr, dict) else None
           base = pr.get("base") if isinstance(pr, dict) else None
           head_repo = head.get("repo") if isinstance(head, dict) else None
           base_repo = base.get("repo") if isinstance(base, dict) else None
           if not isinstance(head_repo, dict) or head_repo.get("full_name") != source:
-              raise SystemExit("The upstream PR head must be xiezyang/lat")
-          if not isinstance(base_repo, dict) or base_repo.get("full_name") != upstream:
-              raise SystemExit("The upstream PR base must be lat-opensource/lat")
+              raise SystemExit("The PR head must be xiezyang/lat")
+          if not isinstance(base_repo, dict) or base_repo.get("full_name") != target:
+              raise SystemExit("The PR base repository does not match target_repository")
           if pr.get("state") != "open":
-              raise SystemExit("The upstream PR must be open")
+              raise SystemExit("The PR must be open")
           if event_name == "push" and head.get("ref") != branch:
-              raise SystemExit("The upstream PR head no longer matches the pushed branch")
+              raise SystemExit("The PR head no longer matches the pushed branch")
           values = {
               "should_dispatch": "true",
               "source_repository_id": str(head_repo["id"]),
@@ -95,28 +131,30 @@ jobs:
               "head_sha": str(head["sha"]),
               "base_sha": str(base["sha"]),
               "head_ref": str(head["ref"]),
+              "target_repository": target,
           }
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               for key, value in values.items():
                   print(f"{key}={value}", file=output)
-          print(f"Resolved upstream PR #{pr['number']} at {head['sha']}")
+          print(f"Resolved {target} PR #{pr['number']} at {head['sha']}")
           PY
 
   dispatch-lat-ci-hub:
     name: Start LAT CI suite selection
-    needs: resolve-upstream-pr
-    if: needs.resolve-upstream-pr.outputs.should_dispatch == 'true'
+    needs: resolve-pr
+    if: needs.resolve-pr.outputs.should_dispatch == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Dispatch the lat-ci-hub workflow
         env:
           DISPATCH_TOKEN: ${{ secrets.LAT_CI_HUB_DISPATCH_TOKEN }}
-          REQUEST_KIND: ${{ github.event_name == 'push' && 'automatic-pr' || 'manual' }}
-          SOURCE_REPOSITORY_ID: ${{ needs.resolve-upstream-pr.outputs.source_repository_id }}
-          PR_NUMBER: ${{ needs.resolve-upstream-pr.outputs.pr_number }}
-          HEAD_SHA: ${{ needs.resolve-upstream-pr.outputs.head_sha }}
-          BASE_SHA: ${{ needs.resolve-upstream-pr.outputs.base_sha }}
-          HEAD_REF: ${{ needs.resolve-upstream-pr.outputs.head_ref }}
+          REQUEST_KIND: ${{ github.event_name == 'workflow_dispatch' && 'manual' || 'automatic-pr' }}
+          SOURCE_REPOSITORY_ID: ${{ needs.resolve-pr.outputs.source_repository_id }}
+          PR_NUMBER: ${{ needs.resolve-pr.outputs.pr_number }}
+          HEAD_SHA: ${{ needs.resolve-pr.outputs.head_sha }}
+          BASE_SHA: ${{ needs.resolve-pr.outputs.base_sha }}
+          HEAD_REF: ${{ needs.resolve-pr.outputs.head_ref }}
+          TARGET_REPOSITORY: ${{ needs.resolve-pr.outputs.target_repository }}
           REQUESTED_SUITE_KEYS: ${{ inputs.requested_suite_keys }}
           REQUESTER: ${{ github.actor }}
         run: |
@@ -134,6 +172,7 @@ jobs:
                   "request_kind": os.environ["REQUEST_KIND"],
                   "source_repository": "xiezyang/lat",
                   "source_repository_id": os.environ["SOURCE_REPOSITORY_ID"],
+                  "target_repository": os.environ["TARGET_REPOSITORY"],
                   "pr_number": os.environ["PR_NUMBER"],
                   "head_sha": os.environ["HEAD_SHA"],
                   "base_sha": os.environ["BASE_SHA"],
