@@ -91,7 +91,7 @@ bool translate_xor(IR1_INST *pir1)
     }
 
 #ifdef CONFIG_LATX_LLSC
-    if (is_lock) {
+    if (is_lock && !latx_no_lbt_mode_enabled()) {
         return translate_lock_xor(pir1);
     }
 #endif
@@ -236,7 +236,7 @@ bool translate_and(IR1_INST *pir1)
     }
 
 #ifdef CONFIG_LATX_LLSC
-    if (is_lock) {
+    if (is_lock && !latx_no_lbt_mode_enabled()) {
         return translate_lock_and(pir1);
     }
 #endif
@@ -358,7 +358,7 @@ bool translate_or(IR1_INST *pir1)
     }
 
 #ifdef CONFIG_LATX_LLSC
-    if (is_lock) {
+    if (is_lock && !latx_no_lbt_mode_enabled()) {
         return translate_lock_or(pir1);
     }
 #endif
@@ -445,7 +445,7 @@ bool translate_not(IR1_INST *pir1)
     }
 
 #ifdef CONFIG_LATX_LLSC
-    if (is_lock) {
+    if (is_lock && !latx_no_lbt_mode_enabled()) {
         return translate_lock_not(pir1);
     }
 #endif

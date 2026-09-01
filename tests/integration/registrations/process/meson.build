@@ -47,6 +47,14 @@ if 'x86_64-linux-user' in target_dirs
       files('../../unaligned-v128.S'),
     ],
   }]
+  latx_integration_tests += [{
+    'name': 'test-lock-cmpxchg-no-lbt',
+    'runner': find_program('../../test-lock-cmpxchg-no-lbt.sh'),
+    'args': [
+      emulators['latx-x86_64'],
+      files('../../lock-cmpxchg-no-lbt.S'),
+    ],
+  }]
   if 'CONFIG_LATX_KZT' in config_host
     latx_integration_tests += [{
       'name': 'test-int3-sigtrap-rip',

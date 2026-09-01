@@ -328,6 +328,7 @@ void latx_apply_no_lbt_restrictions(void)
     option_tunnel_lib = 0;
     option_vpaes = 0;
     option_fputag = 0;
+    option_fast_atomic = 0;
     option_set_rounding_opt = 0;
 #ifdef CONFIG_LATX_INSTS_PATTERN
     option_instptn = 0;
