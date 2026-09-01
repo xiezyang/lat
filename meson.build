@@ -106,6 +106,9 @@ if latx_version == ''
 endif
 
 add_project_arguments('-DLATX_VERSION="' + latx_version + '"', language: ['c', 'cpp'])
+if get_option('latx_field_diagnostics')
+  add_project_arguments('-DCONFIG_LATX_FIELD_DIAGNOSTICS', language: 'c')
+endif
 
 # The path to glib.h is added to all compilation commands.  This was
 # grandfathered in from the QEMU Makefiles.
