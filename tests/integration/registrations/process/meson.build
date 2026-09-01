@@ -71,6 +71,15 @@ if 'x86_64-linux-user' in target_dirs
       files('../../lua-number-conversion-no-lbt.S'),
     ],
   }]
+  latx_integration_tests += [{
+    'name': 'test-lock-ordering-no-lbt',
+    'runner': find_program('../../test-lock-ordering-no-lbt.sh'),
+    'args': [
+      emulators['latx-x86_64'],
+      files('../../latx-lock-xadd-stress.S'),
+      files('../../latx-lock-ordering-stress.S'),
+    ],
+  }]
   if 'CONFIG_LATX_KZT' in config_host
     latx_integration_tests += [{
       'name': 'test-int3-sigtrap-rip',
