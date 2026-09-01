@@ -435,6 +435,29 @@ static IR2_OPND generate_common_result(IR2_OPND src0, IR2_OPND src1,
     case dt_X86_INS_OR:
         la_or(result, lhs, rhs);
         break;
+    case dt_X86_INS_SAL:
+    case dt_X86_INS_SHL:
+    case dt_X86_INS_SHR:
+    case dt_X86_INS_SAR: {
+        IR2_OPND count = ra_alloc_itemp();
+        la_andi(count, rhs, size == 64 ? 0x3f : 0x1f);
+        if (ir1_opcode(pir1) == dt_X86_INS_SAL ||
+            ir1_opcode(pir1) == dt_X86_INS_SHL) {
+            la_sll_d(result, lhs, count);
+        } else if (ir1_opcode(pir1) == dt_X86_INS_SHR) {
+            la_srl_d(result, lhs, count);
+        } else {
+            if (size < 64) {
+                la_slli_d(result, lhs, 64 - size);
+                la_srai_d(result, result, 64 - size);
+                la_sra_d(result, result, count);
+            } else {
+                la_sra_d(result, lhs, count);
+            }
+        }
+        ra_free_temp(count);
+        break;
+    }
     default:
         *handled = false;
         la_or(result, zero_ir2_opnd, zero_ir2_opnd);
@@ -450,6 +473,60 @@ static IR2_OPND generate_common_result(IR2_OPND src0, IR2_OPND src1,
         ra_free_temp(lhs);
     }
     return result;
+}
+
+static void generate_multiply_overflow(IR2_OPND overflow, IR2_OPND src0,
+                                       IR2_OPND src1, IR1_INST *pir1)
+{
+    IR2_OPND lhs = ra_alloc_itemp();
+    IR2_OPND rhs = ra_alloc_itemp();
+    IR2_OPND product = ra_alloc_itemp();
+    IR2_OPND check = ra_alloc_itemp();
+    int size = ir1_opnd_size(ir1_get_opnd(pir1, 0));
+    bool is_signed = ir1_opcode(pir1) == dt_X86_INS_IMUL;
+
+    la_or(lhs, src0, zero_ir2_opnd);
+    if (ir2_opnd_is_imm(&src1)) {
+        int src1_index = ir1_opnd_num(pir1) == 3 ? 2 : 1;
+        load_ireg_from_ir1_2(rhs, ir1_get_opnd(pir1, src1_index),
+                             is_signed ? SIGN_EXTENSION : ZERO_EXTENSION,
+                             false);
+    } else {
+        la_or(rhs, src1, zero_ir2_opnd);
+    }
+
+    if (size < 64) {
+        la_bstrpick_d(lhs, lhs, size - 1, 0);
+        la_bstrpick_d(rhs, rhs, size - 1, 0);
+        if (is_signed) {
+            la_slli_d(lhs, lhs, 64 - size);
+            la_srai_d(lhs, lhs, 64 - size);
+            la_slli_d(rhs, rhs, 64 - size);
+            la_srai_d(rhs, rhs, 64 - size);
+        }
+        la_mul_d(product, lhs, rhs);
+        if (is_signed) {
+            la_bstrpick_d(check, product, size - 1, 0);
+            la_slli_d(check, check, 64 - size);
+            la_srai_d(check, check, 64 - size);
+            la_xor(check, check, product);
+        } else {
+            la_srli_d(check, product, size);
+        }
+    } else if (is_signed) {
+        la_mul_d(product, lhs, rhs);
+        la_mulh_d(check, lhs, rhs);
+        la_srai_d(product, product, 63);
+        la_xor(check, check, product);
+    } else {
+        la_mulh_du(check, lhs, rhs);
+    }
+    la_sltu(overflow, zero_ir2_opnd, check);
+
+    ra_free_temp(check);
+    ra_free_temp(product);
+    ra_free_temp(rhs);
+    ra_free_temp(lhs);
 }
 
 static bool generate_common_cf(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
@@ -541,6 +618,30 @@ static bool generate_common_cf(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
     case dt_X86_INS_OR:
         la_or(cf, zero_ir2_opnd, zero_ir2_opnd);
         break;
+    case dt_X86_INS_SAL:
+    case dt_X86_INS_SHL:
+    case dt_X86_INS_SHR:
+    case dt_X86_INS_SAR: {
+        IR2_OPND count = ra_alloc_itemp();
+        IR2_OPND shift = ra_alloc_itemp();
+        la_andi(count, rhs, size == 64 ? 0x3f : 0x1f);
+        if (ir1_opcode(pir1) == dt_X86_INS_SAL ||
+            ir1_opcode(pir1) == dt_X86_INS_SHL) {
+            li_d(shift, size);
+            la_sub_d(shift, shift, count);
+        } else {
+            la_addi_d(shift, count, -1);
+        }
+        la_srl_d(cf, lhs, shift);
+        la_andi(cf, cf, 1);
+        ra_free_temp(shift);
+        ra_free_temp(count);
+        break;
+    }
+    case dt_X86_INS_MUL:
+    case dt_X86_INS_IMUL:
+        generate_multiply_overflow(cf, src0, src1, pir1);
+        break;
     case dt_X86_INS_INC:
     case dt_X86_INS_DEC:
         handled = true; /* INC/DEC preserve CF. */
@@ -631,6 +732,46 @@ static bool generate_common_of(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
     case dt_X86_INS_OR:
         la_or(of, zero_ir2_opnd, zero_ir2_opnd);
         break;
+    case dt_X86_INS_SAL:
+    case dt_X86_INS_SHL:
+    case dt_X86_INS_SHR:
+    case dt_X86_INS_SAR: {
+        IR2_OPND count = ra_alloc_itemp();
+        IR2_OPND one = ra_alloc_itemp();
+        IR2_OPND done = ra_alloc_label();
+        la_andi(count, rhs, size == 64 ? 0x3f : 0x1f);
+        li_d(one, 1);
+        la_bne(count, one, done);
+        if (ir1_opcode(pir1) == dt_X86_INS_SAL ||
+            ir1_opcode(pir1) == dt_X86_INS_SHL) {
+            IR2_OPND cf = ra_alloc_itemp();
+            IR2_OPND msb = ra_alloc_itemp();
+            latx_read_eflags(cf, CF_USEDEF_BIT);
+            la_andi(cf, cf, CF_BIT);
+            la_bstrpick_d(msb, result, size - 1, size - 1);
+            la_xor(of, msb, cf);
+            ra_free_temp(msb);
+            ra_free_temp(cf);
+        } else if (ir1_opcode(pir1) == dt_X86_INS_SHR) {
+            la_bstrpick_d(of, lhs, size - 1, size - 1);
+        } else {
+            la_or(of, zero_ir2_opnd, zero_ir2_opnd);
+        }
+        la_slli_d(of, of, OF_BIT_INDEX);
+        latx_write_eflags(of, OF_USEDEF_BIT);
+        la_label(done);
+        ra_free_temp(one);
+        ra_free_temp(count);
+        handled = true;
+        goto out;
+    }
+    case dt_X86_INS_MUL:
+    case dt_X86_INS_IMUL:
+        generate_multiply_overflow(of, src0, src1, pir1);
+        la_slli_d(of, of, OF_BIT_INDEX);
+        latx_write_eflags(of, OF_USEDEF_BIT);
+        handled = true;
+        goto out;
     default:
         handled = false;
         goto out;
