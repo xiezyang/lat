@@ -15,6 +15,9 @@
 #if defined(CONFIG_LATX_KZT)
 #include "kzt-groups.h"
 #endif
+#if defined(__loongarch__)
+#include <asm/hwcap.h>
+#endif
 
 #if defined(CONFIG_LATX_KZT)
 int option_kzt = 0;
@@ -73,6 +76,9 @@ int option_dump_profile;
 int option_trace_tb;
 int option_trace_ir1;
 int option_latx_disassemble_trace_cmp;
+unsigned long option_host_hwcap;
+int option_host_hwcap_override;
+int option_no_lbt_mode;
 int option_debug_lative;
 int option_aot;
 int option_load_aot;
@@ -95,6 +101,7 @@ int option_softfpu_fast;
 int option_prlimit;
 int option_fputag;
 int option_save_xmm;
+int option_enable_lbt;
 int option_enable_lasx;
 int option_vpaes;
 int option_split_tb;
@@ -110,6 +117,7 @@ int option_fork_unlink;
 int option_set_rounding_opt;
 int option_cvt_opt;
 int option_fast_atomic;
+int option_tu = 1;
 char *option_wine_pe_fixed_base;
 char *option_wine_pe_fixed_address;
 int option_aot_pe_profile;
@@ -234,7 +242,12 @@ void options_init(void)
     option_trace_tb = 0;
     option_trace_ir1 = 0;
     option_latx_disassemble_trace_cmp = 0;
+    option_host_hwcap = 0;
+    option_host_hwcap_override = 0;
+    option_no_lbt_mode = 0;
+    option_enable_lbt = 1;
     option_enable_lasx = 1;
+    option_tu = 1;
     option_vpaes = 0;
 
     counter_tb_exec = 0;
@@ -285,6 +298,63 @@ void options_init(void)
         option_fast_atomic = 1;
     else
         option_fast_atomic = 0;
+}
+
+bool latx_parse_host_hwcap_arg(const char *arg, unsigned long *value)
+{
+    uint64_t parsed = 0;
+
+    if (!arg || !value) {
+        return false;
+    }
+    if (qemu_strtou64(arg, NULL, 0, &parsed)) {
+        return false;
+    }
+    *value = (unsigned long)parsed;
+    return (uint64_t)*value == parsed;
+}
+
+void latx_apply_no_lbt_restrictions(void)
+{
+    option_no_lbt_mode = 1;
+    option_enable_lbt = 0;
+    option_enable_lasx = 0;
+    option_tu = 0;
+    option_aot = 0;
+    option_load_aot = 0;
+    option_aot_wine = 0;
+    option_jr_ra = 0;
+    option_jr_ra_stack = 0;
+    option_tunnel_lib = 0;
+    option_vpaes = 0;
+    option_fputag = 0;
+    option_set_rounding_opt = 0;
+#ifdef CONFIG_LATX_INSTS_PATTERN
+    option_instptn = 0;
+#endif
+#ifdef CONFIG_LATX_AVX_OPT
+    option_avx_cpuid = 0;
+#endif
+#if defined(CONFIG_LATX_KZT)
+    option_kzt = 0;
+#endif
+}
+
+void latx_apply_host_hwcap(unsigned long hwcap)
+{
+    option_host_hwcap = hwcap;
+#if defined(__loongarch__)
+    option_enable_lbt = (hwcap & HWCAP_LOONGARCH_LBT_X86) != 0;
+    option_enable_lasx = (hwcap & HWCAP_LOONGARCH_LASX) != 0;
+#else
+    option_enable_lbt = 1;
+    option_enable_lasx = 1;
+#endif
+    option_no_lbt_mode = 0;
+    option_tu = 1;
+    if (!option_enable_lbt) {
+        latx_apply_no_lbt_restrictions();
+    }
 }
 
 bool latx_options_finalize(void)

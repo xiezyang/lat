@@ -1263,11 +1263,18 @@ bool is_tu_tb(TranslationBlock *tb)
 
 bool use_tu_jmp(TranslationBlock *tb)
 {
+    if (!latx_tu_enabled()) {
+        return false;
+    }
     return (tb->bool_flags & IS_TU_JMP) ? true : false;
 }
 
 void set_use_tu_jmp(TranslationBlock *tb)
 {
+    if (!latx_tu_enabled()) {
+        tb->bool_flags &= ~IS_TU_JMP;
+        return;
+    }
     tb->bool_flags |= IS_TU_JMP;
     tb->bool_flags &= ~IS_TU_SPLIT;
 }

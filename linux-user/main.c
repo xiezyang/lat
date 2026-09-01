@@ -630,6 +630,19 @@ static void handle_arg_optimize(const char *arg)
     options_parse_opt(arg);
 }
 
+static void handle_arg_latx_host_hwcap(const char *arg)
+{
+    unsigned long hwcap;
+
+    if (!latx_parse_host_hwcap_arg(arg, &hwcap)) {
+        fprintf(stderr, "LATX_HOST_HWCAP must be an unsigned integer mask (got '%s')\n",
+                arg ? arg : "(null)");
+        exit(EXIT_FAILURE);
+    }
+    option_host_hwcap_override = 1;
+    option_host_hwcap = hwcap;
+}
+
 static void handle_arg_latx_vpaes(const char *arg)
 {
     option_vpaes = strtol(arg, NULL, 0);
@@ -904,6 +917,8 @@ static const struct qemu_argument arg_table[] = {
 #ifdef CONFIG_LATX
     {"latx-optimize",   "LATX_OPTIMIZE",      false, handle_arg_optimize,
     "",           "specify enabled optimize type"},
+    {"latx-host-hwcap", "LATX_HOST_HWCAP", true, handle_arg_latx_host_hwcap,
+    "mask",       "override the detected host AT_HWCAP mask for LATX feature tests"},
     {"latx-vpaes",      "LATX_VPAES",         true,  handle_arg_latx_vpaes,
     "",           "enable vpaes AES translation"},
     {"latx-smc",        "LATX_SMC",         true,   handle_arg_latx_smc,
@@ -1340,24 +1355,21 @@ int main(int argc, char **argv, char **envp)
 #if defined(CONFIG_LATX) && defined(__loongarch__)
     /* Lets check hwcap */
     #include <asm/hwcap.h>
-    int need_cap, hwcap;
-    need_cap = HWCAP_LOONGARCH_LSX | HWCAP_LOONGARCH_LBT_X86;
+    int need_cap;
+    unsigned long hwcap;
+    need_cap = HWCAP_LOONGARCH_LSX;
     hwcap = qemu_getauxval(AT_HWCAP);
+    if (option_host_hwcap_override) {
+        hwcap = option_host_hwcap;
+    }
     if (need_cap != (hwcap & need_cap)) {
-        fprintf(stderr, "LAT needs LSX/LASX and LBT extension support.\n");
+        fprintf(stderr, "LAT needs LSX extension support.\n");
         fprintf(stderr, "Extension not found:");
         if (!(hwcap & HWCAP_LOONGARCH_LSX))
             fprintf(stderr, " LSX");
-        if (!(hwcap & HWCAP_LOONGARCH_LBT_X86))
-            fprintf(stderr, " LBT_X86");
         fprintf(stderr, ". Please check KERNEL and HARDWARE.\n");
     }
-    if (!(hwcap & HWCAP_LOONGARCH_LASX)) {
-        option_enable_lasx = 0;
-#ifdef CONFIG_LATX_AVX_OPT
-        option_avx_cpuid = 0;
-#endif
-    }
+    latx_apply_host_hwcap(hwcap);
 #endif
 
     envlist = envlist_create();
@@ -1447,6 +1459,17 @@ int main(int argc, char **argv, char **envp)
 
     /* set environment variables */
     options_set(target_argv);
+
+#if defined(CONFIG_LATX) && defined(__loongarch__)
+    /* Environment and command-line overrides take effect in options_set(). */
+    if (option_host_hwcap_override) {
+        latx_apply_host_hwcap(option_host_hwcap);
+    }
+    if (latx_no_lbt_mode_enabled()) {
+        fprintf(stderr,
+                "LATX: software state mode enabled (LSX=1 LASX=0 LBT_X86=0)\n");
+    }
+#endif
 
     if (!latx_options_finalize()) {
 #if defined(CONFIG_LATX_KZT)

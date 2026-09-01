@@ -34,6 +34,7 @@ extern int option_tu_link;
 #ifdef CONFIG_LATX_KZT
 #include "kzt-runtime.h"
 
+extern int option_kzt;
 extern int option_kzt_log;
 extern char *option_kzt_libs;
 extern char *option_kzt_error;
@@ -54,6 +55,10 @@ extern int option_trace_tb;
 extern int option_trace_ir1;
 extern int option_enable_fcsr_exc;
 extern int option_latx_disassemble_trace_cmp;
+extern unsigned long option_host_hwcap;
+extern int option_host_hwcap_override;
+extern int option_no_lbt_mode;
+extern int option_enable_lbt;
 extern int option_jr_ra;
 #define SMC_ILL_INST 0x1
 /* ld.w      $a1,$zero,0 */
@@ -108,12 +113,15 @@ extern int option_fork_unlink;
 extern int option_set_rounding_opt;
 extern int option_cvt_opt;
 extern int option_fast_atomic;
+extern int option_tu;
 static inline int latx_smc_default(void) { return 0x2 | 0x4; }
 static inline int latx_smc_inv_page(void) { return option_smc_opt == 0; }
 static inline int latx_smc_inv_tb(void) { return option_smc_opt != 0; }
 static inline int latx_smc_shmm(void) { return option_smc_opt & 0x2; }
 static inline void latx_smc_shmm_disable(void) { option_smc_opt &= ~0x2; }
 static inline int latx_smc_use_store_helper(void) { return option_smc_opt & 0x4; }
+static inline bool latx_no_lbt_mode_enabled(void) { return option_no_lbt_mode != 0; }
+static inline bool latx_tu_enabled(void) { return option_tu != 0; }
 
 extern unsigned long long counter_tb_exec;
 extern unsigned long long counter_tb_tr;
@@ -124,6 +132,7 @@ extern unsigned long long counter_mips_tr;
 #ifdef CONFIG_LATX
 #define ENVSUP_LATX \
     ENVFUN(LATX_OPTIMIZE, handle_arg_optimize) \
+    ENVFUN(LATX_HOST_HWCAP, handle_arg_latx_host_hwcap) \
     ENVFUN(LATX_VPAES, handle_arg_latx_vpaes) \
     ENVFUN(LATX_SMC, handle_arg_latx_smc) \
     ENVFUN(LATX_CLOSE_PARALLEL, handle_arg_latx_parallel) \
@@ -240,6 +249,9 @@ extern unsigned long long counter_mips_tr;
 void options_init(void);
 bool latx_options_finalize(void);
 void options_parse_opt(const char *opt);
+bool latx_parse_host_hwcap_arg(const char *arg, unsigned long *value);
+void latx_apply_host_hwcap(unsigned long hwcap);
+void latx_apply_no_lbt_restrictions(void);
 void options_parse_imm_reg(const char *bits);
 void options_parse_dump(const char *bits);
 void options_parse_show_tb(const char *pc);
