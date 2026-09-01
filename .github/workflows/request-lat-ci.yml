@@ -39,7 +39,7 @@ jobs:
     if: >-
       github.event_name != 'pull_request' ||
       github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, loongarch64, lat-ci-loongarch]
     outputs:
       should_dispatch: ${{ steps.resolve.outputs.should_dispatch }}
       source_repository_id: ${{ steps.resolve.outputs.source_repository_id }}
@@ -139,7 +139,7 @@ jobs:
     name: Start LAT CI suite selection
     needs: resolve-pr
     if: needs.resolve-pr.outputs.should_dispatch == 'true'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, loongarch64, lat-ci-loongarch]
     steps:
       - name: Dispatch the lat-ci-hub workflow
         env:
