@@ -63,6 +63,14 @@ if 'x86_64-linux-user' in target_dirs
       files('../../signal-xmm-no-lbt.S'),
     ],
   }]
+  latx_integration_tests += [{
+    'name': 'test-lua-number-conversion-no-lbt',
+    'runner': find_program('../../test-lua-number-conversion-no-lbt.sh'),
+    'args': [
+      emulators['latx-x86_64'],
+      files('../../lua-number-conversion-no-lbt.S'),
+    ],
+  }]
   if 'CONFIG_LATX_KZT' in config_host
     latx_integration_tests += [{
       'name': 'test-int3-sigtrap-rip',
