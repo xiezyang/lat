@@ -3208,7 +3208,7 @@ int generate_native_rotate_fpu_by(void *code_buf_addr)
 /* we have no inst to mov from gpr to top, so we have to be silly */
 void tr_load_top_from_env(void)
 {
-    if (option_softfpu) {
+    if (option_softfpu || !option_enable_lbt) {
         return;
     }
 
@@ -3222,7 +3222,7 @@ void tr_load_top_from_env(void)
     la_ld_h(top_opnd, env_ir2_opnd, offset);
 
     for (i = 0; i < 8; i++) {
-        la_x86mttop(i);
+        latx_write_top_const(i);
         la_beq(top_opnd, zero_ir2_opnd, label_exit);
         la_addi_w(top_opnd, top_opnd, -1);
     }
@@ -3232,7 +3232,10 @@ void tr_load_top_from_env(void)
 
 void tr_gen_top_mode_init(void)
 {
-    la_x86mttop(0);
+    if (!option_enable_lbt) {
+        return;
+    }
+    latx_write_top_const(0);
     la_x86settm();
 }
 
@@ -3470,6 +3473,9 @@ void tr_fpu_pop(void) { tr_fpu_inc(); }
 
 void tr_fpu_inc(void)
 {
+    if (!option_enable_lbt) {
+        return;
+    }
     if (option_fputag) {
         IR2_OPND tag_addr_opnd = ra_alloc_itemp();
         IR2_OPND temp = ra_alloc_itemp();
@@ -3492,6 +3498,9 @@ void tr_fpu_inc(void)
 
 void tr_fpu_dec(void)
 {
+    if (!option_enable_lbt) {
+        return;
+    }
     /* 1. top = top - 1 */
     la_x86dectop();
 
@@ -3512,11 +3521,17 @@ void tr_fpu_dec(void)
 
 void tr_fpu_enable_top_mode(void)
 {
+    if (option_softfpu || !option_enable_lbt) {
+        return;
+    }
     la_x86settm();
 }
 
 void tr_fpu_disable_top_mode(void)
 {
+    if (option_softfpu || !option_enable_lbt) {
+        return;
+    }
     la_x86clrtm();
 }
 
@@ -3825,10 +3840,12 @@ void tr_save_registers_to_env(uint8 gpr_to_save, uint8 fpr_to_save,
 
     /* save eflags */
     IR2_OPND eflags_opnd = ra_alloc_eflags();
-    IR2_OPND eflags_temp = ra_alloc_itemp();
-    la_x86mfflag(eflags_temp, 0x3f);
-    la_or(eflags_opnd, eflags_opnd, eflags_temp);
-    ra_free_temp(eflags_temp);
+    if (option_enable_lbt) {
+        IR2_OPND eflags_temp = ra_alloc_itemp();
+        la_x86mfflag(eflags_temp, 0x3f);
+        la_or(eflags_opnd, eflags_opnd, eflags_temp);
+        ra_free_temp(eflags_temp);
+    }
     lsassert(lsenv_offset_of_eflags(lsenv) >= -2048 &&
             lsenv_offset_of_eflags(lsenv) <= 2047);
     la_st_w(eflags_opnd, env_ir2_opnd,
@@ -3849,8 +3866,10 @@ void tr_load_registers_from_env(uint8 gpr_to_load, uint8 fpr_to_load,
     IR2_OPND eflags_opnd = ra_alloc_statics(S_EFLAGS);
     la_ld_w(eflags_opnd, env_ir2_opnd,
                         lsenv_offset_of_eflags(lsenv));
-    la_x86mtflag(eflags_opnd, 0x3f);
-    la_andi(eflags_opnd, eflags_opnd, 0x702);
+    if (option_enable_lbt) {
+        la_x86mtflag(eflags_opnd, 0x3f);
+        la_andi(eflags_opnd, eflags_opnd, 0x702);
+    }
 
     /* 4. virtual registers */
     for (i = 0; i < STATIC_NUM; ++i) {

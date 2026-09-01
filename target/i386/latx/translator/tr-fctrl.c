@@ -903,8 +903,10 @@ bool translate_fninit(IR1_INST *pir1) {
     la_st_w(temp, env_ir2_opnd, offset);
 
     /* clear top */
-    la_x86mttop(0);
-    la_x86settm();
+    latx_write_top_const(0);
+    if (option_enable_lbt) {
+        la_x86settm();
+    }
 
     /* set fptags */
     offset = lsenv_offset_of_tag_word(lsenv);

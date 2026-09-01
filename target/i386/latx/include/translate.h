@@ -14,6 +14,8 @@
 #include "la-append.h"
 #include "ir2-relocate.h"
 #include "macro-inst.h"
+#include "flag-lbt.h"
+#include "flag-lbt-wrap.h"
 
 #include "aot.h"
 

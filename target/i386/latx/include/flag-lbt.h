@@ -9,11 +9,20 @@
 
 #include "ir1.h"
 #include "ir2.h"
+#include <stdint.h>
 
 bool generate_eflag_by_lbt(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
                            IR1_INST *pir1, bool is_imm);
 
 void get_eflag_condition(IR2_OPND *value, IR1_INST *pir1);
+void latx_write_eflags(IR2_OPND value, uint8_t mask);
+void latx_read_eflags(IR2_OPND value, uint8_t mask);
+void latx_set_eflag_condition(IR2_OPND dest, int condition);
+void latx_write_top(IR2_OPND value);
+void latx_write_top_const(int value);
+void latx_read_top(IR2_OPND value);
+void latx_inc_top(void);
+void latx_dec_top(void);
 
 #define GENERATE_EFLAG_IR2_1(ir2_opcode) do{ \
     if (ir1_opnd_size(ir1_get_opnd(pir1, 0)) == 8) { \
