@@ -1292,10 +1292,32 @@ void set_fpu_rounding_mode(IR2_OPND rm)
     la_movgr2fcsr(fcsr3_ir2_opnd, rm);
 }
 
+static void latx_load_u64_bytes(IR2_OPND value, IR2_OPND byte,
+                                IR2_OPND address, int disp)
+{
+    la_ld_bu(value, address, disp + 7);
+    for (int i = 6; i >= 0; --i) {
+        la_slli_d(value, value, 8);
+        la_ld_bu(byte, address, disp + i);
+        la_or(value, value, byte);
+    }
+}
+
+static void latx_store_u64_bytes(IR2_OPND value, IR2_OPND address, int disp)
+{
+    for (int i = 0; i < 8; ++i) {
+        la_st_b(value, address, disp + i);
+        if (i != 7) {
+            la_srli_d(value, value, 8);
+        }
+    }
+}
+
 void latx_load_v128(IR2_OPND dest, IR2_OPND base, int disp)
 {
     IR2_OPND address;
     IR2_OPND scratch;
+    IR2_OPND byte;
     IR2_OPND scalar;
     IR2_OPND done;
 
@@ -1308,6 +1330,7 @@ void latx_load_v128(IR2_OPND dest, IR2_OPND base, int disp)
     done = ra_alloc_label();
     address = ra_alloc_itemp();
     scratch = ra_alloc_itemp();
+    byte = ra_alloc_itemp();
     if (si12_overflow(disp)) {
         li_d(scratch, disp);
         la_add_d(address, base, scratch);
@@ -1322,12 +1345,13 @@ void latx_load_v128(IR2_OPND dest, IR2_OPND base, int disp)
     la_b(done);
 
     la_label(scalar);
-    la_ld_d(scratch, address, 0);
+    latx_load_u64_bytes(scratch, byte, address, 0);
     la_vinsgr2vr_d(dest, scratch, 0);
-    la_ld_d(scratch, address, 8);
+    latx_load_u64_bytes(scratch, byte, address, 8);
     la_vinsgr2vr_d(dest, scratch, 1);
 
     la_label(done);
+    ra_free_temp(byte);
     ra_free_temp(scratch);
     ra_free_temp(address);
 }
@@ -1363,9 +1387,9 @@ void latx_store_v128(IR2_OPND src, IR2_OPND base, int disp)
 
     la_label(scalar);
     la_vpickve2gr_du(scratch, src, 0);
-    la_st_d(scratch, address, 0);
+    latx_store_u64_bytes(scratch, address, 0);
     la_vpickve2gr_du(scratch, src, 1);
-    la_st_d(scratch, address, 8);
+    latx_store_u64_bytes(scratch, address, 8);
 
     la_label(done);
     ra_free_temp(scratch);
