@@ -50,14 +50,18 @@ bool translate_vcvtpd2ps(IR1_INST * pir1) {
     if (ir1_opnd_size(ir1_get_opnd(pir1, 1)) == 128) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
+        IR2_OPND sources[] = { src };
 
+        lasx_fp_note_denormal_inputs(sources, 1, true, 2);
         la_vfcvt_s_d(dest, src, src);
         la_xvpickve_d(dest, dest, 0);
     } else if (ir1_opnd_size(ir1_get_opnd(pir1, 1)) == 256) {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src = load_freg256_from_ir1(ir1_get_opnd(pir1, 1));
         IR2_OPND temp = ra_alloc_ftemp();
+        IR2_OPND sources[] = { src };
 
+        lasx_fp_note_denormal_inputs(sources, 1, true, 4);
         la_xvpermi_q(temp, src, XVPERMI_Q_4_0(1, 1));
         la_vfcvt_s_d(temp, temp, src);
         set_high128_xreg_to_zero(temp);

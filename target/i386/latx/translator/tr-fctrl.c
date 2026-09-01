@@ -129,6 +129,21 @@ void update_fcsr_by_cw(IR2_OPND cw)
     ra_free_temp(fcsr);
 }
 
+static void update_fcsr_enable_by_mxcsr(IR2_OPND mxcsr)
+{
+    IR2_OPND fcsr = ra_alloc_itemp();
+    IR2_OPND masks = ra_alloc_itemp();
+
+    la_movfcsr2gr(fcsr, fcsr_ir2_opnd);
+    /* MXCSR exception masks occupy bits 7 through 12, unlike x87 CW. */
+    la_srli_w(masks, mxcsr, 7);
+    update_fcsr_enable(masks, fcsr);
+    la_movgr2fcsr(fcsr_ir2_opnd, fcsr);
+
+    ra_free_temp(masks);
+    ra_free_temp(fcsr);
+}
+
 void update_sw_by_fcsr(IR2_OPND sw_opnd)
 {
     int status_offset = lsenv_offset_of_status_word(lsenv);
@@ -164,6 +179,26 @@ void update_sw_by_fcsr(IR2_OPND sw_opnd)
     la_st_h(sw_opnd, env_ir2_opnd, status_offset);
     ra_free_temp(fcsr);
     ra_free_temp(temp1);
+}
+
+static void update_mxcsr_flags_by_fcsr(IR2_OPND mxcsr)
+{
+    IR2_OPND fcsr = ra_alloc_itemp();
+    IR2_OPND flags = ra_alloc_itemp();
+    IR2_OPND mapped = ra_alloc_itemp();
+
+    la_movfcsr2gr(fcsr, fcsr_ir2_opnd);
+    la_bitrev_w(flags, fcsr);
+    la_srli_d(flags, flags, 11);
+    la_bstrpick_d(mapped, flags, 0, 0);
+    la_or(mxcsr, mxcsr, mapped);
+    la_bstrpick_d(mapped, flags, 4, 1);
+    la_slli_d(mapped, mapped, 2);
+    la_or(mxcsr, mxcsr, mapped);
+
+    ra_free_temp(mapped);
+    ra_free_temp(flags);
+    ra_free_temp(fcsr);
 }
 
 bool translate_fnstcw(IR1_INST *pir1)
@@ -213,6 +248,7 @@ bool translate_stmxcsr(IR1_INST *pir1)
 
     lsassert(offset <= 0x7ff);
     la_ld_wu(mxcsr_opnd, env_ir2_opnd, offset);
+    update_mxcsr_flags_by_fcsr(mxcsr_opnd);
 
     /* 2. store  the value of the mxcsr register state to the dest_opnd */
     store_ireg_to_ir1(mxcsr_opnd, ir1_get_opnd(pir1, 0), false);
@@ -231,6 +267,7 @@ bool translate_ldmxcsr(IR1_INST *pir1)
     /* 2. store the value into the env->mxcsr */
     lsassert(offset <= 0x7ff);
     la_st_w(new_mxcsr, env_ir2_opnd, offset);
+    update_fcsr_enable_by_mxcsr(new_mxcsr);
 
     tr_gen_call_to_helper1((ADDR)update_mxcsr_status, 1,
                            LOAD_HELPER_UPDATE_MXCSR_STATUS);
