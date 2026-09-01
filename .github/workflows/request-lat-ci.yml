@@ -4,6 +4,11 @@ on:
   push:
     branches-ignore:
       - master
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
   workflow_dispatch:
     inputs:
       pr_number:
@@ -31,6 +36,9 @@ permissions:
 jobs:
   resolve-pr:
     name: Resolve the pull request
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     outputs:
       should_dispatch: ${{ steps.resolve.outputs.should_dispatch }}
@@ -47,6 +55,8 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           BRANCH_NAME: ${{ github.ref_name }}
+          PR_EVENT_NUMBER: ${{ github.event.pull_request.number }}
+          PR_EVENT_TARGET_REPOSITORY: ${{ github.repository }}
           MANUAL_PR_NUMBER: ${{ inputs.pr_number }}
           MANUAL_TARGET_REPOSITORY: ${{ inputs.target_repository }}
         run: |
@@ -71,20 +81,23 @@ jobs:
               with urllib.request.urlopen(request, timeout=30) as response:
                   return json.load(response)
 
-          if event_name == "push":
-              candidates = []
-              for target in allowed_targets:
-                  matches = get_json(f"repos/{target}/pulls", {"state": "open", "head": f"xiezyang:{branch}", "per_page": "2"})
-                  if not isinstance(matches, list):
-                      raise SystemExit(f"GitHub returned an invalid PR list for {target}")
-                  candidates.extend((target, item) for item in matches)
-              if len(candidates) != 1:
-                  print(f"Expected one open PR in {', '.join(allowed_targets)} for xiezyang:{branch}; CI request skipped.")
+          if event_name == "pull_request":
+              value = os.environ["PR_EVENT_NUMBER"].strip()
+              if not re.fullmatch(r"[1-9][0-9]*", value):
+                  raise SystemExit("pull_request event does not contain a valid PR number")
+              pr_number = int(value)
+              target = os.environ["PR_EVENT_TARGET_REPOSITORY"].strip()
+              if target != source:
+                  raise SystemExit("pull_request target_repository must be xiezyang/lat")
+          elif event_name == "push":
+              target = "lat-opensource/lat"
+              matches = get_json(f"repos/{target}/pulls", {"state": "open", "head": f"xiezyang:{branch}", "per_page": "2"})
+              if not isinstance(matches, list) or len(matches) != 1:
+                  print(f"No unique open {target} PR for xiezyang:{branch}; CI request skipped.")
                   with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
                       print("should_dispatch=false", file=output)
                   raise SystemExit(0)
-              target, item = candidates[0]
-              pr_number = item.get("number")
+              pr_number = matches[0].get("number")
           else:
               value = os.environ["MANUAL_PR_NUMBER"].strip()
               if not re.fullmatch(r"[1-9][0-9]*", value):
@@ -131,7 +144,7 @@ jobs:
       - name: Dispatch the lat-ci-hub workflow
         env:
           DISPATCH_TOKEN: ${{ secrets.LAT_CI_HUB_DISPATCH_TOKEN }}
-          REQUEST_KIND: ${{ github.event_name == 'push' && 'automatic-pr' || 'manual' }}
+          REQUEST_KIND: ${{ github.event_name == 'workflow_dispatch' && 'manual' || 'automatic-pr' }}
           SOURCE_REPOSITORY_ID: ${{ needs.resolve-pr.outputs.source_repository_id }}
           PR_NUMBER: ${{ needs.resolve-pr.outputs.pr_number }}
           HEAD_SHA: ${{ needs.resolve-pr.outputs.head_sha }}
