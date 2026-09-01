@@ -31,6 +31,9 @@ bool translate_vfmaddsubxxxps(IR1_INST * pir1) {
     IR1_OPCODE op = ir1_opcode(pir1);
 
     la_xvori_b(original_dest, dest, 0);
+    if (ir1_opnd_base_reg_num(opnd0) == ir1_opnd_base_reg_num(opnd1)) {
+        src1 = original_dest;
+    }
     switch (op) {
         case dt_X86_INS_VFMADDSUB132PS:
             temp1 = original_dest, temp2 = src2, temp3 = src1;
@@ -86,6 +89,9 @@ bool translate_vfmaddsubxxxpd(IR1_INST * pir1) {
     IR1_OPCODE op = ir1_opcode(pir1);
 
     la_xvori_b(original_dest, dest, 0);
+    if (ir1_opnd_base_reg_num(opnd0) == ir1_opnd_base_reg_num(opnd1)) {
+        src1 = original_dest;
+    }
     switch (op) {
         case dt_X86_INS_VFMADDSUB132PD:
             temp1 = original_dest, temp2 = src2, temp3 = src1;
@@ -139,6 +145,9 @@ bool translate_vfmsubaddxxxps(IR1_INST * pir1) {
     IR1_OPCODE op = ir1_opcode(pir1);
 
     la_xvori_b(original_dest, dest, 0);
+    if (ir1_opnd_base_reg_num(opnd0) == ir1_opnd_base_reg_num(opnd1)) {
+        src1 = original_dest;
+    }
     switch (op) {
         case dt_X86_INS_VFMSUBADD132PS:
             temp1 = original_dest, temp2 = src2, temp3 = src1;
@@ -194,6 +203,9 @@ bool translate_vfmsubaddxxxpd(IR1_INST * pir1) {
     IR1_OPCODE op = ir1_opcode(pir1);
 
     la_xvori_b(original_dest, dest, 0);
+    if (ir1_opnd_base_reg_num(opnd0) == ir1_opnd_base_reg_num(opnd1)) {
+        src1 = original_dest;
+    }
     switch (op) {
         case dt_X86_INS_VFMSUBADD132PD:
             temp1 = original_dest, temp2 = src2, temp3 = src1;
