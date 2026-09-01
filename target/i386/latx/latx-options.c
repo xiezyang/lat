@@ -79,6 +79,8 @@ int option_latx_disassemble_trace_cmp;
 unsigned long option_host_hwcap;
 int option_host_hwcap_override;
 int option_no_lbt_mode;
+
+extern uint32_t OPENSSL_loongarchcap_P __attribute__((weak));
 int option_debug_lative;
 int option_aot;
 int option_load_aot;
@@ -329,6 +331,9 @@ void latx_apply_no_lbt_restrictions(void)
     option_vpaes = 0;
     option_fputag = 0;
     option_fast_atomic = 0;
+    if (&OPENSSL_loongarchcap_P) {
+        OPENSSL_loongarchcap_P = 0;
+    }
     option_set_rounding_opt = 0;
 #ifdef CONFIG_LATX_INSTS_PATTERN
     option_instptn = 0;
