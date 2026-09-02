@@ -801,11 +801,15 @@ bool translate_vaddsubpd(IR1_INST * pir1) {
     IR2_OPND add_src2 = ra_alloc_ftemp();
     IR2_OPND sub_src1 = ra_alloc_ftemp();
     IR2_OPND sub_src2 = ra_alloc_ftemp();
+    IR2_OPND add_src1_for_nan = ra_alloc_ftemp();
+    IR2_OPND sub_src1_for_nan = ra_alloc_ftemp();
 
     la_xvpackev_d(sub_src1, src1, src1);
     la_xvpackev_d(sub_src2, src2, src2);
     la_xvpackod_d(add_src1, src1, src1);
     la_xvpackod_d(add_src2, src2, src2);
+    la_xvori_b(sub_src1_for_nan, sub_src1, 0);
+    la_xvori_b(add_src1_for_nan, add_src1, 0);
     if (ir1_opnd_is_xmm(opnd0)) {
         la_vfsub_d(sub_src1, sub_src1, sub_src2);
         la_vfadd_d(add_src1, add_src1, add_src2);
@@ -813,6 +817,10 @@ bool translate_vaddsubpd(IR1_INST * pir1) {
         la_xvfsub_d(sub_src1, sub_src1, sub_src2);
         la_xvfadd_d(add_src1, add_src1, add_src2);
     }
+    lasx_fp_fix_binary_nan(sub_src1, sub_src1_for_nan, sub_src2, true,
+                           ir1_opnd_is_xmm(opnd0) ? 2 : 4);
+    lasx_fp_fix_binary_nan(add_src1, add_src1_for_nan, add_src2, true,
+                           ir1_opnd_is_xmm(opnd0) ? 2 : 4);
     la_xvpackev_d(dest, add_src1, sub_src1);
     if (ir1_opnd_is_xmm(opnd0)) {
         set_high128_xreg_to_zero(dest);
@@ -838,10 +846,15 @@ bool translate_vaddsubps(IR1_INST * pir1) {
     IR2_OPND add_src2 = ra_alloc_ftemp();
     IR2_OPND sub_src1 = ra_alloc_ftemp();
     IR2_OPND sub_src2 = ra_alloc_ftemp();
+    IR2_OPND add_src1_for_nan = ra_alloc_ftemp();
+    IR2_OPND sub_src1_for_nan = ra_alloc_ftemp();
+
     la_xvpackev_w(sub_src1, src1, src1);
     la_xvpackev_w(sub_src2, src2, src2);
     la_xvpackod_w(add_src1, src1, src1);
     la_xvpackod_w(add_src2, src2, src2);
+    la_xvori_b(sub_src1_for_nan, sub_src1, 0);
+    la_xvori_b(add_src1_for_nan, add_src1, 0);
     if (ir1_opnd_is_xmm(opnd0)) {
         la_vfsub_s(sub_src1, sub_src1, sub_src2);
         la_vfadd_s(add_src1, add_src1, add_src2);
@@ -849,6 +862,10 @@ bool translate_vaddsubps(IR1_INST * pir1) {
         la_xvfsub_s(sub_src1, sub_src1, sub_src2);
         la_xvfadd_s(add_src1, add_src1, add_src2);
     }
+    lasx_fp_fix_binary_nan(sub_src1, sub_src1_for_nan, sub_src2, false,
+                           ir1_opnd_is_xmm(opnd0) ? 4 : 8);
+    lasx_fp_fix_binary_nan(add_src1, add_src1_for_nan, add_src2, false,
+                           ir1_opnd_is_xmm(opnd0) ? 4 : 8);
     la_xvpackev_w(dest, add_src1, sub_src1);
     if (ir1_opnd_is_xmm(opnd0)) {
         set_high128_xreg_to_zero(dest);
