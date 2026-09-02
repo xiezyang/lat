@@ -183,11 +183,15 @@ static void generate_af(IR2_OPND dest, IR2_OPND src0,
         return;
     }
     IR2_OPND af_opnd = ra_alloc_itemp();
-    if (ir2_opnd_is_imm(&src1)) {
-        la_xori(af_opnd, src0, ir2_opnd_imm(&src1));
-    }
-    else
+    if (ir1_opcode(pir1) == dt_X86_INS_INC ||
+        ir1_opcode(pir1) == dt_X86_INS_DEC) {
+        la_xori(af_opnd, src0, 1);
+    } else if (ir2_opnd_is_imm(&src1)) {
+        /* AF only depends on bit 4; keep XORI's immediate encodable. */
+        la_xori(af_opnd, src0, ir2_opnd_imm(&src1) & 0x1f);
+    } else {
         la_xor(af_opnd, src0, src1);
+    }
     la_xor(af_opnd, af_opnd, dest);
     la_andi(af_opnd, af_opnd, 0x10);
     la_x86mtflag(af_opnd, 0x4);
