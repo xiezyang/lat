@@ -62,6 +62,7 @@ extern struct elfheader_s * elf_header;
 #endif
 #ifdef CONFIG_LATX
 #include "jrra.h"
+#include "latx-options.h"
 #endif
 /* -icount align implementation. */
 
@@ -1189,6 +1190,15 @@ int cpu_exec(CPUState *cpu)
             }
 
             tb = tb_find(cpu, last_tb, tb_exit, cflags);
+#ifdef CONFIG_LATX
+            if (unlikely(option_trace_tb)) {
+                CPUArchState *env = cpu->env_ptr;
+                fprintf(stderr,
+                        "LATX_TB_STATE cpu=%d pc=0x" TARGET_FMT_lx
+                        " eflags=0x" TARGET_FMT_lx "\n",
+                        cpu->cpu_index, tb->pc, env->eflags);
+            }
+#endif
 #ifdef CONFIG_LATX_DEBUG
             trace_tb_execution(tb);
 #endif
