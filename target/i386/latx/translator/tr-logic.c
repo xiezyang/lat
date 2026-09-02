@@ -31,38 +31,40 @@ static void latx_update_rotate_flags(IR2_OPND result, int dest_size,
 
     if (count_is_imm) {
         if (imm_count == 1) {
-            IR2_OPND msb = ra_alloc_itemp();
             la_bstrpick_d(of, result, dest_size - 1, dest_size - 1);
             if (rotate_right) {
-                la_bstrpick_d(msb, result, dest_size - 2, dest_size - 2);
+                la_bstrpick_d(flags, result, dest_size - 2,
+                              dest_size - 2);
+                la_xor(of, of, flags);
+                la_bstrins_d(flags, cf, 0, 0);
             } else {
-                la_mov64(msb, cf);
+                la_xor(of, of, cf);
             }
-            la_xor(of, of, msb);
-            la_slli_w(of, of, 11);
             la_bstrins_d(flags, of, 11, 11);
+            ra_free_temp(of);
+            ra_free_temp(cf);
             la_x86mtflag(flags, CF_USEDEF_BIT | OF_USEDEF_BIT);
-            ra_free_temp(msb);
         } else {
+            ra_free_temp(of);
+            ra_free_temp(cf);
             la_x86mtflag(flags, CF_USEDEF_BIT);
         }
+        ra_free_temp(flags);
+        return;
     } else {
-        IR2_OPND one = ra_alloc_itemp();
         IR2_OPND label_keep_of = ra_alloc_label();
         IR2_OPND label_done = ra_alloc_label();
-        IR2_OPND msb = ra_alloc_itemp();
 
-        li_wu(one, 1);
-        la_bne(count, one, label_keep_of);
+        li_wu(of, 1);
+        la_bne(count, of, label_keep_of);
         la_bstrpick_d(of, result, dest_size - 1, dest_size - 1);
         if (rotate_right) {
-            la_bstrpick_d(msb, result, dest_size - 2, dest_size - 2);
-        } else {
-            la_mov64(msb, cf);
+            la_bstrpick_d(cf, result, dest_size - 2, dest_size - 2);
         }
-        la_xor(of, of, msb);
-        la_slli_w(of, of, 11);
+        la_xor(of, of, cf);
         la_bstrins_d(flags, of, 11, 11);
+        ra_free_temp(of);
+        ra_free_temp(cf);
         la_x86mtflag(flags, CF_USEDEF_BIT | OF_USEDEF_BIT);
         la_b(label_done);
 
@@ -70,12 +72,8 @@ static void latx_update_rotate_flags(IR2_OPND result, int dest_size,
         la_x86mtflag(flags, CF_USEDEF_BIT);
         la_label(label_done);
 
-        ra_free_temp(msb);
-        ra_free_temp(one);
     }
 
-    ra_free_temp(of);
-    ra_free_temp(cf);
     ra_free_temp(flags);
 }
 
@@ -981,6 +979,7 @@ bool translate_rol(IR1_INST *pir1)
     }
     store_ireg_to_ir1(tmp_dest, ir1_get_opnd(pir1, 0), false);
     la_label(label_exit);
+    ra_free_temp(count);
     ra_free_temp(tmp);
     ra_free_temp(tmp_dest);
     return true;
@@ -1140,6 +1139,7 @@ bool translate_ror(IR1_INST *pir1)
     }
     store_ireg_to_ir1(tmp_dest, ir1_get_opnd(pir1, 0), false);
     la_label(label_exit);
+    ra_free_temp(count);
     ra_free_temp(tmp);
     ra_free_temp(tmp_dest);
     return true;
