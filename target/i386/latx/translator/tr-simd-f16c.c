@@ -99,7 +99,7 @@ bool translate_vcvtps2ph(IR1_INST *pir1)
 
         la_xvor_v(dest, temp, temp);
     }
-    tr_gen_call_to_helper1((ADDR)helper_update_mxcsr, 1,
+    tr_gen_call_to_helper1((ADDR)helper_update_mxcsr, 0,
                            LOAD_HELPER_UPDATE_MXCSR);
     return true;
 }
