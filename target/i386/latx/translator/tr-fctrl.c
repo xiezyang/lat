@@ -269,7 +269,7 @@ bool translate_ldmxcsr(IR1_INST *pir1)
     la_st_w(new_mxcsr, env_ir2_opnd, offset);
     update_fcsr_enable_by_mxcsr(new_mxcsr);
 
-    tr_gen_call_to_helper1((ADDR)update_mxcsr_status, 1,
+    tr_gen_call_to_helper1((ADDR)update_mxcsr_status, 0,
                            LOAD_HELPER_UPDATE_MXCSR_STATUS);
 
     return true;
