@@ -24,7 +24,7 @@ on:
           - xiezyang/lat
           - lat-opensource/lat
       test_request:
-        description: 'Optional JSON, e.g. {"schema_version":1,"suites":[{"suite_key":"spec2000","parameters":{"input_size":"ref","benchmark":"164.gzip","config":"gcc8-2000-dyn.cfg"},"environment":{"LATX_AOT":"0"}}]}'
+        description: 'Optional JSON, e.g. {"schema_version":1,"suites":[{"suite_key":"spec2000","parameters":{"input_size":"ref","runs_per_invocation":3,"test_set":"197","times":2},"environment":{"LATX_AOT":"0"}}]}'
         required: false
         type: string
         default: ""
