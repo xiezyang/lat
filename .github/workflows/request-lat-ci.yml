@@ -23,8 +23,8 @@ on:
         options:
           - xiezyang/lat
           - lat-opensource/lat
-      requested_suite_keys:
-        description: "Optional comma-separated extra suites, for example spec2000/164-gzip"
+      test_request:
+        description: 'Optional JSON, e.g. {"schema_version":1,"suites":[{"suite_key":"spec2000","parameters":{"input_size":"ref","runs_per_invocation":3,"test_set":"197","times":2},"environment":{"LATX_AOT":"0"}}]}'
         required: false
         type: string
         default: ""
@@ -155,7 +155,7 @@ jobs:
           BASE_SHA: ${{ needs.resolve-pr.outputs.base_sha }}
           HEAD_REF: ${{ needs.resolve-pr.outputs.head_ref }}
           TARGET_REPOSITORY: ${{ needs.resolve-pr.outputs.target_repository }}
-          REQUESTED_SUITE_KEYS: ${{ inputs.requested_suite_keys }}
+          TEST_REQUEST: ${{ inputs.test_request }}
           REQUESTER: ${{ github.actor }}
         run: |
           if [ -z "$DISPATCH_TOKEN" ]; then
@@ -177,7 +177,7 @@ jobs:
                   "head_sha": os.environ["HEAD_SHA"],
                   "base_sha": os.environ["BASE_SHA"],
                   "head_ref": os.environ["HEAD_REF"],
-                  "requested_suite_keys": os.environ["REQUESTED_SUITE_KEYS"],
+                  "test_request": os.environ["TEST_REQUEST"],
                   "requester": os.environ["REQUESTER"],
               },
           }))
