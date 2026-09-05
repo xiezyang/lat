@@ -444,6 +444,7 @@ static void lasx_fp_fix_packed_nan_from_sources(IR2_OPND result,
                                                 bool double_precision,
                                                 int lanes,
                                                 const int *source_shuffles,
+                                                bool destructive_shuffles,
                                                 bool mask_sources_with_result,
                                                 IR2_OPND preserve_non_nan)
 {
@@ -490,7 +491,8 @@ static void lasx_fp_fix_packed_nan_from_sources(IR2_OPND result,
         IR2_OPND slow = ra_alloc_label();
 
         la_bnez(bits, slow);
-        la_xvpickve2gr_d(high_bits, work, 1);
+        /* xvmskltz stores the upper 128-bit sign mask in qword 2. */
+        la_xvpickve2gr_d(high_bits, work, 2);
         la_beq(high_bits, zero_ir2_opnd, done);
         ra_free_temp(high_bits);
         la_label(slow);
@@ -509,15 +511,19 @@ static void lasx_fp_fix_packed_nan_from_sources(IR2_OPND result,
     /* Later selections are overwritten by earlier x86 source operands. */
     IR2_OPND shuffled = ir2_opnd_new_none();
 
-    if (source_shuffles != NULL) {
+    if (source_shuffles != NULL && !destructive_shuffles) {
         shuffled = ra_alloc_ftemp();
     }
     for (int source = source_count - 1; source >= 0; --source) {
         IR2_OPND source_opnd = sources[source];
 
         if (source_shuffles != NULL && source_shuffles[source] >= 0) {
-            shuffle(shuffled, source_opnd, source_shuffles[source]);
-            source_opnd = shuffled;
+            if (destructive_shuffles) {
+                shuffle(source_opnd, source_opnd, source_shuffles[source]);
+            } else {
+                shuffle(shuffled, source_opnd, source_shuffles[source]);
+                source_opnd = shuffled;
+            }
         }
         compare(work, source_opnd, source_opnd, 0x8);
         if (mask_sources_with_result && ir2_opnd_is_none(&preserve_non_nan)) {
@@ -551,7 +557,8 @@ static void lasx_fp_fix_nan_from_sources(IR2_OPND result,
     } else {
         lasx_fp_fix_packed_nan_from_sources(result, sources, source_count,
                                              double_precision, lanes, NULL,
-                                             false, ir2_opnd_new_none());
+                                             false, false,
+                                             ir2_opnd_new_none());
     }
 }
 
@@ -802,34 +809,42 @@ bool translate_vaddsubpd(IR1_INST * pir1) {
     IR2_OPND dest = load_freg256_from_ir1(opnd0);
     IR2_OPND src1 = load_freg256_from_ir1(opnd1);
     IR2_OPND src2 = load_freg256_from_ir1(opnd2);
-    IR2_OPND add_src1 = ra_alloc_ftemp();
-    IR2_OPND add_src2 = ra_alloc_ftemp();
     IR2_OPND sub_src1 = ra_alloc_ftemp();
     IR2_OPND sub_src2 = ra_alloc_ftemp();
-    IR2_OPND add_src1_for_nan = ra_alloc_ftemp();
-    IR2_OPND sub_src1_for_nan = ra_alloc_ftemp();
+    IR2_OPND add_src1 = ra_alloc_ftemp();
+    IR2_OPND add_src2 = ra_alloc_ftemp();
 
     la_xvpackev_d(sub_src1, src1, src1);
     la_xvpackev_d(sub_src2, src2, src2);
     la_xvpackod_d(add_src1, src1, src1);
     la_xvpackod_d(add_src2, src2, src2);
-    la_xvori_b(sub_src1_for_nan, sub_src1, 0);
-    la_xvori_b(add_src1_for_nan, add_src1, 0);
+    ra_free_temp_auto(src2);
+    ra_free_temp_auto(src1);
     if (ir1_opnd_is_xmm(opnd0)) {
-        la_vfsub_d(sub_src1, sub_src1, sub_src2);
-        la_vfadd_d(add_src1, add_src1, add_src2);
+        la_vfsub_d(dest, sub_src1, sub_src2);
     } else {
-        la_xvfsub_d(sub_src1, sub_src1, sub_src2);
-        la_xvfadd_d(add_src1, add_src1, add_src2);
+        la_xvfsub_d(dest, sub_src1, sub_src2);
     }
-    lasx_fp_fix_binary_nan(sub_src1, sub_src1_for_nan, sub_src2, true,
+    lasx_fp_fix_binary_nan(dest, sub_src1, sub_src2, true,
                            ir1_opnd_is_xmm(opnd0) ? 2 : 4);
-    lasx_fp_fix_binary_nan(add_src1, add_src1_for_nan, add_src2, true,
+    ra_free_temp(sub_src2);
+    ra_free_temp(sub_src1);
+
+    IR2_OPND add_result = ra_alloc_ftemp();
+    if (ir1_opnd_is_xmm(opnd0)) {
+        la_vfadd_d(add_result, add_src1, add_src2);
+    } else {
+        la_xvfadd_d(add_result, add_src1, add_src2);
+    }
+    lasx_fp_fix_binary_nan(add_result, add_src1, add_src2, true,
                            ir1_opnd_is_xmm(opnd0) ? 2 : 4);
-    la_xvpackev_d(dest, add_src1, sub_src1);
+    la_xvpackev_d(dest, add_result, dest);
     if (ir1_opnd_is_xmm(opnd0)) {
         set_high128_xreg_to_zero(dest);
     }
+    ra_free_temp(add_result);
+    ra_free_temp(add_src2);
+    ra_free_temp(add_src1);
     return true;
 }
 
@@ -846,36 +861,42 @@ bool translate_vaddsubps(IR1_INST * pir1) {
     IR2_OPND dest = load_freg256_from_ir1(opnd0);
     IR2_OPND src1 = load_freg256_from_ir1(opnd1);
     IR2_OPND src2 = load_freg256_from_ir1(opnd2);
-
-    IR2_OPND add_src1 = ra_alloc_ftemp();
-    IR2_OPND add_src2 = ra_alloc_ftemp();
     IR2_OPND sub_src1 = ra_alloc_ftemp();
     IR2_OPND sub_src2 = ra_alloc_ftemp();
-    IR2_OPND add_src1_for_nan = ra_alloc_ftemp();
-    IR2_OPND sub_src1_for_nan = ra_alloc_ftemp();
+    IR2_OPND add_src1 = ra_alloc_ftemp();
+    IR2_OPND add_src2 = ra_alloc_ftemp();
 
     la_xvpackev_w(sub_src1, src1, src1);
     la_xvpackev_w(sub_src2, src2, src2);
     la_xvpackod_w(add_src1, src1, src1);
     la_xvpackod_w(add_src2, src2, src2);
-    la_xvori_b(sub_src1_for_nan, sub_src1, 0);
-    la_xvori_b(add_src1_for_nan, add_src1, 0);
+    ra_free_temp_auto(src2);
+    ra_free_temp_auto(src1);
     if (ir1_opnd_is_xmm(opnd0)) {
-        la_vfsub_s(sub_src1, sub_src1, sub_src2);
-        la_vfadd_s(add_src1, add_src1, add_src2);
+        la_vfsub_s(dest, sub_src1, sub_src2);
     } else {
-        la_xvfsub_s(sub_src1, sub_src1, sub_src2);
-        la_xvfadd_s(add_src1, add_src1, add_src2);
+        la_xvfsub_s(dest, sub_src1, sub_src2);
     }
-    lasx_fp_fix_binary_nan(sub_src1, sub_src1_for_nan, sub_src2, false,
+    lasx_fp_fix_binary_nan(dest, sub_src1, sub_src2, false,
                            ir1_opnd_is_xmm(opnd0) ? 4 : 8);
-    lasx_fp_fix_binary_nan(add_src1, add_src1_for_nan, add_src2, false,
+    ra_free_temp(sub_src2);
+    ra_free_temp(sub_src1);
+
+    IR2_OPND add_result = ra_alloc_ftemp();
+    if (ir1_opnd_is_xmm(opnd0)) {
+        la_vfadd_s(add_result, add_src1, add_src2);
+    } else {
+        la_xvfadd_s(add_result, add_src1, add_src2);
+    }
+    lasx_fp_fix_binary_nan(add_result, add_src1, add_src2, false,
                            ir1_opnd_is_xmm(opnd0) ? 4 : 8);
-    la_xvpackev_w(dest, add_src1, sub_src1);
+    la_xvpackev_w(dest, add_result, dest);
     if (ir1_opnd_is_xmm(opnd0)) {
         set_high128_xreg_to_zero(dest);
     }
-
+    ra_free_temp(add_result);
+    ra_free_temp(add_src2);
+    ra_free_temp(add_src1);
     return true;
 }
 
@@ -5216,10 +5237,12 @@ bool translate_vdppd(IR1_INST *pir1)
     ra_free_temp(temp2);
     if (fix_nan) {
         IR2_OPND sources[] = { temp3, temp3 };
-        const int source_shuffles[] = { -1, 0x1 };
+        const int source_shuffles[] = { 0x1, 0x1 };
 
+        /* Swap in place for the fallback, then swap back for the priority
+         * source.  This avoids a third vector temporary at peak pressure. */
         lasx_fp_fix_packed_nan_from_sources(dest, sources, 2, true, 2,
-                                             source_shuffles,
+                                             source_shuffles, true,
                                              (imm & 0x3) != 0x3,
                                              ir2_opnd_new_none());
     }
@@ -5314,7 +5337,7 @@ bool translate_vdpps(IR1_INST *pir1)
             ir2_opnd_new_none() : temp2;
 
         lasx_fp_fix_packed_nan_from_sources(dest, sources, 4, false, lanes,
-                                             source_shuffles,
+                                             source_shuffles, false,
                                              (imm & 0xf) != 0xf,
                                              preserve_non_nan);
     }
