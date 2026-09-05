@@ -22,9 +22,6 @@ static inline void xcomisx(IR1_INST *pir1, bool is_double, bool qnan_exp)
     lsassert(ir1_opnd_num(pir1) == 2);
     IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
     IR2_OPND src = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
-    IR2_OPND sources[] = { dest, src };
-
-    lasx_fp_note_denormal_inputs(sources, 2, is_double, 1);
     /* 0. set flag = 0 */
     IR2_OPND flag_zf = ra_alloc_itemp();
     IR2_OPND flag_pf = ra_alloc_itemp();
@@ -104,24 +101,6 @@ bool translate_vucomiss(IR1_INST * pir1) {
 
 typedef IR2_INST *(*latx_avx_integer_cmp_lsx_fn)(IR2_OPND, IR2_OPND,
                                                  IR2_OPND);
-
-static void lasx_avx_note_cmp_denormal_inputs(IR1_INST *pir1,
-                                               bool double_precision,
-                                               bool scalar)
-{
-    IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
-    IR2_OPND src1 = ir1_opnd_is_ymm(opnd0) ?
-        load_freg256_from_ir1(ir1_get_opnd(pir1, 1)) :
-        load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
-    IR2_OPND src2 = ir1_opnd_is_ymm(opnd0) ?
-        load_freg256_from_ir1(ir1_get_opnd(pir1, 2)) :
-        load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
-    IR2_OPND sources[] = { src1, src2 };
-    int lanes = scalar ? 1 : (ir1_opnd_is_ymm(opnd0) ?
-        (double_precision ? 4 : 8) : (double_precision ? 2 : 4));
-
-    lasx_fp_note_denormal_inputs(sources, 2, double_precision, lanes);
-}
 
 bool translate_vpcmpeqx(IR1_INST * pir1) {
     if (!option_enable_lasx) {
@@ -1051,7 +1030,6 @@ bool translate_vcmppd(IR1_INST * pir1) {
             ir1_opnd_is_xmm(ir1_get_opnd(pir1, 1))) ||
         (ir1_opnd_is_ymm(ir1_get_opnd(pir1, 0)) &&
             ir1_opnd_is_ymm(ir1_get_opnd(pir1, 1))));
-    lasx_avx_note_cmp_denormal_inputs(pir1, true, false);
     uint8 predicate = ir1_opnd_uimm(ir1_get_opnd(pir1, 3)) & 0x1f;
     switch (predicate) {
         case 0:
@@ -1974,7 +1952,6 @@ bool translate_vcmpps(IR1_INST * pir1) {
             ir1_opnd_is_xmm(ir1_get_opnd(pir1, 1))) ||
         (ir1_opnd_is_ymm(ir1_get_opnd(pir1, 0)) &&
             ir1_opnd_is_ymm(ir1_get_opnd(pir1, 1))));
-    lasx_avx_note_cmp_denormal_inputs(pir1, false, false);
     uint8 predicate = ir1_opnd_uimm(ir1_get_opnd(pir1, 3)) & 0x1f;
     switch (predicate) {
         case 0:
@@ -2890,7 +2867,6 @@ bool translate_vcmpsd(IR1_INST * pir1) {
         ir1_opnd_is_imm(ir1_get_opnd(pir1, 3)));
     lsassert((ir1_opnd_is_xmm(ir1_get_opnd(pir1, 0)) &&
         ir1_opnd_is_xmm(ir1_get_opnd(pir1, 1))));
-    lasx_avx_note_cmp_denormal_inputs(pir1, true, true);
     uint8 predicate = ir1_opnd_uimm(ir1_get_opnd(pir1, 3)) & 0x1f;
     switch (predicate) {
         case 0:
@@ -3903,7 +3879,6 @@ bool translate_vcmpss(IR1_INST *pir1)
 			ir1_opnd_is_imm(ir1_get_opnd(pir1, 3)));
 	lsassert((ir1_opnd_is_xmm(ir1_get_opnd(pir1, 0)) &&
 			ir1_opnd_is_xmm(ir1_get_opnd(pir1, 1))));
-	lasx_avx_note_cmp_denormal_inputs(pir1, false, true);
 	uint8 predicate = ir1_opnd_uimm(ir1_get_opnd(pir1, 3)) & 0x1f;
 	switch (predicate) {
 		case 0:

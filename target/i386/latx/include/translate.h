@@ -37,8 +37,6 @@ TRANS_FUNC_GEN_REAL(opcode, TRANS_FUNC(function))
 #ifdef CONFIG_LATX_AVX_OPT
 void lasx_fp_fix_fma_nan(IR2_OPND result, IR2_OPND src1, IR2_OPND src2,
                          IR2_OPND src3, bool double_precision, int lanes);
-void lasx_fp_note_denormal_inputs(const IR2_OPND *sources, int source_count,
-                                  bool double_precision, int lanes);
 #endif
 
 /*
