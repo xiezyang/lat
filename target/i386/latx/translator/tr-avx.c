@@ -4546,7 +4546,7 @@ bool translate_vpalignr(IR1_INST * pir1) {
         } else {
             /* slow path */
             if (imm == 0) {
-                la_vori_b(dest, src2, 0);
+                la_xvori_b(dest, src2, 0);
             } else {
                 IR2_OPND temp_src2 = ra_alloc_ftemp();
                 la_xvbsrl_v(temp_src2, src2, imm);
