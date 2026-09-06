@@ -5139,7 +5139,9 @@ bool translate_vdppd(IR1_INST *pir1)
     IR2_OPND src2 = load_freg256_from_ir1(opnd2);
     IR2_OPND temp1 = ra_alloc_ftemp();
     IR2_OPND temp2 = ra_alloc_ftemp();
+    IR2_OPND temp3 = ra_alloc_ftemp();
     uint8_t imm = ir1_opnd_uimm(opnd3);
+    bool fix_nan = (imm & 0x3) && (imm & 0x30);
     la_xvxor_v(temp1, temp1, temp1);
     la_xvxor_v(temp2, temp2, temp2);
     if(imm & 0x10){
@@ -5150,10 +5152,15 @@ bool translate_vdppd(IR1_INST *pir1)
         la_xvextrins_d(temp1, src1, 0x11);
         la_xvextrins_d(temp2, src2, 0x11);
     }
+    la_xvori_b(temp3, temp1, 0);
     if(ir1_opnd_is_xmm(opnd0))
         la_vfmul_d(temp1, temp1, temp2);
     else
         la_xvfmul_d(temp1, temp1, temp2);
+    if (fix_nan) {
+        lasx_fp_fix_binary_nan(temp1, temp3, temp2, true, 2);
+    }
+    la_xvori_b(temp3, temp1, 0);
     la_xvpackod_d(temp2, temp1, temp1);
     la_xvpackev_d(temp1, temp1, temp1);
     if(ir1_opnd_is_xmm(opnd0))
@@ -5167,6 +5174,20 @@ bool translate_vdppd(IR1_INST *pir1)
     if(imm & 0x2){
         la_xvextrins_d(dest, temp1, 0x11);
     }
+    ra_free_temp(temp1);
+    ra_free_temp(temp2);
+    if (fix_nan) {
+        IR2_OPND sources[] = { temp3, temp3 };
+        const int source_shuffles[] = { 0x1, 0x1 };
+
+        /* Swap in place for the fallback, then swap back for the priority
+         * source.  This avoids a third vector temporary at peak pressure. */
+        lasx_fp_fix_vector_nan_from_sources(dest, sources, 2, true, 2,
+                                             source_shuffles, true,
+                                             (imm & 0x3) != 0x3,
+                                             ir2_opnd_new_none());
+    }
+    ra_free_temp(temp3);
     if(ir1_opnd_is_xmm(opnd0))
         set_high128_xreg_to_zero(dest);
     return true;
@@ -5188,7 +5209,10 @@ bool translate_vdpps(IR1_INST *pir1)
     IR2_OPND src2 = load_freg256_from_ir1(opnd2);
     IR2_OPND temp1 = ra_alloc_ftemp();
     IR2_OPND temp2 = ra_alloc_ftemp();
+    IR2_OPND temp3 = ra_alloc_ftemp();
     uint8_t imm = ir1_opnd_uimm(opnd3);
+    int lanes = ir1_opnd_is_xmm(opnd0) ? 4 : 8;
+    bool fix_nan = (imm & 0xf) && (imm & 0xf0);
     la_xvxor_v(temp1, temp1, temp1);
     la_xvxor_v(temp2, temp2, temp2);
     if(imm & 0x10){
@@ -5207,10 +5231,15 @@ bool translate_vdpps(IR1_INST *pir1)
         la_xvextrins_w(temp1, src1, 0x33);
         la_xvextrins_w(temp2, src2, 0x33);
     }
+    la_xvori_b(temp3, temp1, 0);
     if(ir1_opnd_is_xmm(opnd0))
         la_vfmul_s(temp1, temp1, temp2);
     else
         la_xvfmul_s(temp1, temp1, temp2);
+    if (fix_nan) {
+        lasx_fp_fix_binary_nan(temp1, temp3, temp2, false, lanes);
+    }
+    la_xvori_b(temp3, temp1, 0);
     la_xvpackod_w(temp2, temp1, temp1);
     la_xvpackev_w(temp1, temp1, temp1);
     if(ir1_opnd_is_xmm(opnd0))
@@ -5237,6 +5266,26 @@ bool translate_vdpps(IR1_INST *pir1)
     if(imm & 0x8){
         la_xvextrins_w(dest, temp1, 0x33);
     }
+    ra_free_temp(temp1);
+    if (!fix_nan || (imm & 0xf) == 0xf) {
+        ra_free_temp(temp2);
+    }
+    if (fix_nan) {
+        IR2_OPND sources[] = { temp3, temp3, temp3, temp3 };
+        /* [1,0,3,2], [0,1,2,3], [3,2,1,0], [2,3,0,1] per 128-bit group. */
+        const int source_shuffles[] = { 0xb1, -1, 0x1b, 0x4e };
+        IR2_OPND preserve_non_nan = (imm & 0xf) == 0xf ?
+            ir2_opnd_new_none() : temp2;
+
+        lasx_fp_fix_vector_nan_from_sources(dest, sources, 4, false, lanes,
+                                             source_shuffles, false,
+                                             (imm & 0xf) != 0xf,
+                                             preserve_non_nan);
+    }
+    if (fix_nan && (imm & 0xf) != 0xf) {
+        ra_free_temp(temp2);
+    }
+    ra_free_temp(temp3);
     if(ir1_opnd_is_xmm(opnd0))
         set_high128_xreg_to_zero(dest);
     return true;
