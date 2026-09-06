@@ -520,6 +520,14 @@ static void lasx_fp_fix_binary_nan(IR2_OPND result, IR2_OPND src1,
     lasx_fp_fix_nan_from_sources(result, sources, 2, double_precision, lanes);
 }
 
+void lasx_fp_fix_fma_nan(IR2_OPND result, IR2_OPND src1, IR2_OPND src2,
+                         IR2_OPND src3, bool double_precision, int lanes)
+{
+    IR2_OPND sources[] = { src1, src2, src3 };
+
+    lasx_fp_fix_nan_from_sources(result, sources, 3, double_precision, lanes);
+}
+
 bool translate_vdivps(IR1_INST * pir1) {
     if (!option_enable_lasx) {
         return translate_vdivps_lsx(pir1);
@@ -2795,6 +2803,7 @@ bool translate_vfmaddxxxss(IR1_INST * pir1) {
     }
 
     la_fmadd_s(temp, temp1, temp2, temp3);
+    lasx_fp_fix_fma_nan(temp, temp1, temp2, temp3, false, 1);
     la_xvinsve0_w(dest, temp, 0);
     set_high128_xreg_to_zero(dest);
     return true;
@@ -2829,6 +2838,7 @@ bool translate_vfmaddxxxsd(IR1_INST * pir1) {
     }
 
     la_fmadd_d(temp, temp1, temp2, temp3);
+    lasx_fp_fix_fma_nan(temp, temp1, temp2, temp3, true, 1);
     la_xvinsve0_d(dest, temp, 0);
     set_high128_xreg_to_zero(dest);
     return true;
@@ -2868,6 +2878,8 @@ bool translate_vfmaddxxxpd(IR1_INST * pir1) {
 
     tr_inst = ir1_opnd_is_xmm(opnd0) ? la_vfmadd_d : la_xvfmadd_d;
     tr_inst(temp, temp1, temp2, temp3);
+    lasx_fp_fix_fma_nan(temp, temp1, temp2, temp3, true,
+                        ir1_opnd_is_xmm(opnd0) ? 2 : 4);
     la_xvori_b(dest, temp, 0);
     if (ir1_opnd_is_xmm(opnd0))
         set_high128_xreg_to_zero(dest);
@@ -2908,6 +2920,8 @@ bool translate_vfmaddxxxps(IR1_INST * pir1) {
 
     tr_inst = ir1_opnd_is_xmm(opnd0) ? la_vfmadd_s : la_xvfmadd_s;
     tr_inst(temp, temp1, temp2, temp3);
+    lasx_fp_fix_fma_nan(temp, temp1, temp2, temp3, false,
+                        ir1_opnd_is_xmm(opnd0) ? 4 : 8);
     la_xvori_b(dest, temp, 0);
     if (ir1_opnd_is_xmm(opnd0))
         set_high128_xreg_to_zero(dest);
@@ -2943,6 +2957,7 @@ bool translate_vfmsubxxxss(IR1_INST * pir1) {
     }
 
     la_fmsub_s(temp, temp1, temp2, temp3);
+    lasx_fp_fix_fma_nan(temp, temp1, temp2, temp3, false, 1);
     la_xvinsve0_w(dest, temp, 0);
     set_high128_xreg_to_zero(dest);
     return true;
@@ -2977,6 +2992,7 @@ bool translate_vfmsubxxxsd(IR1_INST * pir1) {
     }
 
     la_fmsub_d(temp, temp1, temp2, temp3);
+    lasx_fp_fix_fma_nan(temp, temp1, temp2, temp3, true, 1);
     la_xvinsve0_d(dest, temp, 0);
     set_high128_xreg_to_zero(dest);
     return true;
@@ -3016,6 +3032,8 @@ bool translate_vfmsubxxxpd(IR1_INST * pir1) {
 
     tr_inst = ir1_opnd_is_xmm(opnd0) ? la_vfmsub_d : la_xvfmsub_d;
     tr_inst(temp, temp1, temp2, temp3);
+    lasx_fp_fix_fma_nan(temp, temp1, temp2, temp3, true,
+                        ir1_opnd_is_xmm(opnd0) ? 2 : 4);
     la_xvori_b(dest, temp, 0);
     if (ir1_opnd_is_xmm(opnd0))
         set_high128_xreg_to_zero(dest);
@@ -3056,6 +3074,8 @@ bool translate_vfmsubxxxps(IR1_INST * pir1) {
 
     tr_inst = ir1_opnd_is_xmm(opnd0) ? la_vfmsub_s : la_xvfmsub_s;
     tr_inst(temp, temp1, temp2, temp3);
+    lasx_fp_fix_fma_nan(temp, temp1, temp2, temp3, false,
+                        ir1_opnd_is_xmm(opnd0) ? 4 : 8);
     la_xvori_b(dest, temp, 0);
     if (ir1_opnd_is_xmm(opnd0))
         set_high128_xreg_to_zero(dest);
@@ -3073,6 +3093,7 @@ bool translate_vfnmaddxxxss(IR1_INST * pir1) {
     IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
     IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
     IR2_OPND temp = ra_alloc_ftemp();
+    IR2_OPND result = ra_alloc_ftemp();
     IR2_OPND temp1, temp2, temp3;
     IR1_OPCODE op = ir1_opcode(pir1);
     switch (op) {
@@ -3091,20 +3112,9 @@ bool translate_vfnmaddxxxss(IR1_INST * pir1) {
     }
 
     la_fneg_s(temp, temp1);
-    la_fmadd_s(temp, temp, temp2, temp3);
-
-    IR2_OPND label_over = ra_alloc_label();
-    /* check if result is NaN */
-    la_fcmp_cond_s(fcc0_ir2_opnd, temp, temp, 0x8);
-
-    /* if no NaN happend, compution done */
-    la_bceqz(fcc0_ir2_opnd, label_over);
-
-    /* if INVALID NaN did happen, use original operands to generate correct NaN */
-    la_fmsub_s(temp, src1, src2, dest);
-
-    la_label(label_over);
-    la_xvinsve0_w(dest, temp, 0);
+    la_fmadd_s(result, temp, temp2, temp3);
+    lasx_fp_fix_fma_nan(result, temp1, temp2, temp3, false, 1);
+    la_xvinsve0_w(dest, result, 0);
     set_high128_xreg_to_zero(dest);
     return true;
 }
@@ -3120,6 +3130,7 @@ bool translate_vfnmaddxxxsd(IR1_INST * pir1) {
     IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
     IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
     IR2_OPND temp = ra_alloc_ftemp();
+    IR2_OPND result = ra_alloc_ftemp();
     IR2_OPND temp1, temp2, temp3;
     IR1_OPCODE op = ir1_opcode(pir1);
     switch (op) {
@@ -3138,20 +3149,9 @@ bool translate_vfnmaddxxxsd(IR1_INST * pir1) {
     }
 
     la_fneg_d(temp, temp1);
-    la_fmadd_d(temp, temp, temp2, temp3);
-
-    IR2_OPND label_over = ra_alloc_label();
-    /* check if result is NaN */
-    la_fcmp_cond_d(fcc0_ir2_opnd, temp, temp, 0x8);
-
-    /* if no NaN happend, compution done */
-    la_bceqz(fcc0_ir2_opnd, label_over);
-
-    /* if INVALID NaN did happen, use original operands to generate correct NaN */
-    la_fmsub_d(temp, src1, src2, dest);
-
-    la_label(label_over);
-    la_xvinsve0_d(dest, temp, 0);
+    la_fmadd_d(result, temp, temp2, temp3);
+    lasx_fp_fix_fma_nan(result, temp1, temp2, temp3, true, 1);
+    la_xvinsve0_d(dest, result, 0);
     set_high128_xreg_to_zero(dest);
     return true;
 }
@@ -3171,7 +3171,9 @@ bool translate_vfnmaddxxxpd(IR1_INST * pir1) {
     IR2_OPND src2 = load_freg256_from_ir1(ir1_get_opnd(pir1, 2));
     IR2_INST * ( * tr_inst)(IR2_OPND, IR2_OPND, IR2_OPND, IR2_OPND);
     IR2_OPND temp = ra_alloc_ftemp();
+    IR2_OPND result = ra_alloc_ftemp();
     IR2_OPND temp1, temp2, temp3;
+    IR2_OPND ftemp = ra_alloc_ftemp();
     IR2_OPND itemp = ra_alloc_itemp();
     IR1_OPCODE op = ir1_opcode(pir1);
     switch (op) {
@@ -3193,34 +3195,20 @@ bool translate_vfnmaddxxxpd(IR1_INST * pir1) {
 
     /* change the first operand sign bit*/
     la_lu52i_d(itemp, zero_ir2_opnd, 0x800);
-    la_vinsgr2vr_d(temp, itemp, 0);
-    la_xvreplve0_d(temp, temp);
-    la_xvxor_v(temp, temp1, temp);
-    /* compute the result*/
-    tr_inst(temp, temp, temp2, temp3);
-
-    IR2_OPND mask = ra_alloc_ftemp();
-    IR2_OPND src1_temp = ra_alloc_ftemp();
-    IR2_OPND src2_temp = ra_alloc_ftemp();
-    IR2_OPND src3_temp = ra_alloc_ftemp();
-
-    /* check if result is NaN */
-    la_xvfcmp_cond_d(mask, temp, temp, 0x8);
-    la_xvand_v(src1_temp, mask, dest);
-    la_xvand_v(src2_temp, mask, src1);
-    la_xvand_v(src3_temp, mask, src2);
-    tr_inst(src1_temp, src2_temp, src3_temp, src1_temp);
-
-    la_xvbitsel_v(temp, temp, src1_temp, mask);
-    la_xvori_b(dest, temp, 0);
+    la_vinsgr2vr_d(ftemp, itemp, 0);
+    la_xvreplve0_d(ftemp, ftemp);
+    la_xvxor_v(temp, temp1, ftemp);
+    tr_inst(result, temp, temp2, temp3);
+    lasx_fp_fix_fma_nan(result, temp1, temp2, temp3, true,
+                        ir1_opnd_is_xmm(opnd0) ? 2 : 4);
+    la_xvori_b(dest, result, 0);
     if (ir1_opnd_is_xmm(opnd0))
         set_high128_xreg_to_zero(dest);
 
-    ra_free_temp(src1_temp);
-    ra_free_temp(src2_temp);
-    ra_free_temp(src3_temp);
+    ra_free_temp(result);
     ra_free_temp(temp);
-    ra_free_temp(mask);
+    ra_free_temp(ftemp);
+    ra_free_temp(itemp);
     return true;
 }
 
@@ -3239,6 +3227,7 @@ bool translate_vfnmaddxxxps(IR1_INST * pir1) {
     IR2_OPND src2 = load_freg256_from_ir1(ir1_get_opnd(pir1, 2));
     IR2_INST * ( * tr_inst)(IR2_OPND, IR2_OPND, IR2_OPND, IR2_OPND);
     IR2_OPND temp = ra_alloc_ftemp();
+    IR2_OPND result = ra_alloc_ftemp();
     IR2_OPND temp1, temp2, temp3;
     IR2_OPND ftemp = ra_alloc_ftemp();
     IR2_OPND itemp = ra_alloc_itemp();
@@ -3264,30 +3253,16 @@ bool translate_vfnmaddxxxps(IR1_INST * pir1) {
     la_xvreplve0_w(ftemp, ftemp);
     la_xvxor_v(temp, temp1, ftemp);
 
-    /* compute the result*/
-    tr_inst(temp, temp, temp2, temp3);
-
-    IR2_OPND mask = ra_alloc_ftemp();
-    IR2_OPND src1_temp = ra_alloc_ftemp();
-    IR2_OPND src2_temp = ra_alloc_ftemp();
-    IR2_OPND src3_temp = ra_alloc_ftemp();
-
-    /* check if result is NaN */
-    la_xvfcmp_cond_s(mask, temp, temp, 0x8);
-    la_xvand_v(src1_temp, mask, dest);
-    la_xvand_v(src2_temp, mask, src1);
-    la_xvand_v(src3_temp, mask, src2);
-    tr_inst(src1_temp, src2_temp, src3_temp, src1_temp);
-
-    la_xvbitsel_v(temp, temp, src1_temp, mask);
-    la_xvori_b(dest, temp, 0);
+    tr_inst(result, temp, temp2, temp3);
+    lasx_fp_fix_fma_nan(result, temp1, temp2, temp3, false,
+                        ir1_opnd_is_xmm(opnd0) ? 4 : 8);
+    la_xvori_b(dest, result, 0);
     if (ir1_opnd_is_xmm(opnd0))
         set_high128_xreg_to_zero(dest);
-    ra_free_temp(src1_temp);
-    ra_free_temp(src2_temp);
-    ra_free_temp(src3_temp);
+    ra_free_temp(result);
     ra_free_temp(temp);
-    ra_free_temp(mask);
+    ra_free_temp(ftemp);
+    ra_free_temp(itemp);
     return true;
 }
 
@@ -3302,6 +3277,7 @@ bool translate_vfnmsubxxxss(IR1_INST * pir1) {
     IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
     IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
     IR2_OPND temp = ra_alloc_ftemp();
+    IR2_OPND result = ra_alloc_ftemp();
     IR2_OPND temp1, temp2, temp3;
     IR1_OPCODE op = ir1_opcode(pir1);
     switch (op) {
@@ -3320,20 +3296,9 @@ bool translate_vfnmsubxxxss(IR1_INST * pir1) {
     }
 
     la_fneg_s(temp, temp1);
-    la_fmsub_s(temp, temp, temp2, temp3);
-
-    IR2_OPND label_over = ra_alloc_label();
-    /* check if result is NaN */
-    la_fcmp_cond_s(fcc0_ir2_opnd, temp, temp, 0x8);
-
-    /* if no NaN happend, compution done */
-    la_bceqz(fcc0_ir2_opnd, label_over);
-
-    /* if INVALID NaN did happen, use original operands to generate correct NaN */
-    la_fmsub_s(temp, src1, src2, dest);
-
-    la_label(label_over);
-    la_xvinsve0_w(dest, temp, 0);
+    la_fmsub_s(result, temp, temp2, temp3);
+    lasx_fp_fix_fma_nan(result, temp1, temp2, temp3, false, 1);
+    la_xvinsve0_w(dest, result, 0);
     set_high128_xreg_to_zero(dest);
     return true;
 }
@@ -3349,6 +3314,7 @@ bool translate_vfnmsubxxxsd(IR1_INST * pir1) {
     IR2_OPND src1 = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
     IR2_OPND src2 = load_freg128_from_ir1(ir1_get_opnd(pir1, 2));
     IR2_OPND temp = ra_alloc_ftemp();
+    IR2_OPND result = ra_alloc_ftemp();
     IR2_OPND temp1, temp2, temp3;
     IR1_OPCODE op = ir1_opcode(pir1);
     switch (op) {
@@ -3368,20 +3334,9 @@ bool translate_vfnmsubxxxsd(IR1_INST * pir1) {
     /* if the dest is NaN , translation may take mistake
      * becasue x86 vfnmsub and 3a5000 vfmsub may produce different NaN*/
     la_fneg_d(temp, temp1);
-    la_fmsub_d(temp, temp, temp2, temp3);
-
-    IR2_OPND label_over = ra_alloc_label();
-    /* check if result is NaN */
-    la_fcmp_cond_d(fcc0_ir2_opnd, temp, temp, 0x8);
-
-    /* if no NaN happend, compution done */
-    la_bceqz(fcc0_ir2_opnd, label_over);
-
-    /* if INVALID NaN did happen, use original operands to generate correct NaN */
-    la_fmsub_d(temp, src1, src2, dest);
-
-    la_label(label_over);
-    la_xvinsve0_d(dest, temp, 0);
+    la_fmsub_d(result, temp, temp2, temp3);
+    lasx_fp_fix_fma_nan(result, temp1, temp2, temp3, true, 1);
+    la_xvinsve0_d(dest, result, 0);
     set_high128_xreg_to_zero(dest);
     return true;
 }
@@ -3401,6 +3356,7 @@ bool translate_vfnmsubxxxpd(IR1_INST * pir1) {
     IR2_OPND src2 = load_freg256_from_ir1(ir1_get_opnd(pir1, 2));
     IR2_INST * ( * tr_inst)(IR2_OPND, IR2_OPND, IR2_OPND, IR2_OPND);
     IR2_OPND temp = ra_alloc_ftemp();
+    IR2_OPND result = ra_alloc_ftemp();
     IR2_OPND temp1, temp2, temp3;
     IR2_OPND ftemp = ra_alloc_ftemp();
     IR2_OPND itemp = ra_alloc_itemp();
@@ -3426,29 +3382,16 @@ bool translate_vfnmsubxxxpd(IR1_INST * pir1) {
     la_vinsgr2vr_d(ftemp, itemp, 0);
     la_xvreplve0_d(ftemp, ftemp);
     la_xvxor_v(temp, temp1, ftemp);
-    tr_inst(temp, temp, temp2, temp3);
-
-    IR2_OPND mask = ra_alloc_ftemp();
-    IR2_OPND src1_temp = ra_alloc_ftemp();
-    IR2_OPND src2_temp = ra_alloc_ftemp();
-    IR2_OPND src3_temp = ra_alloc_ftemp();
-
-    /* check if result is NaN */
-    la_xvfcmp_cond_d(mask, temp, temp, 0x8);
-    la_xvand_v(src1_temp, mask, dest);
-    la_xvand_v(src2_temp, mask, src1);
-    la_xvand_v(src3_temp, mask, src2);
-    tr_inst(src1_temp, src2_temp, src3_temp, src1_temp);
-
-    la_xvbitsel_v(temp, temp, src1_temp, mask);
-    la_xvori_b(dest, temp, 0);
+    tr_inst(result, temp, temp2, temp3);
+    lasx_fp_fix_fma_nan(result, temp1, temp2, temp3, true,
+                        ir1_opnd_is_xmm(opnd0) ? 2 : 4);
+    la_xvori_b(dest, result, 0);
     if (ir1_opnd_is_xmm(opnd0))
         set_high128_xreg_to_zero(dest);
-    ra_free_temp(src1_temp);
-    ra_free_temp(src2_temp);
-    ra_free_temp(src3_temp);
+    ra_free_temp(result);
     ra_free_temp(temp);
-    ra_free_temp(mask);
+    ra_free_temp(ftemp);
+    ra_free_temp(itemp);
     return true;
 }
 
@@ -3467,6 +3410,7 @@ bool translate_vfnmsubxxxps(IR1_INST * pir1) {
     IR2_OPND src2 = load_freg256_from_ir1(ir1_get_opnd(pir1, 2));
     IR2_INST * ( * tr_inst)(IR2_OPND, IR2_OPND, IR2_OPND, IR2_OPND);
     IR2_OPND temp = ra_alloc_ftemp();
+    IR2_OPND result = ra_alloc_ftemp();
     IR2_OPND temp1, temp2, temp3;
     IR2_OPND ftemp = ra_alloc_ftemp();
     IR2_OPND itemp = ra_alloc_itemp();
@@ -3491,29 +3435,16 @@ bool translate_vfnmsubxxxps(IR1_INST * pir1) {
     la_vinsgr2vr_w(ftemp, itemp, 0);
     la_xvreplve0_w(ftemp, ftemp);
     la_xvxor_v(temp, temp1, ftemp);
-    tr_inst(temp, temp, temp2, temp3);
-
-    IR2_OPND mask = ra_alloc_ftemp();
-    IR2_OPND src1_temp = ra_alloc_ftemp();
-    IR2_OPND src2_temp = ra_alloc_ftemp();
-    IR2_OPND src3_temp = ra_alloc_ftemp();
-
-    /* check if result is NaN */
-    la_xvfcmp_cond_s(mask, temp, temp, 0x8);
-    la_xvand_v(src1_temp, mask, dest);
-    la_xvand_v(src2_temp, mask, src1);
-    la_xvand_v(src3_temp, mask, src2);
-    tr_inst(src1_temp, src2_temp, src3_temp, src1_temp);
-
-    la_xvbitsel_v(temp, temp, src1_temp, mask);
-    la_xvori_b(dest, temp, 0);
+    tr_inst(result, temp, temp2, temp3);
+    lasx_fp_fix_fma_nan(result, temp1, temp2, temp3, false,
+                        ir1_opnd_is_xmm(opnd0) ? 4 : 8);
+    la_xvori_b(dest, result, 0);
     if (ir1_opnd_is_xmm(opnd0))
         set_high128_xreg_to_zero(dest);
-    ra_free_temp(src1_temp);
-    ra_free_temp(src2_temp);
-    ra_free_temp(src3_temp);
+    ra_free_temp(result);
     ra_free_temp(temp);
-    ra_free_temp(mask);
+    ra_free_temp(ftemp);
+    ra_free_temp(itemp);
     return true;
 }
 
