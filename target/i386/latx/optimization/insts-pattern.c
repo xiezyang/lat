@@ -1189,7 +1189,11 @@ static bool avx_sum3_overwritten_before_use(TranslationBlock *tb, int pos,
             return true;
         }
         for (int j = 0; j < ir1_get_opnd_num(ir1); ++j) {
-            if (avx_sum3_xmm(ir1, j) == reg) {
+            IR1_OPND *opnd = ir1_get_opnd(ir1, j);
+
+            /* XMM and YMM operands name the same low 128 bits. */
+            if ((ir1_opnd_is_xmm(opnd) || ir1_opnd_is_ymm(opnd)) &&
+                ir1_opnd_base_reg_num(opnd) == reg) {
                 return false;
             }
         }
@@ -1380,6 +1384,7 @@ static bool scalar_hdr_same_xmm(IR1_OPND *a, IR1_OPND *b)
 static bool scalar_hdr_same_mem(IR1_OPND *a, IR1_OPND *b, int64_t delta)
 {
     return ir1_opnd_is_mem(a) && ir1_opnd_is_mem(b) &&
+           ir1_opnd_size(a) == ir1_opnd_size(b) &&
            a->mem.segment == b->mem.segment &&
            a->mem.default_segment == b->mem.default_segment &&
            a->mem.base == b->mem.base && a->mem.index == b->mem.index &&
@@ -1434,6 +1439,8 @@ static bool scalar_hdr_match_channel(TranslationBlock *tb, int pos,
     output = ir1_get_opnd(fma, 2);
     if (!scalar_hdr_same_reg(ir1_get_opnd(movzx, 0), index_reg) ||
         !scalar_hdr_same_reg(ir1_get_opnd(lea, 0), index_reg) ||
+        ir1_opnd_size(ir1_get_opnd(movzx, 0)) != 32 ||
+        ir1_opnd_size(ir1_get_opnd(lea, 0)) != 64 ||
         !ir1_opnd_is_mem(input) || ir1_opnd_size(input) != 8 ||
         !scalar_hdr_same_mem(first_input, input, channel) ||
         !ir1_opnd_is_mem(lea_mem) || lea_mem->mem.disp != 0 ||
@@ -1622,6 +1629,28 @@ void insts_pattern_scalar_hdr(TranslationBlock *tb)
             !scalar_hdr_match_channel(tb, start + 26, first_input,
                                       first_table, first_sub, first_output,
                                       weighted_index, value_xmm, factor_xmm, 2)) {
+            continue;
+        }
+
+        /* The replacement uses byte loads, 32-bit weighted arithmetic,
+         * then 64-bit address calculations.  Register identity alone does
+         * not establish any of these widths. */
+        for (int i = 0; i < 32 && match; ++i) {
+            IR1_INST *inst = tb_ir1_inst(tb, start + i);
+
+            if (ir1_addr_size(inst) != 64) {
+                match = false;
+            }
+            if (i < 10 && ir1_opnd_size(ir1_get_opnd(inst, 0)) != 32) {
+                match = false;
+            }
+        }
+        if (!match || !ir1_opnd_is_mem(first_input) ||
+            ir1_opnd_size(first_input) != 8 ||
+            ir1_opnd_size(ir1_get_opnd(movzx1, 1)) != 8 ||
+            ir1_opnd_size(ir1_get_opnd(movzx2, 1)) != 8 ||
+            ir1_opnd_size(ir1_get_opnd(sign_extend, 0)) != 64 ||
+            ir1_opnd_size(ir1_get_opnd(sign_extend, 1)) != 32) {
             continue;
         }
 

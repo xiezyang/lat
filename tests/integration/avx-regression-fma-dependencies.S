@@ -1,0 +1,370 @@
+/*
+ * SPDX-FileCopyrightText: 2026 LAT Project Authors
+ * SPDX-License-Identifier: GPL-2.0-only
+ */
+.intel_syntax noprefix
+/* 324 combinations: arithmetic operation, optional source copy, FMA order,
+ * add/subtract, and source aliases.  Exact finite values isolate forwarding
+ * from NaN and MXCSR semantics; also check the preserved upper XMM lanes.
+ */
+.text
+.global _start
+
+.macro CASE arith, arith_src, fma, src1, src2, expected
+    vmovaps xmm1, [rip + seven]
+    vmovaps xmm2, [rip + two]
+    vmovaps xmm3, [rip + three]
+    vmovaps xmm4, [rip + seven]
+    \arith xmm4, \arith_src, xmm2
+    \fma xmm4, \src1, \src2
+    vmovdqu [rip + out], xmm4
+    cmp dword ptr [rip + out], \expected
+    jne fail
+    cmp dword ptr [rip + out + 4], 0x41000000
+    jne fail
+    cmp dword ptr [rip + out + 8], 0x41100000
+    jne fail
+    cmp dword ptr [rip + out + 12], 0x41200000
+    jne fail
+.endm
+_start:
+    CASE vaddss,xmm1,vfmadd132ss,xmm2,xmm2,0x41a00000
+    CASE vaddss,xmm1,vfmadd132ss,xmm2,xmm3,0x41e80000
+    CASE vaddss,xmm1,vfmadd132ss,xmm2,xmm4,0x42a60000
+    CASE vaddss,xmm1,vfmadd132ss,xmm3,xmm2,0x41a80000
+    CASE vaddss,xmm1,vfmadd132ss,xmm3,xmm3,0x41f00000
+    CASE vaddss,xmm1,vfmadd132ss,xmm3,xmm4,0x42a80000
+    CASE vaddss,xmm1,vfmadd132ss,xmm4,xmm2,0x41d80000
+    CASE vaddss,xmm1,vfmadd132ss,xmm4,xmm3,0x42100000
+    CASE vaddss,xmm1,vfmadd132ss,xmm4,xmm4,0x42b40000
+    CASE vaddss,xmm1,vfmadd213ss,xmm2,xmm2,0x41a00000
+    CASE vaddss,xmm1,vfmadd213ss,xmm2,xmm3,0x41a80000
+    CASE vaddss,xmm1,vfmadd213ss,xmm2,xmm4,0x41d80000
+    CASE vaddss,xmm1,vfmadd213ss,xmm3,xmm2,0x41e80000
+    CASE vaddss,xmm1,vfmadd213ss,xmm3,xmm3,0x41f00000
+    CASE vaddss,xmm1,vfmadd213ss,xmm3,xmm4,0x42100000
+    CASE vaddss,xmm1,vfmadd213ss,xmm4,xmm2,0x42a60000
+    CASE vaddss,xmm1,vfmadd213ss,xmm4,xmm3,0x42a80000
+    CASE vaddss,xmm1,vfmadd213ss,xmm4,xmm4,0x42b40000
+    CASE vaddss,xmm1,vfmadd231ss,xmm2,xmm2,0x41500000
+    CASE vaddss,xmm1,vfmadd231ss,xmm2,xmm3,0x41700000
+    CASE vaddss,xmm1,vfmadd231ss,xmm2,xmm4,0x41d80000
+    CASE vaddss,xmm1,vfmadd231ss,xmm3,xmm2,0x41700000
+    CASE vaddss,xmm1,vfmadd231ss,xmm3,xmm3,0x41900000
+    CASE vaddss,xmm1,vfmadd231ss,xmm3,xmm4,0x42100000
+    CASE vaddss,xmm1,vfmadd231ss,xmm4,xmm2,0x41d80000
+    CASE vaddss,xmm1,vfmadd231ss,xmm4,xmm3,0x42100000
+    CASE vaddss,xmm1,vfmadd231ss,xmm4,xmm4,0x42b40000
+    CASE vaddss,xmm1,vfmsub132ss,xmm2,xmm2,0x41800000
+    CASE vaddss,xmm1,vfmsub132ss,xmm2,xmm3,0x41c80000
+    CASE vaddss,xmm1,vfmsub132ss,xmm2,xmm4,0x429e0000
+    CASE vaddss,xmm1,vfmsub132ss,xmm3,xmm2,0x41700000
+    CASE vaddss,xmm1,vfmsub132ss,xmm3,xmm3,0x41c00000
+    CASE vaddss,xmm1,vfmsub132ss,xmm3,xmm4,0x429c0000
+    CASE vaddss,xmm1,vfmsub132ss,xmm4,xmm2,0x41100000
+    CASE vaddss,xmm1,vfmsub132ss,xmm4,xmm3,0x41900000
+    CASE vaddss,xmm1,vfmsub132ss,xmm4,xmm4,0x42900000
+    CASE vaddss,xmm1,vfmsub213ss,xmm2,xmm2,0x41800000
+    CASE vaddss,xmm1,vfmsub213ss,xmm2,xmm3,0x41700000
+    CASE vaddss,xmm1,vfmsub213ss,xmm2,xmm4,0x41100000
+    CASE vaddss,xmm1,vfmsub213ss,xmm3,xmm2,0x41c80000
+    CASE vaddss,xmm1,vfmsub213ss,xmm3,xmm3,0x41c00000
+    CASE vaddss,xmm1,vfmsub213ss,xmm3,xmm4,0x41900000
+    CASE vaddss,xmm1,vfmsub213ss,xmm4,xmm2,0x429e0000
+    CASE vaddss,xmm1,vfmsub213ss,xmm4,xmm3,0x429c0000
+    CASE vaddss,xmm1,vfmsub213ss,xmm4,xmm4,0x42900000
+    CASE vaddss,xmm1,vfmsub231ss,xmm2,xmm2,0xc0a00000
+    CASE vaddss,xmm1,vfmsub231ss,xmm2,xmm3,0xc0400000
+    CASE vaddss,xmm1,vfmsub231ss,xmm2,xmm4,0x41100000
+    CASE vaddss,xmm1,vfmsub231ss,xmm3,xmm2,0xc0400000
+    CASE vaddss,xmm1,vfmsub231ss,xmm3,xmm3,0x00000000
+    CASE vaddss,xmm1,vfmsub231ss,xmm3,xmm4,0x41900000
+    CASE vaddss,xmm1,vfmsub231ss,xmm4,xmm2,0x41100000
+    CASE vaddss,xmm1,vfmsub231ss,xmm4,xmm3,0x41900000
+    CASE vaddss,xmm1,vfmsub231ss,xmm4,xmm4,0x42900000
+    CASE vaddss,xmm4,vfmadd132ss,xmm2,xmm2,0x41a00000
+    CASE vaddss,xmm4,vfmadd132ss,xmm2,xmm3,0x41e80000
+    CASE vaddss,xmm4,vfmadd132ss,xmm2,xmm4,0x42a60000
+    CASE vaddss,xmm4,vfmadd132ss,xmm3,xmm2,0x41a80000
+    CASE vaddss,xmm4,vfmadd132ss,xmm3,xmm3,0x41f00000
+    CASE vaddss,xmm4,vfmadd132ss,xmm3,xmm4,0x42a80000
+    CASE vaddss,xmm4,vfmadd132ss,xmm4,xmm2,0x41d80000
+    CASE vaddss,xmm4,vfmadd132ss,xmm4,xmm3,0x42100000
+    CASE vaddss,xmm4,vfmadd132ss,xmm4,xmm4,0x42b40000
+    CASE vaddss,xmm4,vfmadd213ss,xmm2,xmm2,0x41a00000
+    CASE vaddss,xmm4,vfmadd213ss,xmm2,xmm3,0x41a80000
+    CASE vaddss,xmm4,vfmadd213ss,xmm2,xmm4,0x41d80000
+    CASE vaddss,xmm4,vfmadd213ss,xmm3,xmm2,0x41e80000
+    CASE vaddss,xmm4,vfmadd213ss,xmm3,xmm3,0x41f00000
+    CASE vaddss,xmm4,vfmadd213ss,xmm3,xmm4,0x42100000
+    CASE vaddss,xmm4,vfmadd213ss,xmm4,xmm2,0x42a60000
+    CASE vaddss,xmm4,vfmadd213ss,xmm4,xmm3,0x42a80000
+    CASE vaddss,xmm4,vfmadd213ss,xmm4,xmm4,0x42b40000
+    CASE vaddss,xmm4,vfmadd231ss,xmm2,xmm2,0x41500000
+    CASE vaddss,xmm4,vfmadd231ss,xmm2,xmm3,0x41700000
+    CASE vaddss,xmm4,vfmadd231ss,xmm2,xmm4,0x41d80000
+    CASE vaddss,xmm4,vfmadd231ss,xmm3,xmm2,0x41700000
+    CASE vaddss,xmm4,vfmadd231ss,xmm3,xmm3,0x41900000
+    CASE vaddss,xmm4,vfmadd231ss,xmm3,xmm4,0x42100000
+    CASE vaddss,xmm4,vfmadd231ss,xmm4,xmm2,0x41d80000
+    CASE vaddss,xmm4,vfmadd231ss,xmm4,xmm3,0x42100000
+    CASE vaddss,xmm4,vfmadd231ss,xmm4,xmm4,0x42b40000
+    CASE vaddss,xmm4,vfmsub132ss,xmm2,xmm2,0x41800000
+    CASE vaddss,xmm4,vfmsub132ss,xmm2,xmm3,0x41c80000
+    CASE vaddss,xmm4,vfmsub132ss,xmm2,xmm4,0x429e0000
+    CASE vaddss,xmm4,vfmsub132ss,xmm3,xmm2,0x41700000
+    CASE vaddss,xmm4,vfmsub132ss,xmm3,xmm3,0x41c00000
+    CASE vaddss,xmm4,vfmsub132ss,xmm3,xmm4,0x429c0000
+    CASE vaddss,xmm4,vfmsub132ss,xmm4,xmm2,0x41100000
+    CASE vaddss,xmm4,vfmsub132ss,xmm4,xmm3,0x41900000
+    CASE vaddss,xmm4,vfmsub132ss,xmm4,xmm4,0x42900000
+    CASE vaddss,xmm4,vfmsub213ss,xmm2,xmm2,0x41800000
+    CASE vaddss,xmm4,vfmsub213ss,xmm2,xmm3,0x41700000
+    CASE vaddss,xmm4,vfmsub213ss,xmm2,xmm4,0x41100000
+    CASE vaddss,xmm4,vfmsub213ss,xmm3,xmm2,0x41c80000
+    CASE vaddss,xmm4,vfmsub213ss,xmm3,xmm3,0x41c00000
+    CASE vaddss,xmm4,vfmsub213ss,xmm3,xmm4,0x41900000
+    CASE vaddss,xmm4,vfmsub213ss,xmm4,xmm2,0x429e0000
+    CASE vaddss,xmm4,vfmsub213ss,xmm4,xmm3,0x429c0000
+    CASE vaddss,xmm4,vfmsub213ss,xmm4,xmm4,0x42900000
+    CASE vaddss,xmm4,vfmsub231ss,xmm2,xmm2,0xc0a00000
+    CASE vaddss,xmm4,vfmsub231ss,xmm2,xmm3,0xc0400000
+    CASE vaddss,xmm4,vfmsub231ss,xmm2,xmm4,0x41100000
+    CASE vaddss,xmm4,vfmsub231ss,xmm3,xmm2,0xc0400000
+    CASE vaddss,xmm4,vfmsub231ss,xmm3,xmm3,0x00000000
+    CASE vaddss,xmm4,vfmsub231ss,xmm3,xmm4,0x41900000
+    CASE vaddss,xmm4,vfmsub231ss,xmm4,xmm2,0x41100000
+    CASE vaddss,xmm4,vfmsub231ss,xmm4,xmm3,0x41900000
+    CASE vaddss,xmm4,vfmsub231ss,xmm4,xmm4,0x42900000
+    CASE vsubss,xmm1,vfmadd132ss,xmm2,xmm2,0x41400000
+    CASE vsubss,xmm1,vfmadd132ss,xmm2,xmm3,0x41880000
+    CASE vsubss,xmm1,vfmadd132ss,xmm2,xmm4,0x41d80000
+    CASE vsubss,xmm1,vfmadd132ss,xmm3,xmm2,0x41500000
+    CASE vsubss,xmm1,vfmadd132ss,xmm3,xmm3,0x41900000
+    CASE vsubss,xmm1,vfmadd132ss,xmm3,xmm4,0x41e00000
+    CASE vsubss,xmm1,vfmadd132ss,xmm4,xmm2,0x41700000
+    CASE vsubss,xmm1,vfmadd132ss,xmm4,xmm3,0x41a00000
+    CASE vsubss,xmm1,vfmadd132ss,xmm4,xmm4,0x41f00000
+    CASE vsubss,xmm1,vfmadd213ss,xmm2,xmm2,0x41400000
+    CASE vsubss,xmm1,vfmadd213ss,xmm2,xmm3,0x41500000
+    CASE vsubss,xmm1,vfmadd213ss,xmm2,xmm4,0x41700000
+    CASE vsubss,xmm1,vfmadd213ss,xmm3,xmm2,0x41880000
+    CASE vsubss,xmm1,vfmadd213ss,xmm3,xmm3,0x41900000
+    CASE vsubss,xmm1,vfmadd213ss,xmm3,xmm4,0x41a00000
+    CASE vsubss,xmm1,vfmadd213ss,xmm4,xmm2,0x41d80000
+    CASE vsubss,xmm1,vfmadd213ss,xmm4,xmm3,0x41e00000
+    CASE vsubss,xmm1,vfmadd213ss,xmm4,xmm4,0x41f00000
+    CASE vsubss,xmm1,vfmadd231ss,xmm2,xmm2,0x41100000
+    CASE vsubss,xmm1,vfmadd231ss,xmm2,xmm3,0x41300000
+    CASE vsubss,xmm1,vfmadd231ss,xmm2,xmm4,0x41700000
+    CASE vsubss,xmm1,vfmadd231ss,xmm3,xmm2,0x41300000
+    CASE vsubss,xmm1,vfmadd231ss,xmm3,xmm3,0x41600000
+    CASE vsubss,xmm1,vfmadd231ss,xmm3,xmm4,0x41a00000
+    CASE vsubss,xmm1,vfmadd231ss,xmm4,xmm2,0x41700000
+    CASE vsubss,xmm1,vfmadd231ss,xmm4,xmm3,0x41a00000
+    CASE vsubss,xmm1,vfmadd231ss,xmm4,xmm4,0x41f00000
+    CASE vsubss,xmm1,vfmsub132ss,xmm2,xmm2,0x41000000
+    CASE vsubss,xmm1,vfmsub132ss,xmm2,xmm3,0x41500000
+    CASE vsubss,xmm1,vfmsub132ss,xmm2,xmm4,0x41b80000
+    CASE vsubss,xmm1,vfmsub132ss,xmm3,xmm2,0x40e00000
+    CASE vsubss,xmm1,vfmsub132ss,xmm3,xmm3,0x41400000
+    CASE vsubss,xmm1,vfmsub132ss,xmm3,xmm4,0x41b00000
+    CASE vsubss,xmm1,vfmsub132ss,xmm4,xmm2,0x40a00000
+    CASE vsubss,xmm1,vfmsub132ss,xmm4,xmm3,0x41200000
+    CASE vsubss,xmm1,vfmsub132ss,xmm4,xmm4,0x41a00000
+    CASE vsubss,xmm1,vfmsub213ss,xmm2,xmm2,0x41000000
+    CASE vsubss,xmm1,vfmsub213ss,xmm2,xmm3,0x40e00000
+    CASE vsubss,xmm1,vfmsub213ss,xmm2,xmm4,0x40a00000
+    CASE vsubss,xmm1,vfmsub213ss,xmm3,xmm2,0x41500000
+    CASE vsubss,xmm1,vfmsub213ss,xmm3,xmm3,0x41400000
+    CASE vsubss,xmm1,vfmsub213ss,xmm3,xmm4,0x41200000
+    CASE vsubss,xmm1,vfmsub213ss,xmm4,xmm2,0x41b80000
+    CASE vsubss,xmm1,vfmsub213ss,xmm4,xmm3,0x41b00000
+    CASE vsubss,xmm1,vfmsub213ss,xmm4,xmm4,0x41a00000
+    CASE vsubss,xmm1,vfmsub231ss,xmm2,xmm2,0xbf800000
+    CASE vsubss,xmm1,vfmsub231ss,xmm2,xmm3,0x3f800000
+    CASE vsubss,xmm1,vfmsub231ss,xmm2,xmm4,0x40a00000
+    CASE vsubss,xmm1,vfmsub231ss,xmm3,xmm2,0x3f800000
+    CASE vsubss,xmm1,vfmsub231ss,xmm3,xmm3,0x40800000
+    CASE vsubss,xmm1,vfmsub231ss,xmm3,xmm4,0x41200000
+    CASE vsubss,xmm1,vfmsub231ss,xmm4,xmm2,0x40a00000
+    CASE vsubss,xmm1,vfmsub231ss,xmm4,xmm3,0x41200000
+    CASE vsubss,xmm1,vfmsub231ss,xmm4,xmm4,0x41a00000
+    CASE vsubss,xmm4,vfmadd132ss,xmm2,xmm2,0x41400000
+    CASE vsubss,xmm4,vfmadd132ss,xmm2,xmm3,0x41880000
+    CASE vsubss,xmm4,vfmadd132ss,xmm2,xmm4,0x41d80000
+    CASE vsubss,xmm4,vfmadd132ss,xmm3,xmm2,0x41500000
+    CASE vsubss,xmm4,vfmadd132ss,xmm3,xmm3,0x41900000
+    CASE vsubss,xmm4,vfmadd132ss,xmm3,xmm4,0x41e00000
+    CASE vsubss,xmm4,vfmadd132ss,xmm4,xmm2,0x41700000
+    CASE vsubss,xmm4,vfmadd132ss,xmm4,xmm3,0x41a00000
+    CASE vsubss,xmm4,vfmadd132ss,xmm4,xmm4,0x41f00000
+    CASE vsubss,xmm4,vfmadd213ss,xmm2,xmm2,0x41400000
+    CASE vsubss,xmm4,vfmadd213ss,xmm2,xmm3,0x41500000
+    CASE vsubss,xmm4,vfmadd213ss,xmm2,xmm4,0x41700000
+    CASE vsubss,xmm4,vfmadd213ss,xmm3,xmm2,0x41880000
+    CASE vsubss,xmm4,vfmadd213ss,xmm3,xmm3,0x41900000
+    CASE vsubss,xmm4,vfmadd213ss,xmm3,xmm4,0x41a00000
+    CASE vsubss,xmm4,vfmadd213ss,xmm4,xmm2,0x41d80000
+    CASE vsubss,xmm4,vfmadd213ss,xmm4,xmm3,0x41e00000
+    CASE vsubss,xmm4,vfmadd213ss,xmm4,xmm4,0x41f00000
+    CASE vsubss,xmm4,vfmadd231ss,xmm2,xmm2,0x41100000
+    CASE vsubss,xmm4,vfmadd231ss,xmm2,xmm3,0x41300000
+    CASE vsubss,xmm4,vfmadd231ss,xmm2,xmm4,0x41700000
+    CASE vsubss,xmm4,vfmadd231ss,xmm3,xmm2,0x41300000
+    CASE vsubss,xmm4,vfmadd231ss,xmm3,xmm3,0x41600000
+    CASE vsubss,xmm4,vfmadd231ss,xmm3,xmm4,0x41a00000
+    CASE vsubss,xmm4,vfmadd231ss,xmm4,xmm2,0x41700000
+    CASE vsubss,xmm4,vfmadd231ss,xmm4,xmm3,0x41a00000
+    CASE vsubss,xmm4,vfmadd231ss,xmm4,xmm4,0x41f00000
+    CASE vsubss,xmm4,vfmsub132ss,xmm2,xmm2,0x41000000
+    CASE vsubss,xmm4,vfmsub132ss,xmm2,xmm3,0x41500000
+    CASE vsubss,xmm4,vfmsub132ss,xmm2,xmm4,0x41b80000
+    CASE vsubss,xmm4,vfmsub132ss,xmm3,xmm2,0x40e00000
+    CASE vsubss,xmm4,vfmsub132ss,xmm3,xmm3,0x41400000
+    CASE vsubss,xmm4,vfmsub132ss,xmm3,xmm4,0x41b00000
+    CASE vsubss,xmm4,vfmsub132ss,xmm4,xmm2,0x40a00000
+    CASE vsubss,xmm4,vfmsub132ss,xmm4,xmm3,0x41200000
+    CASE vsubss,xmm4,vfmsub132ss,xmm4,xmm4,0x41a00000
+    CASE vsubss,xmm4,vfmsub213ss,xmm2,xmm2,0x41000000
+    CASE vsubss,xmm4,vfmsub213ss,xmm2,xmm3,0x40e00000
+    CASE vsubss,xmm4,vfmsub213ss,xmm2,xmm4,0x40a00000
+    CASE vsubss,xmm4,vfmsub213ss,xmm3,xmm2,0x41500000
+    CASE vsubss,xmm4,vfmsub213ss,xmm3,xmm3,0x41400000
+    CASE vsubss,xmm4,vfmsub213ss,xmm3,xmm4,0x41200000
+    CASE vsubss,xmm4,vfmsub213ss,xmm4,xmm2,0x41b80000
+    CASE vsubss,xmm4,vfmsub213ss,xmm4,xmm3,0x41b00000
+    CASE vsubss,xmm4,vfmsub213ss,xmm4,xmm4,0x41a00000
+    CASE vsubss,xmm4,vfmsub231ss,xmm2,xmm2,0xbf800000
+    CASE vsubss,xmm4,vfmsub231ss,xmm2,xmm3,0x3f800000
+    CASE vsubss,xmm4,vfmsub231ss,xmm2,xmm4,0x40a00000
+    CASE vsubss,xmm4,vfmsub231ss,xmm3,xmm2,0x3f800000
+    CASE vsubss,xmm4,vfmsub231ss,xmm3,xmm3,0x40800000
+    CASE vsubss,xmm4,vfmsub231ss,xmm3,xmm4,0x41200000
+    CASE vsubss,xmm4,vfmsub231ss,xmm4,xmm2,0x40a00000
+    CASE vsubss,xmm4,vfmsub231ss,xmm4,xmm3,0x41200000
+    CASE vsubss,xmm4,vfmsub231ss,xmm4,xmm4,0x41a00000
+    CASE vmulss,xmm1,vfmadd132ss,xmm2,xmm2,0x41f00000
+    CASE vmulss,xmm1,vfmadd132ss,xmm2,xmm3,0x42300000
+    CASE vmulss,xmm1,vfmadd132ss,xmm2,xmm4,0x43460000
+    CASE vmulss,xmm1,vfmadd132ss,xmm3,xmm2,0x41f80000
+    CASE vmulss,xmm1,vfmadd132ss,xmm3,xmm3,0x42340000
+    CASE vmulss,xmm1,vfmadd132ss,xmm3,xmm4,0x43470000
+    CASE vmulss,xmm1,vfmadd132ss,xmm4,xmm2,0x42280000
+    CASE vmulss,xmm1,vfmadd132ss,xmm4,xmm3,0x42600000
+    CASE vmulss,xmm1,vfmadd132ss,xmm4,xmm4,0x43520000
+    CASE vmulss,xmm1,vfmadd213ss,xmm2,xmm2,0x41f00000
+    CASE vmulss,xmm1,vfmadd213ss,xmm2,xmm3,0x41f80000
+    CASE vmulss,xmm1,vfmadd213ss,xmm2,xmm4,0x42280000
+    CASE vmulss,xmm1,vfmadd213ss,xmm3,xmm2,0x42300000
+    CASE vmulss,xmm1,vfmadd213ss,xmm3,xmm3,0x42340000
+    CASE vmulss,xmm1,vfmadd213ss,xmm3,xmm4,0x42600000
+    CASE vmulss,xmm1,vfmadd213ss,xmm4,xmm2,0x43460000
+    CASE vmulss,xmm1,vfmadd213ss,xmm4,xmm3,0x43470000
+    CASE vmulss,xmm1,vfmadd213ss,xmm4,xmm4,0x43520000
+    CASE vmulss,xmm1,vfmadd231ss,xmm2,xmm2,0x41900000
+    CASE vmulss,xmm1,vfmadd231ss,xmm2,xmm3,0x41a00000
+    CASE vmulss,xmm1,vfmadd231ss,xmm2,xmm4,0x42280000
+    CASE vmulss,xmm1,vfmadd231ss,xmm3,xmm2,0x41a00000
+    CASE vmulss,xmm1,vfmadd231ss,xmm3,xmm3,0x41b80000
+    CASE vmulss,xmm1,vfmadd231ss,xmm3,xmm4,0x42600000
+    CASE vmulss,xmm1,vfmadd231ss,xmm4,xmm2,0x42280000
+    CASE vmulss,xmm1,vfmadd231ss,xmm4,xmm3,0x42600000
+    CASE vmulss,xmm1,vfmadd231ss,xmm4,xmm4,0x43520000
+    CASE vmulss,xmm1,vfmsub132ss,xmm2,xmm2,0x41d00000
+    CASE vmulss,xmm1,vfmsub132ss,xmm2,xmm3,0x42200000
+    CASE vmulss,xmm1,vfmsub132ss,xmm2,xmm4,0x43420000
+    CASE vmulss,xmm1,vfmsub132ss,xmm3,xmm2,0x41c80000
+    CASE vmulss,xmm1,vfmsub132ss,xmm3,xmm3,0x421c0000
+    CASE vmulss,xmm1,vfmsub132ss,xmm3,xmm4,0x43410000
+    CASE vmulss,xmm1,vfmsub132ss,xmm4,xmm2,0x41600000
+    CASE vmulss,xmm1,vfmsub132ss,xmm4,xmm3,0x41e00000
+    CASE vmulss,xmm1,vfmsub132ss,xmm4,xmm4,0x43360000
+    CASE vmulss,xmm1,vfmsub213ss,xmm2,xmm2,0x41d00000
+    CASE vmulss,xmm1,vfmsub213ss,xmm2,xmm3,0x41c80000
+    CASE vmulss,xmm1,vfmsub213ss,xmm2,xmm4,0x41600000
+    CASE vmulss,xmm1,vfmsub213ss,xmm3,xmm2,0x42200000
+    CASE vmulss,xmm1,vfmsub213ss,xmm3,xmm3,0x421c0000
+    CASE vmulss,xmm1,vfmsub213ss,xmm3,xmm4,0x41e00000
+    CASE vmulss,xmm1,vfmsub213ss,xmm4,xmm2,0x43420000
+    CASE vmulss,xmm1,vfmsub213ss,xmm4,xmm3,0x43410000
+    CASE vmulss,xmm1,vfmsub213ss,xmm4,xmm4,0x43360000
+    CASE vmulss,xmm1,vfmsub231ss,xmm2,xmm2,0xc1200000
+    CASE vmulss,xmm1,vfmsub231ss,xmm2,xmm3,0xc1000000
+    CASE vmulss,xmm1,vfmsub231ss,xmm2,xmm4,0x41600000
+    CASE vmulss,xmm1,vfmsub231ss,xmm3,xmm2,0xc1000000
+    CASE vmulss,xmm1,vfmsub231ss,xmm3,xmm3,0xc0a00000
+    CASE vmulss,xmm1,vfmsub231ss,xmm3,xmm4,0x41e00000
+    CASE vmulss,xmm1,vfmsub231ss,xmm4,xmm2,0x41600000
+    CASE vmulss,xmm1,vfmsub231ss,xmm4,xmm3,0x41e00000
+    CASE vmulss,xmm1,vfmsub231ss,xmm4,xmm4,0x43360000
+    CASE vmulss,xmm4,vfmadd132ss,xmm2,xmm2,0x41f00000
+    CASE vmulss,xmm4,vfmadd132ss,xmm2,xmm3,0x42300000
+    CASE vmulss,xmm4,vfmadd132ss,xmm2,xmm4,0x43460000
+    CASE vmulss,xmm4,vfmadd132ss,xmm3,xmm2,0x41f80000
+    CASE vmulss,xmm4,vfmadd132ss,xmm3,xmm3,0x42340000
+    CASE vmulss,xmm4,vfmadd132ss,xmm3,xmm4,0x43470000
+    CASE vmulss,xmm4,vfmadd132ss,xmm4,xmm2,0x42280000
+    CASE vmulss,xmm4,vfmadd132ss,xmm4,xmm3,0x42600000
+    CASE vmulss,xmm4,vfmadd132ss,xmm4,xmm4,0x43520000
+    CASE vmulss,xmm4,vfmadd213ss,xmm2,xmm2,0x41f00000
+    CASE vmulss,xmm4,vfmadd213ss,xmm2,xmm3,0x41f80000
+    CASE vmulss,xmm4,vfmadd213ss,xmm2,xmm4,0x42280000
+    CASE vmulss,xmm4,vfmadd213ss,xmm3,xmm2,0x42300000
+    CASE vmulss,xmm4,vfmadd213ss,xmm3,xmm3,0x42340000
+    CASE vmulss,xmm4,vfmadd213ss,xmm3,xmm4,0x42600000
+    CASE vmulss,xmm4,vfmadd213ss,xmm4,xmm2,0x43460000
+    CASE vmulss,xmm4,vfmadd213ss,xmm4,xmm3,0x43470000
+    CASE vmulss,xmm4,vfmadd213ss,xmm4,xmm4,0x43520000
+    CASE vmulss,xmm4,vfmadd231ss,xmm2,xmm2,0x41900000
+    CASE vmulss,xmm4,vfmadd231ss,xmm2,xmm3,0x41a00000
+    CASE vmulss,xmm4,vfmadd231ss,xmm2,xmm4,0x42280000
+    CASE vmulss,xmm4,vfmadd231ss,xmm3,xmm2,0x41a00000
+    CASE vmulss,xmm4,vfmadd231ss,xmm3,xmm3,0x41b80000
+    CASE vmulss,xmm4,vfmadd231ss,xmm3,xmm4,0x42600000
+    CASE vmulss,xmm4,vfmadd231ss,xmm4,xmm2,0x42280000
+    CASE vmulss,xmm4,vfmadd231ss,xmm4,xmm3,0x42600000
+    CASE vmulss,xmm4,vfmadd231ss,xmm4,xmm4,0x43520000
+    CASE vmulss,xmm4,vfmsub132ss,xmm2,xmm2,0x41d00000
+    CASE vmulss,xmm4,vfmsub132ss,xmm2,xmm3,0x42200000
+    CASE vmulss,xmm4,vfmsub132ss,xmm2,xmm4,0x43420000
+    CASE vmulss,xmm4,vfmsub132ss,xmm3,xmm2,0x41c80000
+    CASE vmulss,xmm4,vfmsub132ss,xmm3,xmm3,0x421c0000
+    CASE vmulss,xmm4,vfmsub132ss,xmm3,xmm4,0x43410000
+    CASE vmulss,xmm4,vfmsub132ss,xmm4,xmm2,0x41600000
+    CASE vmulss,xmm4,vfmsub132ss,xmm4,xmm3,0x41e00000
+    CASE vmulss,xmm4,vfmsub132ss,xmm4,xmm4,0x43360000
+    CASE vmulss,xmm4,vfmsub213ss,xmm2,xmm2,0x41d00000
+    CASE vmulss,xmm4,vfmsub213ss,xmm2,xmm3,0x41c80000
+    CASE vmulss,xmm4,vfmsub213ss,xmm2,xmm4,0x41600000
+    CASE vmulss,xmm4,vfmsub213ss,xmm3,xmm2,0x42200000
+    CASE vmulss,xmm4,vfmsub213ss,xmm3,xmm3,0x421c0000
+    CASE vmulss,xmm4,vfmsub213ss,xmm3,xmm4,0x41e00000
+    CASE vmulss,xmm4,vfmsub213ss,xmm4,xmm2,0x43420000
+    CASE vmulss,xmm4,vfmsub213ss,xmm4,xmm3,0x43410000
+    CASE vmulss,xmm4,vfmsub213ss,xmm4,xmm4,0x43360000
+    CASE vmulss,xmm4,vfmsub231ss,xmm2,xmm2,0xc1200000
+    CASE vmulss,xmm4,vfmsub231ss,xmm2,xmm3,0xc1000000
+    CASE vmulss,xmm4,vfmsub231ss,xmm2,xmm4,0x41600000
+    CASE vmulss,xmm4,vfmsub231ss,xmm3,xmm2,0xc1000000
+    CASE vmulss,xmm4,vfmsub231ss,xmm3,xmm3,0xc0a00000
+    CASE vmulss,xmm4,vfmsub231ss,xmm3,xmm4,0x41e00000
+    CASE vmulss,xmm4,vfmsub231ss,xmm4,xmm2,0x41600000
+    CASE vmulss,xmm4,vfmsub231ss,xmm4,xmm3,0x41e00000
+    CASE vmulss,xmm4,vfmsub231ss,xmm4,xmm4,0x43360000
+    xor edi, edi
+    jmp exit
+fail:
+    mov edi, 1
+exit:
+    mov eax, 60
+    syscall
+.section .rodata
+.p2align 4
+seven: .float 7,8,9,10
+two: .float 2,2,2,2
+three: .float 3,3,3,3
+.bss
+.p2align 4
+out: .skip 16
+.section .note.GNU-stack,"",@progbits

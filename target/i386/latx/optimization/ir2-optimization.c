@@ -276,8 +276,13 @@ static void ir2_opt_scalar_fma_forward(void)
             continue;
         }
 
-        /* Keep the scalar result in the temporary until the fused operation. */
-        fma->_opnd[3] = arith->_opnd[0];
+        /* The inserted result may also be a multiplicand, not just the
+         * addend.  Forward every read before removing its writeback. */
+        for (int i = 1; i <= 3; ++i) {
+            if (ir2_opnd_cmp(&fma->_opnd[i], &insert->_opnd[0])) {
+                fma->_opnd[i] = arith->_opnd[0];
+            }
+        }
         next = ir2_next(insert);
         ir2_remove(ir2_get_id(insert));
         arith = next;

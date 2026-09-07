@@ -5303,6 +5303,10 @@ static void translate_vroundps_trunc_sae(IR2_OPND dest, IR2_OPND src,
     IR2_OPND select_mask = ra_alloc_ftemp();
     IR2_OPND quiet_nan = ra_alloc_ftemp();
 
+    /* Reuse the shift temporary once the bit mask is built.  Keep src intact
+     * through the large-value and NaN selections, including dest == src. */
+    IR2_OPND result = shift;
+
     if (is_xmm) {
         la_vfcmp_cond_s(nan_mask, src, src, FCMP_COND_CUN);
         la_vslli_w(exponent, src, 1);
@@ -5311,21 +5315,21 @@ static void translate_vroundps_trunc_sae(IR2_OPND dest, IR2_OPND src,
         la_vsub_w(shift, shift, exponent);
         la_vseq_w(bits_mask, exponent, exponent);
         la_vsll_w(bits_mask, bits_mask, shift);
-        la_vand_v(dest, src, bits_mask);
+        la_vand_v(result, src, bits_mask);
 
         la_vldi(sign, 0b1001110000000);
         la_vsrli_w(quiet_nan, sign, 9);
         la_vand_v(sign, src, sign);
         la_vldi(bits_mask, VLDI_IMM_TYPE0(2, 127));
         la_vslt_wu(select_mask, exponent, bits_mask);
-        la_vbitsel_v(dest, dest, sign, select_mask);
+        la_vbitsel_v(result, result, sign, select_mask);
 
         la_vldi(bits_mask, VLDI_IMM_TYPE0(2, 150));
         la_vslt_wu(select_mask, exponent, bits_mask);
-        la_vbitsel_v(dest, src, dest, select_mask);
+        la_vbitsel_v(result, src, result, select_mask);
 
         la_vor_v(quiet_nan, src, quiet_nan);
-        la_vbitsel_v(dest, dest, quiet_nan, nan_mask);
+        la_vbitsel_v(dest, result, quiet_nan, nan_mask);
     } else {
         la_xvfcmp_cond_s(nan_mask, src, src, FCMP_COND_CUN);
         la_xvslli_w(exponent, src, 1);
@@ -5334,21 +5338,21 @@ static void translate_vroundps_trunc_sae(IR2_OPND dest, IR2_OPND src,
         la_xvsub_w(shift, shift, exponent);
         la_xvseq_w(bits_mask, exponent, exponent);
         la_xvsll_w(bits_mask, bits_mask, shift);
-        la_xvand_v(dest, src, bits_mask);
+        la_xvand_v(result, src, bits_mask);
 
         la_xvldi(sign, 0b1001110000000);
         la_xvsrli_w(quiet_nan, sign, 9);
         la_xvand_v(sign, src, sign);
         la_xvldi(bits_mask, VLDI_IMM_TYPE0(2, 127));
         la_xvslt_wu(select_mask, exponent, bits_mask);
-        la_xvbitsel_v(dest, dest, sign, select_mask);
+        la_xvbitsel_v(result, result, sign, select_mask);
 
         la_xvldi(bits_mask, VLDI_IMM_TYPE0(2, 150));
         la_xvslt_wu(select_mask, exponent, bits_mask);
-        la_xvbitsel_v(dest, src, dest, select_mask);
+        la_xvbitsel_v(result, src, result, select_mask);
 
         la_xvor_v(quiet_nan, src, quiet_nan);
-        la_xvbitsel_v(dest, dest, quiet_nan, nan_mask);
+        la_xvbitsel_v(dest, result, quiet_nan, nan_mask);
     }
 
     ra_free_temp(quiet_nan);

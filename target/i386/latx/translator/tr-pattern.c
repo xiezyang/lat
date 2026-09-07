@@ -2533,14 +2533,17 @@ static bool translate_diff_cmov_u16(IR1_INST *pir1)
     IR2_OPND keep = ra_alloc_itemp();
 
     load_ireg_from_ir1_mem(input, load_mem, ZERO_EXTENSION, false);
-    li_wu(diff, UINT32_C(0x8000));
-    la_sub_d(diff, diff, input);
-    la_sub_d(value, diff, previous);
-    la_bstrpick_d(value, value, 15, 0);
-    la_sltui(condition, value, 5);
+    /* Preserve both 32-bit guest intermediates, not just the final CX. */
+    li_wu(diff, UINT32_C(0xffff8000));
+    la_sub_w(diff, diff, input);
+    la_bstrpick_d(diff, diff, 31, 0);
+    la_sub_w(value, diff, previous);
+    la_bstrpick_d(condition, value, 15, 0);
+    la_sltui(condition, condition, 5);
     la_masknez(keep, value, condition);
     la_maskeqz(condition, alternate, condition);
     la_or(value, keep, condition);
+    la_bstrpick_d(value, value, 31, 0);
     la_bstrpick_d(previous, value, 15, 0);
 
     ra_free_temp(keep);

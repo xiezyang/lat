@@ -1898,17 +1898,11 @@ bool ir1_translate(IR1_INST *ir1)
 
 #ifdef CONFIG_LATX_INSTS_PATTERN
     if (try_translate_instptn(ir1)) {
-        if (option_enable_lasx && !instptn_owns_ymmh) {
-            int opnd_num = ir1_get_opnd_num(ir1);
-
-            for (int i = 0; i < opnd_num; ++i) {
-                IR1_OPND *opnd = ir1_get_opnd(ir1, i);
-
-                if (ir1_opnd_is_ymm(opnd)) {
-                    mark_high128_xreg_zeroed(
-                        ra_alloc_xmm(ir1_opnd_base_reg_num(opnd)));
-                }
-            }
+        if (option_enable_lasx && !instptn_owns_ymmh &&
+            ir1_get_opnd_num(ir1) > 0 &&
+            ir1_opnd_is_ymm(ir1_get_opnd(ir1, 0))) {
+            mark_high128_xreg_zeroed(
+                ra_alloc_xmm(ir1_opnd_base_reg_num(ir1_get_opnd(ir1, 0))));
         }
         ra_free_all();
         return true;
@@ -1999,18 +1993,15 @@ bool ir1_translate(IR1_INST *ir1)
         restore_h128_of_ymm(ir1, temp);
     }
 
-    if (option_enable_lasx) {
-        int opnd_num = ir1_get_opnd_num(ir1);
-
-        /* A translated 256-bit operand no longer carries a deferred clear. */
-        for (int i = 0; i < opnd_num; ++i) {
-            IR1_OPND *opnd = ir1_get_opnd(ir1, i);
-
-            if (ir1_opnd_is_ymm(opnd)) {
-                mark_high128_xreg_zeroed(
-                    ra_alloc_xmm(ir1_opnd_base_reg_num(opnd)));
-            }
-        }
+    /*
+     * Only a full-width destination overwrites a deferred clear.  YMM reads
+     * were materialized before translation; a narrowing instruction may now
+     * have created a new clear for an XMM destination aliasing that source.
+     */
+    if (option_enable_lasx && ir1_get_opnd_num(ir1) > 0 &&
+        ir1_opnd_is_ymm(ir1_get_opnd(ir1, 0))) {
+        mark_high128_xreg_zeroed(
+            ra_alloc_xmm(ir1_opnd_base_reg_num(ir1_get_opnd(ir1, 0))));
     }
 
 #ifdef CONFIG_LATX_DEBUG

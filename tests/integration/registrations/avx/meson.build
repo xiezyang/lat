@@ -65,4 +65,21 @@ if 'x86_64-linux-user' in target_dirs
     ],
     'timeout': 300,
   }]
+  latx_integration_tests += [{
+    'name': 'test-avx-state-regressions',
+    'runner': find_program('../../test-avx-regressions.py'),
+    'args': [
+      emulators['latx-x86_64'],
+      files('../../avx-regression-diff-cmov-registers.S'),
+      files('../../avx-regression-extract-alias.S'),
+      files('../../avx-regression-fma-alias.S'),
+      files('../../avx-regression-fma-dependencies.S'),
+      files('../../avx-regression-narrow-state.S'),
+      files('../../avx-regression-scalar-hdr-word.S'),
+      files('../../avx-regression-sum3-ymm-observer.S'),
+      files('../../avx-regression-vround-alias.S'),
+      files('../../avx-regression-vround-boundaries.S'),
+    ],
+    'timeout': 300,
+  }]
 endif
