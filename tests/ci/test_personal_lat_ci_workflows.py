@@ -11,7 +11,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PERSONAL_REPOSITORY = "xiezyang/lat"
-UPSTREAM_REPOSITORY = "lat-opensource/lat"
 HEAD_SHA = "a" * 40
 BASE_SHA = "b" * 40
 
@@ -55,13 +54,13 @@ class ManualRequestTest(unittest.TestCase):
             "42", expected_head_sha, target, lambda path: pr
         )
 
-    def test_accepts_personal_and_upstream_targets(self):
+    def test_accepts_the_personal_repository_target(self):
         personal = self.resolve(pull_request())
         self.assertEqual(personal["target_repository"], PERSONAL_REPOSITORY)
-        upstream = self.resolve(
-            pull_request(UPSTREAM_REPOSITORY), target=UPSTREAM_REPOSITORY
-        )
-        self.assertEqual(upstream["target_repository"], UPSTREAM_REPOSITORY)
+
+    def test_rejects_a_target_other_than_the_personal_repository(self):
+        with self.assertRaisesRegex(REQUEST.LatCIRequestError, "must run in"):
+            self.resolve(pull_request(), target="lat-opensource/lat")
 
     def test_rejects_changed_head_after_manual_approval(self):
         with self.assertRaisesRegex(REQUEST.LatCIRequestError, "head changed since approval"):
@@ -142,6 +141,9 @@ class WorkflowDefinitionTest(unittest.TestCase):
         self.assertIn("GITHUB_TOKEN: ${{ github.token }}", workflow)
         self.assertIn("scripts/ci/lat_ci_manual_request.py", workflow)
         self.assertIn("actions/checkout@v4", workflow)
+        self.assertNotIn("pull_request:", workflow)
+        self.assertNotIn("push:", workflow)
+        self.assertIn('"request_kind": "manual"', workflow)
 
     def test_callback_authentication_precedes_check_run_creation(self):
         workflow = (ROOT / ".github" / "workflows" / "lat-ci-check.yml").read_text(

@@ -1,32 +1,17 @@
-name: Request LAT CI
+name: Request LAT CI (manual)
 
 on:
-  push:
-    branches-ignore:
-      - master
-  pull_request:
-    types:
-      - opened
-      - reopened
-      - synchronize
+  # LAT CI is opt-in.  A PR update alone never starts a self-hosted test.
   workflow_dispatch:
     inputs:
       pr_number:
-        description: "Open pull request number in the selected target repository"
+        description: "Open pull request number in xiezyang/lat"
         required: true
         type: string
       expected_head_sha:
         description: "Exact current PR head SHA approved for this test"
         required: true
         type: string
-      target_repository:
-        description: "PR target: xiezyang/lat for a fork-only PR, or lat-opensource/lat"
-        required: true
-        type: choice
-        default: lat-opensource/lat
-        options:
-          - xiezyang/lat
-          - lat-opensource/lat
       test_request:
         description: 'Optional JSON, e.g. {"schema_version":1,"suites":[{"suite_key":"spec2000","parameters":{"input_size":"ref","runs_per_invocation":3,"test_set":"197","times":2,"performance_analysis":true},"environment":{"LATX_AOT":"0"}}]}'
         required: false
@@ -38,15 +23,12 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: request-lat-ci-${{ github.head_ref || github.ref_name }}
-  cancel-in-progress: true
+  group: request-lat-ci-${{ github.repository }}-${{ inputs.pr_number }}
+  cancel-in-progress: false
 
 jobs:
   resolve-pr:
     name: Resolve the pull request
-    if: >-
-      github.event_name != 'pull_request' ||
-      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     outputs:
       should_dispatch: ${{ steps.resolve.outputs.should_dispatch }}
@@ -58,107 +40,23 @@ jobs:
       target_repository: ${{ steps.resolve.outputs.target_repository }}
 
     steps:
-      # All event paths that reach this job use a trusted personal-fork
-      # source.  Manual requests use the default-branch helper below.
+      # This is the trusted workflow revision on the default branch.  It
+      # never checks out pull request code.
       - uses: actions/checkout@v4
 
       - name: Find and validate the authoritative pull request
         id: resolve
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          BRANCH_NAME: ${{ github.ref_name }}
-          PR_EVENT_NUMBER: ${{ github.event.pull_request.number }}
-          PR_EVENT_TARGET_REPOSITORY: ${{ github.repository }}
           MANUAL_PR_NUMBER: ${{ inputs.pr_number }}
           EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
-          MANUAL_TARGET_REPOSITORY: ${{ inputs.target_repository }}
+          MANUAL_TARGET_REPOSITORY: ${{ github.repository }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          python3 - <<'PY'
-          import json
-          import os
-          import re
-          import subprocess
-          import sys
-          import urllib.parse
-          import urllib.request
-
-          source = "xiezyang/lat"
-          allowed_targets = (source, "lat-opensource/lat")
-          event_name = os.environ["EVENT_NAME"]
-          branch = os.environ["BRANCH_NAME"]
-
-          def get_json(path, query=None):
-              url = f"https://api.github.com/{path}"
-              if query:
-                  url += "?" + urllib.parse.urlencode(query)
-              request = urllib.request.Request(url, headers={
-                  "Accept": "application/vnd.github+json",
-                  "Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}",
-                  "User-Agent": "lat-ci-request",
-                  "X-GitHub-Api-Version": "2022-11-28",
-              })
-              with urllib.request.urlopen(request, timeout=30) as response:
-                  return json.load(response)
-
-          if event_name == "pull_request":
-              value = os.environ["PR_EVENT_NUMBER"].strip()
-              if not re.fullmatch(r"[1-9][0-9]*", value):
-                  raise SystemExit("pull_request event does not contain a valid PR number")
-              pr_number = int(value)
-              target = os.environ["PR_EVENT_TARGET_REPOSITORY"].strip()
-              if target != source:
-                  raise SystemExit("pull_request target_repository must be xiezyang/lat")
-          elif event_name == "push":
-              target = "lat-opensource/lat"
-              matches = get_json(f"repos/{target}/pulls", {"state": "open", "head": f"xiezyang:{branch}", "per_page": "2"})
-              if not isinstance(matches, list) or len(matches) != 1:
-                  print(f"No unique open {target} PR for xiezyang:{branch}; CI request skipped.")
-                  with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-                      print("should_dispatch=false", file=output)
-                  raise SystemExit(0)
-              pr_number = matches[0].get("number")
-          else:
-              subprocess.run(
-                  [
-                      sys.executable,
-                      "scripts/ci/lat_ci_manual_request.py",
-                      "--pr-number", os.environ["MANUAL_PR_NUMBER"],
-                      "--expected-head-sha", os.environ["EXPECTED_HEAD_SHA"],
-                      "--target-repository", os.environ["MANUAL_TARGET_REPOSITORY"],
-                      "--output", os.environ["GITHUB_OUTPUT"],
-                  ],
-                  check=True,
-              )
-              raise SystemExit(0)
-
-          pr = get_json(f"repos/{target}/pulls/{pr_number}")
-          head = pr.get("head") if isinstance(pr, dict) else None
-          base = pr.get("base") if isinstance(pr, dict) else None
-          head_repo = head.get("repo") if isinstance(head, dict) else None
-          base_repo = base.get("repo") if isinstance(base, dict) else None
-          if not isinstance(head_repo, dict) or head_repo.get("full_name") != source:
-              raise SystemExit("The PR head must be xiezyang/lat")
-          if not isinstance(base_repo, dict) or base_repo.get("full_name") != target:
-              raise SystemExit("The PR base repository does not match target_repository")
-          if pr.get("state") != "open":
-              raise SystemExit("The PR must be open")
-          if event_name == "push" and head.get("ref") != branch:
-              raise SystemExit("The PR head no longer matches the pushed branch")
-          values = {
-              "should_dispatch": "true",
-              "source_repository_id": str(head_repo["id"]),
-              "pr_number": str(pr["number"]),
-              "head_sha": str(head["sha"]),
-              "base_sha": str(base["sha"]),
-              "head_ref": str(head["ref"]),
-              "target_repository": target,
-          }
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-              for key, value in values.items():
-                  print(f"{key}={value}", file=output)
-          print(f"Resolved {target} PR #{pr['number']} at {head['sha']}")
-          PY
+          python3 scripts/ci/lat_ci_manual_request.py \
+            --pr-number "$MANUAL_PR_NUMBER" \
+            --expected-head-sha "$EXPECTED_HEAD_SHA" \
+            --target-repository "$MANUAL_TARGET_REPOSITORY" \
+            --output "$GITHUB_OUTPUT"
 
   dispatch-lat-ci-hub:
     name: Start LAT CI suite selection
@@ -169,7 +67,6 @@ jobs:
       - name: Dispatch the lat-ci-hub workflow
         env:
           DISPATCH_TOKEN: ${{ secrets.LAT_CI_HUB_DISPATCH_TOKEN }}
-          REQUEST_KIND: ${{ github.event_name == 'workflow_dispatch' && 'manual' || 'automatic-pr' }}
           SOURCE_REPOSITORY_ID: ${{ needs.resolve-pr.outputs.source_repository_id }}
           PR_NUMBER: ${{ needs.resolve-pr.outputs.pr_number }}
           HEAD_SHA: ${{ needs.resolve-pr.outputs.head_sha }}
@@ -190,7 +87,7 @@ jobs:
           print(json.dumps({
               "ref": "master",
               "inputs": {
-                  "request_kind": os.environ["REQUEST_KIND"],
+                  "request_kind": "manual",
                   "source_repository": "xiezyang/lat",
                   "source_repository_id": os.environ["SOURCE_REPOSITORY_ID"],
                   "target_repository": os.environ["TARGET_REPOSITORY"],

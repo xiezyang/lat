@@ -10,7 +10,6 @@ import urllib.request
 
 
 PERSONAL_REPOSITORY = "xiezyang/lat"
-ALLOWED_TARGET_REPOSITORIES = {PERSONAL_REPOSITORY, "lat-opensource/lat"}
 SHA_PATTERN = re.compile(r"[0-9a-f]{40,64}", re.IGNORECASE)
 POSITIVE_INTEGER_PATTERN = re.compile(r"[1-9][0-9]*")
 
@@ -52,8 +51,8 @@ def resolve_pull_request(pr_number_value, expected_head_sha, target, fetch_json)
     """Return verified dispatch fields for a manually requested personal PR."""
     if not isinstance(pr_number_value, str) or not POSITIVE_INTEGER_PATTERN.fullmatch(pr_number_value.strip()):
         raise LatCIRequestError("pr_number must be a positive integer")
-    if target not in ALLOWED_TARGET_REPOSITORIES:
-        raise LatCIRequestError("target_repository is not allowed")
+    if target != PERSONAL_REPOSITORY:
+        raise LatCIRequestError(f"This workflow must run in {PERSONAL_REPOSITORY}")
     pr_number = int(pr_number_value)
     expected_head_sha = _sha(expected_head_sha, "expected_head_sha")
 
