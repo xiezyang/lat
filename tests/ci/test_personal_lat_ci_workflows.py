@@ -140,7 +140,7 @@ class WorkflowDefinitionTest(unittest.TestCase):
         self.assertIn("EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}", workflow)
         self.assertIn("GITHUB_TOKEN: ${{ github.token }}", workflow)
         self.assertIn("scripts/ci/lat_ci_manual_request.py", workflow)
-        self.assertIn("actions/checkout@v4", workflow)
+        self.assertIn("actions/checkout@v5", workflow)
         self.assertNotIn("pull_request:", workflow)
         self.assertNotIn("push:", workflow)
         self.assertIn('"request_kind": "manual"', workflow)

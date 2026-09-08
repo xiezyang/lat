@@ -42,7 +42,7 @@ jobs:
     steps:
       # This is the trusted workflow revision on the default branch.  It
       # never checks out pull request code.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Find and validate the authoritative pull request
         id: resolve
