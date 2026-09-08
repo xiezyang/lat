@@ -77,6 +77,7 @@ if 'x86_64-linux-user' in target_dirs
       files('../../avx-regression-narrow-state.S'),
       files('../../avx-regression-scalar-hdr-word.S'),
       files('../../avx-regression-sum3-ymm-observer.S'),
+      files('../../avx-regression-vaes-mem-deferred-clear.S'),
       files('../../avx-regression-vround-alias.S'),
       files('../../avx-regression-vround-boundaries.S'),
     ],

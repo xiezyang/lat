@@ -6003,6 +6003,10 @@ bool translate_vaesdec(IR1_INST *pir1)
         }
         IR2_OPND temp = ra_alloc_ftemp();
         IR2_OPND src = ra_alloc_xmm(s2);
+        /* Save the logical guest value before borrowing its register for the
+         * key.  A pending clear must not erase the loaded key at helper entry
+         * or leave stale upper bits in the value restored after the helper. */
+        materialize_deferred_ymmh_zero(src);
         la_xvor_v(temp, src, src);
         if (ir1_opnd_size(opnd2) == 128) {
             load_freg128_from_ir1_mem(src, opnd2);
@@ -6060,6 +6064,10 @@ bool translate_vaesdeclast(IR1_INST *pir1)
         }
         IR2_OPND temp = ra_alloc_ftemp();
         IR2_OPND src = ra_alloc_xmm(s2);
+        /* Save the logical guest value before borrowing its register for the
+         * key.  A pending clear must not erase the loaded key at helper entry
+         * or leave stale upper bits in the value restored after the helper. */
+        materialize_deferred_ymmh_zero(src);
         la_xvor_v(temp, src, src);
         if (ir1_opnd_size(opnd2) == 128) {
             load_freg128_from_ir1_mem(src, opnd2);
@@ -6117,6 +6125,10 @@ bool translate_vaesenc(IR1_INST *pir1)
         }
         IR2_OPND temp = ra_alloc_ftemp();
         IR2_OPND src = ra_alloc_xmm(s2);
+        /* Save the logical guest value before borrowing its register for the
+         * key.  A pending clear must not erase the loaded key at helper entry
+         * or leave stale upper bits in the value restored after the helper. */
+        materialize_deferred_ymmh_zero(src);
         la_xvor_v(temp, src, src);
         if (ir1_opnd_size(opnd2) == 128) {
             load_freg128_from_ir1_mem(src, opnd2);
@@ -6175,6 +6187,10 @@ bool translate_vaesenclast(IR1_INST *pir1)
         }
         IR2_OPND temp = ra_alloc_ftemp();
         IR2_OPND src = ra_alloc_xmm(s2);
+        /* Save the logical guest value before borrowing its register for the
+         * key.  A pending clear must not erase the loaded key at helper entry
+         * or leave stale upper bits in the value restored after the helper. */
+        materialize_deferred_ymmh_zero(src);
         la_xvor_v(temp, src, src);
         if (ir1_opnd_size(opnd2) == 128) {
             load_freg128_from_ir1_mem(src, opnd2);
