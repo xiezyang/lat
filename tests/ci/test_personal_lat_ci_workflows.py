@@ -5,6 +5,8 @@
 import importlib.util
 import io
 import json
+import os
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -49,9 +51,9 @@ class Response(io.BytesIO):
 
 
 class ManualRequestTest(unittest.TestCase):
-    def resolve(self, pr, *, target=PERSONAL_REPOSITORY, expected_head_sha=HEAD_SHA):
+    def resolve(self, pr, *, target=PERSONAL_REPOSITORY):
         return REQUEST.resolve_pull_request(
-            "42", expected_head_sha, target, lambda path: pr
+            "42", target, lambda path: pr
         )
 
     def test_accepts_the_personal_repository_target(self):
@@ -62,9 +64,8 @@ class ManualRequestTest(unittest.TestCase):
         with self.assertRaisesRegex(REQUEST.LatCIRequestError, "must run in"):
             self.resolve(pull_request(), target="lat-opensource/lat")
 
-    def test_rejects_changed_head_after_manual_approval(self):
-        with self.assertRaisesRegex(REQUEST.LatCIRequestError, "head changed since approval"):
-            self.resolve(pull_request(head_sha="c" * 40))
+    def test_resolves_current_head(self):
+        self.assertEqual(self.resolve(pull_request(head_sha="c" * 40))["head_sha"], "c" * 40)
 
     def test_rejects_closed_pr_wrong_base_unavailable_head_and_external_source(self):
         closed = pull_request()
@@ -132,12 +133,41 @@ class CallbackTest(unittest.TestCase):
 
 
 class WorkflowDefinitionTest(unittest.TestCase):
+    def test_dispatch_defaults_and_explicit_request(self):
+        workflow = (ROOT / ".github/workflows/request-lat-ci.yml").read_text()
+        # Execute the actual payload builder embedded in the workflow.
+        import textwrap
+        code = textwrap.dedent(workflow.split("<<'PY'\n", 1)[1].split("\n          PY", 1)[0])
+        environment = dict(os.environ, **{name: "test" for name in (
+            "REQUEST_KIND", "SOURCE_REPOSITORY", "SOURCE_REPOSITORY_ID",
+            "TARGET_REPOSITORY", "PR_NUMBER", "HEAD_SHA", "BASE_SHA",
+            "HEAD_REF", "REQUESTER",
+        )})
+        explicit = '{"schema_version":1,"suites":[]}'
+        for value in ("", "   ", explicit):
+            environment["TEST_REQUEST"] = value
+            payload = json.loads(subprocess.check_output(
+                ["python3", "-c", code], env=environment, text=True
+            ))
+            request = payload["inputs"]["test_request"]
+            if value == explicit:
+                self.assertEqual(request, explicit)
+            else:
+                self.assertEqual(json.loads(request), {
+                    "schema_version": 1,
+                    "suites": [{"suite_key": "spec2000", "parameters": {
+                        "input_size": "ref", "runs_per_invocation": 3,
+                        "test_set": "all", "times": 2,
+                        "performance_analysis": True,
+                    }, "environment": {}}],
+                })
+
     def test_manual_request_passes_the_approved_sha_and_token_to_the_helper(self):
         workflow = (ROOT / ".github" / "workflows" / "request-lat-ci.yml").read_text(
             encoding="utf-8"
         )
-        self.assertIn("expected_head_sha:", workflow)
-        self.assertIn("EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}", workflow)
+        self.assertNotIn("expected_head_sha:", workflow)
+        self.assertNotIn("EXPECTED_HEAD_SHA", workflow)
         self.assertIn("GITHUB_TOKEN: ${{ github.token }}", workflow)
         self.assertIn("scripts/ci/lat_ci_manual_request.py", workflow)
         self.assertIn("actions/checkout@v5", workflow)

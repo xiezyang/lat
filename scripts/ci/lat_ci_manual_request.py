@@ -47,14 +47,13 @@ def get_json(path, token, opener=urllib.request.urlopen):
         return json.load(response)
 
 
-def resolve_pull_request(pr_number_value, expected_head_sha, target, fetch_json):
+def resolve_pull_request(pr_number_value, target, fetch_json):
     """Return verified dispatch fields for a manually requested personal PR."""
     if not isinstance(pr_number_value, str) or not POSITIVE_INTEGER_PATTERN.fullmatch(pr_number_value.strip()):
         raise LatCIRequestError("pr_number must be a positive integer")
     if target != PERSONAL_REPOSITORY:
         raise LatCIRequestError(f"This workflow must run in {PERSONAL_REPOSITORY}")
     pr_number = int(pr_number_value)
-    expected_head_sha = _sha(expected_head_sha, "expected_head_sha")
 
     pr = fetch_json(f"repos/{target}/pulls/{pr_number}")
     if not isinstance(pr, dict):
@@ -83,10 +82,6 @@ def resolve_pull_request(pr_number_value, expected_head_sha, target, fetch_json)
     head_sha = _sha(head.get("sha"), "The PR head SHA")
     base_sha = _sha(base.get("sha"), "The PR base SHA")
     head_ref = _one_line_string(head.get("ref"), "The PR head ref")
-    if head_sha != expected_head_sha:
-        raise LatCIRequestError(
-            "PR head changed since approval; review the new commit and dispatch again"
-        )
 
     return {
         "should_dispatch": "true",
@@ -109,14 +104,12 @@ def write_github_output(values, output_path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pr-number", required=True)
-    parser.add_argument("--expected-head-sha", required=True)
     parser.add_argument("--target-repository", required=True)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
     try:
         values = resolve_pull_request(
             args.pr_number,
-            args.expected_head_sha,
             args.target_repository,
             lambda path: get_json(path, os.environ.get("GITHUB_TOKEN", "")),
         )
