@@ -24,3 +24,5 @@ la-dev GCC14.2，独立build64-validation，O1/static/no-KZT，加--enable-tests
 
 la-dev产品源文件已编译，最终链接在Binutils 2.44的elfnn-loongarch.c:2710断言并SIGABRT，不能据此归因产品运行错误。转到原版构建机192.168.8.2:22522（GCC8.3），使用独立lat-no-lbt-o1-validation-20260918目录构建相同产品源码，保留原发布构建。
 另发现既有latx-config-regression目标只链接string-utils/runtime对象，但用例调用options_init和host策略函数，缺少真实实现导致未定义引用。测试目标补入latx-options.c与have_am所在tr-opnd-process.c，用函数节回收排除无关翻译器代码；不更改产品链接，不用stub替换被测实现。待构建验证。
+
+配置测试补齐qemu_strtou64所属qemuutil依赖。GCC8.3独立候选构建已成功，产物对应0988c23（后续仅测试链接/文档变化）；已复制到目标validation目录的latx-candidate-0988c23，不覆盖原版。正在执行真实目标focused对照。

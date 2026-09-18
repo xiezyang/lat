@@ -599,7 +599,7 @@ foreach target : target_dirs
       c_args: c_args + ['-ffunction-sections', '-fvisibility=hidden',
                        '-I' + (meson.current_build_dir() /
                                ('libqemu-' + target + '.fa.p'))],
-      dependencies: [glib],
+      dependencies: [glib, qemuutil],
       include_directories: target_inc,
       link_args: ['-Wl,--gc-sections', '-Wl,--no-export-dynamic'],
     )
