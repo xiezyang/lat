@@ -607,7 +607,10 @@ foreach target : target_dirs
       target + '-latx-config-regression',
       latx_config_regression_test,
       suite: 'lat-pr-fast',
-      env: ['ASAN_OPTIONS=detect_leaks=0'],
+      env: [
+        'ASAN_OPTIONS=detect_leaks=0',
+        'G_TEST_SRCDIR=' + meson.project_source_root(),
+      ],
       timeout: 30,
     )
   endif
