@@ -19,3 +19,10 @@
 
 删除no-LBT策略对option_enable_lasx的无条件清零，保留latx_apply_host_hwcap的检测结果。不强制启用LASX，不开启guest AVX，不放宽no-LBT非对齐内存回退。意图是在具有LASX的机器保留既有向量指令选择，避免仅因LBT关闭而退化。
 待补：分别验证无LASX、有LASX无LBT、有LASX且强制no-LBT三种能力；SSE/SSSE3/SSE4结果、helper前后和信号前后向量状态、非对齐及跨页访问；检查不支持LASX时无xv指令。调整tests/latx/latx-config-regression.c旧的“no-LBT必关LASX”断言，覆盖独立能力组合。比较代表向量负载的指令数和总时间；未编译、未测试、收益未知。
+
+## 03 相邻寄存器CMP/TEST + Jcc
+
+no-LBT的inst pattern从全关改为仅保留CMP_JCC/TEST_JCC位，并与原有用户mask取交集。限定相邻、寄存器/立即数操作数、非LOCK、非单步；内存操作与中间夹其他指令的组合仍回退，避免跨内存访问移动屏障和进入含原始LBT指令的异常恢复。
+为这两个组合增加软件flags专用生成路径：分支前只生成一份仍需保留的flags，分支直接比较操作数。跳过TU专用链接和EFLAGS_CACULATE的单指令补丁/备份，保持eflags_target_arg无效。原因：原有tb_eflag_eliminate/recover只替换4字节，不能处理软件flags指令序列。
+预期减少从软件flags重新提取分支条件的指令，并避免分支两侧复制软件flags；不承诺能消除全部flags计算。
+待补：8/16/32/64位（含高8位寄存器）、有符号/无符号边界、立即数符号扩展、各支持Jcc的taken/not-taken；后继块通过ADC/SBB/SETcc/LAHF/PUSHF消费flags；块链接/失效/重新链接、自修改代码、信号、单步；内存/非相邻/LOCK负例应保持普通翻译；检查生成代码没有LBT且未发布单指令flags补丁位置。更新配置回归对instptn全关的旧断言。未编译、未运行，实际收益待对比分支密集整数负载。

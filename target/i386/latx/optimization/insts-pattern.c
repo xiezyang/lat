@@ -439,6 +439,23 @@ bool insts_pattern_scan_jcc_end(TranslationBlock *tb, IR1_INST *pir1, int pir1_i
         }
     }
 
+    if (!option_enable_lbt) {
+        /* Avoid memory faults/barrier relocation and the *_XX_JCC recovery
+         * path, which still executes raw LBT instructions.  Do not fuse
+         * instructions when guest single stepping is requested.
+         */
+        if ((tb->flags & HF_TF_MASK) ||
+            pir1_index + 1 != SCAN_IDX(scan, 0) ||
+            (ir1_opcode(pir1) != WRAP(CMP) &&
+             ir1_opcode(pir1) != WRAP(TEST)) ||
+            ir1_is_prefix_lock(pir1) || ir1_opnd_num(pir1) != 2 ||
+            !ir1_opnd_is_gpr(ir1_get_opnd(pir1, 0)) ||
+            (!ir1_opnd_is_gpr(ir1_get_opnd(pir1, 1)) &&
+             !ir1_opnd_is_imm(ir1_get_opnd(pir1, 1)))) {
+            return false;
+        }
+    }
+
     IR1_INST *ir1_jcc = NULL;
     IR1_OPND *opnd0 = NULL;
     IR1_OPND *opnd1 = NULL;

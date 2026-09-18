@@ -142,6 +142,19 @@ static bool translate_cmp_jcc(IR1_INST *ir1)
     IR2_OPND src_opnd_1 = load_ireg_from_ir1(ir1_get_opnd(curr, 1), em, false);
 
     IR2_OPND target_label_opnd = ra_alloc_label();
+    if (!option_enable_lbt) {
+        /* Software flags are a sequence, not one patchable instruction.
+         * Materialize live flags once, before branching, and leave the
+         * eflags_target_arg slots invalid so linking never patches it.
+         */
+        generate_eflag_calculation(src_opnd_0, src_opnd_0,
+                                   src_opnd_1, curr, true);
+        cmp_jcc_gen_bcc(src_opnd_0, src_opnd_1, target_label_opnd, next);
+        tr_generate_exit_tb(next, 0);
+        la_label(target_label_opnd);
+        tr_generate_exit_tb(next, 1);
+        return true;
+    }
 #ifdef CONFIG_LATX_TU
     TranslationBlock *tb = lsenv->tr_data->curr_tb;
     if (judge_tu_eflag_gen(tb)) {
@@ -864,7 +877,7 @@ static bool translate_test_jcc(IR1_INST *ir1)
         load_ireg_from_ir1(opnd0, SIGN_EXTENSION, false);
 
     IR2_OPND src_opnd_1;
-    IR2_OPND temp;
+    IR2_OPND temp = zero_ir2_opnd;
     int is_same_reg = ir1_opnd_is_same_reg(opnd0, opnd1);
     if (!is_same_reg) {
         src_opnd_1 = load_ireg_from_ir1(opnd1, SIGN_EXTENSION, false);
@@ -873,6 +886,20 @@ static bool translate_test_jcc(IR1_INST *ir1)
     }
 
     IR2_OPND target_label_opnd = ra_alloc_label();
+
+    if (!option_enable_lbt) {
+        /* Keep the whole software flag sequence outside the branch and
+         * outside the single-instruction flag elimination/recovery scheme.
+         */
+        generate_eflag_calculation(src_opnd_0, src_opnd_0,
+                                   is_same_reg ? src_opnd_0 : src_opnd_1,
+                                   curr, true);
+        test_jcc_gen_bcc(src_opnd_0, target_label_opnd, temp, is_same_reg, next);
+        tr_generate_exit_tb(next, 0);
+        la_label(target_label_opnd);
+        tr_generate_exit_tb(next, 1);
+        return true;
+    }
 
 #ifdef CONFIG_LATX_TU
     TranslationBlock *tb = lsenv->tr_data->curr_tb;

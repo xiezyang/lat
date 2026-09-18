@@ -12,6 +12,7 @@
 #include "latx-runtime.h"
 #include "latx-string-utils.h"
 #include "translate.h"
+#include "insts-pattern.h"
 #if defined(CONFIG_LATX_KZT)
 #include "kzt-groups.h"
 #endif
@@ -336,7 +337,7 @@ void latx_apply_no_lbt_restrictions(void)
     }
     option_set_rounding_opt = 0;
 #ifdef CONFIG_LATX_INSTS_PATTERN
-    option_instptn = 0;
+    option_instptn &= INSTPTN_NO_LBT_MASK;
 #endif
 #ifdef CONFIG_LATX_AVX_OPT
     option_avx_cpuid = 0;
