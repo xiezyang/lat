@@ -26,3 +26,13 @@ la-dev产品源文件已编译，最终链接在Binutils 2.44的elfnn-loongarch.
 另发现既有latx-config-regression目标只链接string-utils/runtime对象，但用例调用options_init和host策略函数，缺少真实实现导致未定义引用。测试目标补入latx-options.c与have_am所在tr-opnd-process.c，用函数节回收排除无关翻译器代码；不更改产品链接，不用stub替换被测实现。待构建验证。
 
 配置测试补齐qemu_strtou64所属qemuutil依赖。GCC8.3独立候选构建已成功，产物对应0988c23（后续仅测试链接/文档变化）；已复制到目标validation目录的latx-candidate-0988c23，不覆盖原版。正在执行真实目标focused对照。
+
+## 最新检查点：用户要求先总结并保证可续接
+
+候选0988c23产品二进制SHA256 8e0333b8f48dc2b3170f8f4276ff1acbe5fef2ac5ab15b91f5d1c4283e2e711a，GCC8.3构建，O1/static/no-KZT。
+目标validation-20260918/focused.json：candidate与旧baseline均通过unaligned-v128、signal-xmm-no-lbt、lock-cmpxchg-no-lbt、lua-number-conversion-no-lbt、latx-tso-ordering-no-lbt（全部rc0）。环境LATX_SOFTFPU=2，-latx-host-hwcap 0x10。测试guest先在xzy86用GCC -nostdlib -static -no-pie构建并原生运行rc0；源文件和guest保存在xzy86:/home/xzy86/work/no-lbt-validation-20260918，以及本地validation备份目录。
+目标tts-paired.json：候选3次1.257915、1.245445、1.272196秒；旧版3次1.441850、1.417163、1.468884秒。全部rc0，输出“合成完毕”，WAV均139170字节且SHA256 e0f9aeaf8619a87fa510ba8891138aa0bc19e1dd1d2d10c72b9c428cdb21348a。stderr只有既有软件状态提示（LSX=1 LASX=0 LBT_X86=0）。这是O1候选对旧O2发布版，不能作单变量性能归因。
+la-dev配置回归已构建并13/13通过，日志build64-validation/config-test-output.log。
+完整lat-pr-fast使用--no-rebuild运行时因test-exclusive-timeout、test-kzt-callback-fpr等尚未生成而FileNotFoundError；不能称套件通过，也不是产品运行失败。下一步只构建已登记fast套件的目标再执行，避开la-dev产品链接器故障。
+同配置基线：d3defa8已归档到原版构建机/home/yuerengan/lala/xzy/lat-no-lbt-o1-baseline-20260918，./latxbuild/build64.sh -c构建中，日志build-output.log；需检查完成状态，再复制到目标独立validation目录与候选交错比较。原旧latx-release和1.wav未覆盖。
+剩余：同O1基线对照、完整fast套件、严格对齐最终板卡验证；LASX在本次softfpu2运行环境下关闭，故此轮不证明LASX优化生效。没有新的产品源码修复，测试链接依赖修复已独立提交。
