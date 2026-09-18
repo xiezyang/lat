@@ -52,3 +52,12 @@ la-dev配置回归已构建并13/13通过，日志build64-validation/config-test
 ## 快速回归完成
 
 在192.168.8.2:22522的独立候选树以O1/static/no-KZT及--enable-tests完整构建后，lat-pr-fast为24/24通过。首次24项中仅x86_64-linux-user-latx-config-regression失败；原因是该静态源码审计测试没有收到G_TEST_SRCDIR，无法打开flag-lbt.h，不是候选二进制或运行语义失败。提交a889d61向该测试传入meson.project_source_root()，重新配置、构建和运行后24/24通过。完整日志：/home/yuerengan/lala/xzy/lat-no-lbt-o1-validation-20260918/build64/fast-test-output.log。
+
+
+## 分项 TTS 测量
+
+为区分各产品提交，分别由192.168.8.2:22522的GCC8.3构建4个相同O1/static/no-KZT二进制：d3defa8基线；07db9d5（LASX策略加相邻CMP/TEST+Jcc）；688467c（前者加8字节对齐向量搬运）；0988c23候选（前者加LEA屏障排除，0988c23后续仅有测试代码）。在192.168.8.7用户指定环境中，以5种轮换顺序各运行5次TTS，全部rc=0、WAV哈希一致。
+
+基线中位数1.427194秒（原始：1.425467、1.424093、1.451073、1.427194、1.437033）。至07db9d5中位数1.310792秒，较基线快8.88%；本轮softfpu2显示LASX=0，故这一步可归于受限相邻CMP/TEST分支组合，而非LASX。至688467c中位数1.294435秒，较上一步快1.26%、较基线快10.26%。完整候选中位数1.261689秒，较上一步快2.60%、较基线快13.12%。每项原始时间、命令、输出和WAV保存在目标validation-20260918/tts-components.json及同名前缀文件。
+
+该测量证明提交序列在该应用上的端到端增益，不能直接量化每条生成指令的执行次数；当前没有无扰动计数器证明TTS实际命中了每一种局部模式。LASX仍未在softfpu2路径下执行。最终严格对齐板卡尚未测，不能据此宣布产品接受。
