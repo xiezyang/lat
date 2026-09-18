@@ -19,3 +19,8 @@ la-dev GCC14.2，独立build64-validation，O1/static/no-KZT，加--enable-tests
 ## 回归用例补充
 
 更新既有配置断言：LASX保留检测结果，instptn仅保留相邻CMP/TEST两个选项位，并验证用户关闭后不被重新开启。扩展既有unaligned-v128到256种源/目标地址余数组合，检查搬运数据与写入范围外哨兵；跨页数据改为跨64KB边界，兼容4KB/16KB/64KB宿主页尺寸。测试已登记在原有integration入口，未加入产品构建。正在编译，尚未报告通过。
+
+## 构建问题与处理
+
+la-dev产品源文件已编译，最终链接在Binutils 2.44的elfnn-loongarch.c:2710断言并SIGABRT，不能据此归因产品运行错误。转到原版构建机192.168.8.2:22522（GCC8.3），使用独立lat-no-lbt-o1-validation-20260918目录构建相同产品源码，保留原发布构建。
+另发现既有latx-config-regression目标只链接string-utils/runtime对象，但用例调用options_init和host策略函数，缺少真实实现导致未定义引用。测试目标补入latx-options.c与have_am所在tr-opnd-process.c，用函数节回收排除无关翻译器代码；不更改产品链接，不用stub替换被测实现。待构建验证。

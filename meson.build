@@ -590,11 +590,18 @@ foreach target : target_dirs
      'CONFIG_LATX_O1' in config_host
     latx_config_regression_test = executable(
       'test-' + target + '-latx-config-regression',
-      files('tests/latx/latx-config-regression.c'),
+      files(
+        'tests/latx/latx-config-regression.c',
+        'target/i386/latx/latx-options.c',
+        'target/i386/latx/translator/tr-opnd-process.c',
+      ) + genh + tcg_trace_genh + [syscall_nr_generated],
       objects: lib.extract_objects(latx_string_utils, latx_runtime),
-      c_args: c_args,
+      c_args: c_args + ['-ffunction-sections', '-fvisibility=hidden',
+                       '-I' + (meson.current_build_dir() /
+                               ('libqemu-' + target + '.fa.p'))],
       dependencies: [glib],
       include_directories: target_inc,
+      link_args: ['-Wl,--gc-sections', '-Wl,--no-export-dynamic'],
     )
     test(
       target + '-latx-config-regression',
