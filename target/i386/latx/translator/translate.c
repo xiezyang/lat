@@ -1865,6 +1865,52 @@ static bool (*translate_functions[])(IR1_INST *) = {
     TRANS_FUNC_GEN_REAL(ENDING, NULL),
 };
 
+/* Return the explicit memory access kind recorded by the decoder.  A zero
+ * result deliberately includes unknown access metadata, so the no-LBT path
+ * remains conservative for instructions the decoder cannot classify.
+ */
+static uint8_t no_lbt_explicit_mem_access(IR1_INST *ir1)
+{
+    uint8_t access = 0;
+    bool have_mem = false;
+
+    for (int i = 0; i < ir1_opnd_num(ir1); i++) {
+        IR1_OPND *opnd = ir1_get_opnd(ir1, i);
+        uint8_t opnd_access;
+
+        if (!ir1_opnd_is_mem(opnd)) {
+            continue;
+        }
+        have_mem = true;
+        opnd_access = opnd->access & (dt_CS_AC_READ | dt_CS_AC_WRITE);
+        if (!opnd_access) {
+            return 0;
+        }
+        access |= opnd_access;
+    }
+
+    return have_mem ? access : 0;
+}
+
+/* x86 TSO permits a store followed by a load to become visible out of order.
+ * Leave all other explicit memory pairs ordered, including read-modify-write
+ * operations, unknown decoder metadata, and every basic-block boundary.
+ */
+static bool no_lbt_store_load_pair(IR1_INST *ir1)
+{
+    TRANSLATION_DATA *tr_data = lsenv->tr_data;
+    TranslationBlock *tb = tr_data->curr_tb;
+    int next_index = tr_data->curr_ir1_count + 1;
+
+    if (no_lbt_explicit_mem_access(ir1) != dt_CS_AC_WRITE ||
+        next_index >= tb_ir1_num(tb)) {
+        return false;
+    }
+
+    return no_lbt_explicit_mem_access(tb_ir1_inst(tb, next_index)) ==
+           dt_CS_AC_READ;
+}
+
 bool ir1_translate(IR1_INST *ir1)
 {
 #ifdef CONFIG_LATX_INSTS_PATTERN
@@ -1992,7 +2038,8 @@ bool ir1_translate(IR1_INST *ir1)
      * performs no memory access and adds no x86 ordering requirement.
      */
     if (unlikely(latx_no_lbt_mode_enabled()) &&
-        ir1_opcode(ir1) != dt_X86_INS_LEA) {
+        ir1_opcode(ir1) != dt_X86_INS_LEA &&
+        !no_lbt_store_load_pair(ir1)) {
         for (int i = 0; i < ir1_opnd_num(ir1); i++) {
             if (ir1_opnd_is_mem(ir1_get_opnd(ir1, i))) {
                 /* Preserve x86 TSO on hosts that execute with weak ordering. */

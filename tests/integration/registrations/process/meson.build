@@ -88,6 +88,14 @@ if 'x86_64-linux-user' in target_dirs
       files('../../latx-tso-ordering-no-lbt.S'),
     ],
   }]
+  latx_integration_tests += [{
+    'name': 'test-tso-store-load-no-lbt',
+    'runner': find_program('../../test-tso-store-load-no-lbt.sh'),
+    'args': [
+      emulators['latx-x86_64'],
+      files('../../latx-tso-store-load-no-lbt.S'),
+    ],
+  }]
   if 'CONFIG_LATX_KZT' in config_host
     latx_integration_tests += [{
       'name': 'test-int3-sigtrap-rip',
