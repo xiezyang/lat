@@ -68,3 +68,14 @@ la-dev配置回归已构建并13/13通过，日志build64-validation/config-test
 经xzy86临时登录root@192.168.8.200，在/tmp/codex-no-lbt-validation-20260918运行；未改动板卡现有LAT、配置或用户目录。该板卡为Loongson-2K1001，内核5.10.0.lsgd+，CPU特性仅含lsx和lbt_mips，不含lasx和lbt_x86。候选latx-candidate来自.7验证目录，SHA256 8e0333b8f48dc2b3170f8f4276ff1acbe5fef2ac5ab15b91f5d1c4283e2e711a；guest unaligned-v128 SHA256 71981ec75f3639f5d2adc72667a220749a060140c2b78e7f6c969e398fa190cf。
 
 命令：LATX_SOFTFPU=2 timeout 60 ./latx-candidate ./unaligned-v128。结果打印“LATX: software state mode enabled (LSX=1 LASX=0 LBT_X86=0)”，rc=0。guest覆盖源地址余数0..15乘目标地址余数0..15和跨64KB边界，验证16字节对齐vld/vst、8字节对齐双64位访问、其余地址的逐字节回退均可完成。该项关闭了“最终硬件不支持128位非对齐访问”的关键正确性缺口；仍未在该板卡运行TTS或完整lat-pr-fast，性能结论仍来自.7。
+
+
+## .7 上的 QEMU 对照与 xfyun 有效性
+
+QEMU选择为/home/loongson/xzy/lat-xfyun-board-env-20260917/xfyun-debug/bin/qemu-x86_64，版本7.2.22，SHA256 7585cb475f755f33394617f5a5150264abc1648a0103a9d796f1763b3af5d1f8。系统路径未找到release QEMU，另一个current-debug二进制也为7.2.22但SHA不同，故本比较只针对这个精确QEMU二进制，不外推为所有QEMU配置的性能。
+
+正确的LoongArch测试命令不是直接执行test_tts1.sh；该脚本只适合x86主机，提供的是guest参数和工作目录。LAT/QEMU均应在lat/work目录运行，以-L ../guest-runtime提供x86动态加载器和系统库，并将tts及脚本中的五个参数作为guest参数。LD_LIBRARY_PATH必须包含work目录，使guest装载work/libmsc.so。实际比较采用等价的绝对路径：LATX_SOFTFPU=2 LD_LIBRARY_PATH=:/home/loongson/xzy/xfyun-no-lbt-softfpu2-20260917/lat/work timeout 1800 <LAT或QEMU> -L /home/loongson/xzy/xfyun-no-lbt-softfpu2-20260917/lat/guest-runtime ./tts "appid=5ce519e0,work_dir =." <独立wav路径> "需要帮助，请拨打12122" "engine_type = local, voice_name = xiaoyan, text_encoding = UTF8, tts_res_path = fo|res/tts/xiaoyan.jet;fo|res/tts/common.jet, sample_rate = 16000, speed = 30, volume = 100, pitch = 50, rdn = 2"。
+
+LAT候选（0988c23产品内容，SHA256 8e0333b8f48dc2b3170f8f4276ff1acbe5fef2ac5ab15b91f5d1c4283e2e711a）和QEMU以上述完全相同的guest、运行目录、runtime、环境和参数各交错运行5次。LAT秒数：1.249112、1.256609、1.274986、1.235997、1.254978，中位数1.254978；QEMU秒数：3.214327、3.285981、3.291243、3.320301、3.332937，中位数3.291243。因此LAT在此应用上是该QEMU的2.623倍速度（中位数快162.3%）。10次均rc=0、输出“合成完毕”、WAV均139170字节且SHA256 e0f9aeaf8619a87fa510ba8891138aa0bc19e1dd1d2d10c72b9c428cdb21348a。原始数据为validation-20260918/lat-vs-qemu.json。
+
+xfyun工作负载是真实动态应用路径：tts是x86-64动态ELF，NEEDED含libmsc.so、librt、libdl、libpthread、libstdc++和libc；libmsc.so为x86-64共享库。一次QEMU -strace诊断（不计入性能）显示实际open("libmsc.so")成功、打开./msc/res/tts/xiaoyan.jet和common.jet，并以O_CREAT|O_TRUNC创建输出WAV。WAV为16kHz、16位、单声道、69563帧，时长4.347688秒；62948/69563个PCM样本非零，RMS为5569.48。因此判定通过不能只看rc：本次同时具备rc=0、完整合成日志、实际库/资源打开、创建并写出非静音WAV、以及LAT和QEMU输出逐字节一致五项证据。
