@@ -10,18 +10,18 @@ source:
 
 .balign 16
 destination:
-    .zero 32
+    .zero 64
 
-.balign 4096
+.balign 65536
 cross_page_source_base:
-    .zero 4093
+    .zero 65533
 cross_page_source:
     .byte 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37
     .byte 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f
 
-.balign 4096
+.balign 65536
 cross_page_destination_base:
-    .zero 4091
+    .zero 65531
 cross_page_destination:
     .zero 16
 
@@ -32,17 +32,55 @@ _start:
     lea source(%rip), %rsi
     lea destination(%rip), %rdi
 
-    movdqu 1(%rsi), %xmm0
-    movdqu %xmm0, 3(%rdi)
+    /* Cover all 256 source/destination alignment combinations, including
+     * the new scalar-doubleword path at offset 8 and byte fallback at 1..7.
+     */
+    xor %r8d, %r8d
+.Lsource_offset:
+    xor %r9d, %r9d
+.Ldestination_offset:
+    xor %ecx, %ecx
+.Lfill:
+    movb $0xa5, (%rdi,%rcx)
+    inc %ecx
+    cmp $64, %ecx
+    jne .Lfill
 
+    lea (%rsi,%r8), %r10
+    lea 16(%rdi,%r9), %r11
+    movdqu (%r10), %xmm0
+    movdqu %xmm0, (%r11)
     xor %ecx, %ecx
 .Lverify:
-    movzbl 1(%rsi,%rcx), %eax
-    cmpb %al, 3(%rdi,%rcx)
+    movzbl (%r10,%rcx), %eax
+    cmpb %al, (%r11,%rcx)
     jne .Lfail
     inc %ecx
     cmp $16, %ecx
     jne .Lverify
+
+    /* Check the entire destination outside the requested 16-byte range. */
+    xor %ecx, %ecx
+.Lcanary:
+    lea (%rdi,%rcx), %rdx
+    cmp %r11, %rdx
+    jb .Lcheck_canary
+    lea 16(%r11), %rax
+    cmp %rax, %rdx
+    jb .Lcanary_next
+.Lcheck_canary:
+    cmpb $0xa5, (%rdx)
+    jne .Lfail
+.Lcanary_next:
+    inc %ecx
+    cmp $64, %ecx
+    jne .Lcanary
+    inc %r9d
+    cmp $16, %r9d
+    jne .Ldestination_offset
+    inc %r8d
+    cmp $16, %r8d
+    jne .Lsource_offset
 
     lea cross_page_source(%rip), %rsi
     lea cross_page_destination(%rip), %rdi

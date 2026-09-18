@@ -70,7 +70,7 @@ static void test_no_lbt_restrictions(void)
 
     g_assert_true(latx_no_lbt_mode_enabled());
     g_assert_cmpint(option_enable_lbt, ==, 0);
-    g_assert_cmpint(option_enable_lasx, ==, 0);
+    g_assert_cmpint(option_enable_lasx, ==, 1);
     g_assert_cmpint(option_tu, ==, 0);
     g_assert_cmpint(option_aot, ==, 0);
     g_assert_cmpint(option_load_aot, ==, 0);
@@ -80,13 +80,24 @@ static void test_no_lbt_restrictions(void)
     g_assert_cmpint(option_fputag, ==, 0);
     g_assert_cmpint(option_softfpu, ==, 0);
 #ifdef CONFIG_LATX_INSTS_PATTERN
-    g_assert_cmpint(option_instptn, ==, 0);
+    g_assert_cmpint(option_instptn, ==, 3);
 #endif
 #ifdef CONFIG_LATX_AVX_OPT
     g_assert_cmpint(option_avx_cpuid, ==, 0);
 #endif
 #ifdef CONFIG_LATX_KZT
     g_assert_cmpint(option_kzt, ==, 0);
+#endif
+
+    /* Restrictions must not re-enable capabilities or user-disabled patterns. */
+    option_enable_lasx = 0;
+#ifdef CONFIG_LATX_INSTS_PATTERN
+    option_instptn = 0;
+#endif
+    latx_apply_no_lbt_restrictions();
+    g_assert_cmpint(option_enable_lasx, ==, 0);
+#ifdef CONFIG_LATX_INSTS_PATTERN
+    g_assert_cmpint(option_instptn, ==, 0);
 #endif
 }
 
@@ -110,7 +121,7 @@ static void test_no_lbt_host_hwcap_application(void)
     latx_apply_host_hwcap(~0UL);
     g_assert_true(latx_no_lbt_mode_enabled());
     g_assert_cmpint(option_enable_lbt, ==, 0);
-    g_assert_cmpint(option_enable_lasx, ==, 0);
+    g_assert_cmpint(option_enable_lasx, ==, 1);
 #else
     g_test_skip("host hwcap application only changes LATX feature policy on LoongArch");
 #endif

@@ -15,3 +15,7 @@
 la-dev GCC14.2，独立build64-validation，O1/static/no-KZT，加--enable-tests；不覆盖build64和已有latx-release。
 第一次configure被clock_adjtime探测向nonnull参数传NULL的-Werror阻挡，属于旧探测代码与新工具链警告兼容问题。添加--disable-werror继续（保留脚本既有CFLAGS）。系统无meson，指定已有/home/xzy/work/lat-master-20260917/meson/meson.py，版本0.60.1。完整日志见build64-validation/configure-output.log与config.log。
 尚未生成候选二进制，尚不能报告候选运行成功或性能改善。后续所有阶段继续追加记录。
+
+## 回归用例补充
+
+更新既有配置断言：LASX保留检测结果，instptn仅保留相邻CMP/TEST两个选项位，并验证用户关闭后不被重新开启。扩展既有unaligned-v128到256种源/目标地址余数组合，检查搬运数据与写入范围外哨兵；跨页数据改为跨64KB边界，兼容4KB/16KB/64KB宿主页尺寸。测试已登记在原有integration入口，未加入产品构建。正在编译，尚未报告通过。
