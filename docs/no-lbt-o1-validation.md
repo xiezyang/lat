@@ -36,3 +36,14 @@ la-dev配置回归已构建并13/13通过，日志build64-validation/config-test
 完整lat-pr-fast使用--no-rebuild运行时因test-exclusive-timeout、test-kzt-callback-fpr等尚未生成而FileNotFoundError；不能称套件通过，也不是产品运行失败。下一步只构建已登记fast套件的目标再执行，避开la-dev产品链接器故障。
 同配置基线：d3defa8已归档到原版构建机/home/yuerengan/lala/xzy/lat-no-lbt-o1-baseline-20260918，./latxbuild/build64.sh -c构建中，日志build-output.log；需检查完成状态，再复制到目标独立validation目录与候选交错比较。原旧latx-release和1.wav未覆盖。
 剩余：同O1基线对照、完整fast套件、严格对齐最终板卡验证；LASX在本次softfpu2运行环境下关闭，故此轮不证明LASX优化生效。没有新的产品源码修复，测试链接依赖修复已独立提交。
+
+
+## 同配置 O1 对照结果
+
+两份二进制均由192.168.8.2:22522的GCC 8.3在相同O1/static/no-KZT条件下构建：基线为d3defa8，SHA256 88b47688377e1f462b74995c25f41fa7ea6706c989947925fd2f4c52a3850e56；候选包含至0988c23的产品改动，SHA256 8e0333b8f48dc2b3170f8f4276ff1acbe5fef2ac5ab15b91f5d1c4283e2e711a。两者均独立存放于目标validation-20260918，不覆盖发布二进制。
+
+在192.168.8.7的用户指定TTS环境中，以baseline/candidate交错顺序各运行5次。基线秒数：1.455097、1.451112、1.468804、1.453749、1.485766，中位数1.455097；候选秒数：1.244301、1.281782、1.248579、1.275734、1.271796，中位数1.271796。按中位数计算候选快14.41%。10次均rc=0、打印“合成完毕”，WAV均为139170字节，SHA256均为e0f9aeaf8619a87fa510ba8891138aa0bc19e1dd1d2d10c72b9c428cdb21348a。原始命令、每轮stdout/stderr、WAV与tts-o1-paired.json均保留在目标validation目录。
+
+同配置专项对照也已完成：baseline与candidate均通过unaligned-v128、signal-xmm-no-lbt、lock-cmpxchg-no-lbt、lua-number-conversion-no-lbt、latx-tso-ordering-no-lbt，全部rc=0。unaligned-v128已覆盖16种源地址余数乘16种目标地址余数，含跨64KB边界；它验证新增8字节对齐双64位路径与其余逐字节回退在.7工作，但.7不是最终不支持128位非对齐访问的板卡，不能替代该板卡验证。所有专项运行显式LATX_SOFTFPU=2、LD_LIBRARY_PATH=.、-latx-host-hwcap 0x10；因此LASX运行时为0，LASX保留策略尚未在本轮实际执行。
+
+结论：该候选已在.7上完成机制相关的专项正确性和单一TTS应用性能验证，继续调查；它尚不是最终板卡或完整回归意义上的产品接受。
