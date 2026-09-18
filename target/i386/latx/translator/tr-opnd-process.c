@@ -1345,6 +1345,19 @@ void latx_load_v128(IR2_OPND dest, IR2_OPND base, int disp)
     la_b(done);
 
     la_label(scalar);
+    /* Eight-byte alignment is sufficient for scalar doubleword accesses.
+     * Touch exactly the original 16 bytes; never round the address down.
+     */
+    IR2_OPND bytes = ra_alloc_label();
+    la_andi(scratch, address, 0x7);
+    la_bne(scratch, zero_ir2_opnd, bytes);
+    la_ld_d(scratch, address, 0);
+    la_ld_d(byte, address, 8);
+    la_vinsgr2vr_d(dest, scratch, 0);
+    la_vinsgr2vr_d(dest, byte, 1);
+    la_b(done);
+
+    la_label(bytes);
     latx_load_u64_bytes(scratch, byte, address, 0);
     la_vinsgr2vr_d(dest, scratch, 0);
     latx_load_u64_bytes(scratch, byte, address, 8);
@@ -1386,6 +1399,16 @@ void latx_store_v128(IR2_OPND src, IR2_OPND base, int disp)
     la_b(done);
 
     la_label(scalar);
+    IR2_OPND bytes = ra_alloc_label();
+    la_andi(scratch, address, 0x7);
+    la_bne(scratch, zero_ir2_opnd, bytes);
+    la_vpickve2gr_du(scratch, src, 0);
+    la_st_d(scratch, address, 0);
+    la_vpickve2gr_du(scratch, src, 1);
+    la_st_d(scratch, address, 8);
+    la_b(done);
+
+    la_label(bytes);
     la_vpickve2gr_du(scratch, src, 0);
     latx_store_u64_bytes(scratch, address, 0);
     la_vpickve2gr_du(scratch, src, 1);
