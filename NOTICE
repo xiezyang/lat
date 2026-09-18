@@ -1,0 +1,113 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: LATX (LoongArch Architecture Translator for x86)
+Source: https://github.com/lat-opensource/lat
+
+This file summarizes notable third-party open source code used by or
+referenced in LATX. Source files may contain more specific copyright or
+license notices; those file-level notices remain authoritative.
+
+Files: *
+Source: https://www.qemu.org/
+Copyright:
+ Copyright (c) 2003-2008 Fabrice Bellard
+ Copyright (c) QEMU Project developers and contributors
+License: GPL-2.0-only
+Comment:
+ LATX is developed based on QEMU 6. The QEMU emulator as a whole is
+ released under the GNU General Public License, version 2. Some QEMU
+ files carry compatible file-level license notices. See LICENSE, COPYING,
+ COPYING.LIB, and individual source file headers for the original QEMU
+ license notices and file-specific terms. This stanza does not override
+ more specific file-level or third-party notices.
+
+Files: target/i386/latx/capstone_git/*
+Source: https://www.capstone-engine.org/
+Copyright:
+ Copyright (c) 2013, COSEINC.
+ Copyright (c) Capstone contributors
+License: BSD-3-Clause
+Comment:
+ The bundled Capstone source includes its own license text in
+ target/i386/latx/capstone_git/LICENSE.TXT. Some bundled files also
+ refer to LLVM-derived license terms in LICENSE_LLVM.TXT.
+
+Files: target/i386/latx/include/zydisdir/*
+ target/i386/latx/exlib/libZydis.a
+ target/i386/latx/exlib/libZycore.a
+Source: https://github.com/zyantific/zydis
+Copyright:
+ Copyright (c) Zyan Disassembler Library authors
+ Copyright (c) Zycore authors
+License: MIT
+Comment:
+ The bundled Zydis headers carry MIT-style permission notices. The
+ prebuilt static libraries are listed here because they are linked by
+ LATX debug disassembly support; their exact source and license
+ obligations should be verified against the matching upstream Zydis and
+ Zycore releases.
+
+Files: target/i386/latx/include/khash.h
+Source: https://github.com/attractivechaos/klib
+Copyright:
+ Copyright (c) 2008, 2009, 2011 Attractive Chaos <attractor@live.co.uk>
+License: MIT
+
+Files: target/i386/latx/exlib/libmimalloc.a
+Source: https://github.com/microsoft/mimalloc
+Copyright:
+ Copyright (c) Microsoft Corporation
+License: MIT
+Comment:
+ This prebuilt static library is listed because it is distributed in the
+ source tree. Its exact source and license obligations should be verified
+ against the matching upstream mimalloc release.
+
+Files: target/i386/latx/context/*
+ target/i386/latx/include/box64context.h
+ target/i386/latx/include/bridge*.h
+ target/i386/latx/include/callback.h
+ target/i386/latx/include/dictionnary.h
+ target/i386/latx/include/elfload_dump.h
+ target/i386/latx/include/elfloader*.h
+ target/i386/latx/include/fileutils.h
+ target/i386/latx/include/globalsymbols.h
+ target/i386/latx/include/gltools.h
+ target/i386/latx/include/gtkclass.h
+ target/i386/latx/include/librarian*.h
+ target/i386/latx/include/library*.h
+ target/i386/latx/include/myalign.h
+ target/i386/latx/include/pathcoll.h
+ target/i386/latx/include/sdl2rwops.h
+ target/i386/latx/include/symbols.h
+ target/i386/latx/include/wrapped*
+ target/i386/latx/include/wrapper*.h
+ target/i386/latx/include/generated/wrapped*
+Source: https://github.com/ptitSeb/box64
+Copyright:
+ Copyright (c) 2020 ptitSeb
+ Copyright (c) Box64 contributors
+License: MIT
+Comment:
+ The LATX library pass-through implementation borrows ideas from and
+ references portions of the box64 project. Local files may contain LATX
+ modifications while retaining third-party attribution and the MIT
+ license notice in this NOTICE file.
+
+License: MIT
+ Permission is hereby granted, free of charge, to any person obtaining a
+ copy of this software and associated documentation files (the "Software"),
+ to deal in the Software without restriction, including without limitation
+ the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ and/or sell copies of the Software, and to permit persons to whom the
+ Software is furnished to do so, subject to the following conditions:
+ .
+ The above copyright notice and this permission notice shall be included
+ in all copies or substantial portions of the Software.
+ .
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+ THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+ OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+ OTHER DEALINGS IN THE SOFTWARE.

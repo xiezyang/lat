@@ -1,0 +1,4 @@
+#ifndef LATX_VERSION_H_
+#define LATX_VERSION_H_
+#define LATX_VERSION "@VCS_TAG@"
+#endif /* LATX_VERSION_H_ */

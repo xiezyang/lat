@@ -1,0 +1,7 @@
+release_branch=codex/release-no-debug-20260917
+base_commit=0ce47fc63631bf499970554b9490b652d4b0179e
+excluded_patches=0013,0014,0022,0023
+excluded_commits=88f2dec5f7209aed34744f47efc2518d2f86f32d,49665cf9c4504b38feb50a54852e1664f7ec05fe,191f736eb5f2751c9c935d4694282343ce07d402,4e7cdcc1193a153fd43eb27d9b79bb70c32b8553
+source=4e7cdcc1193 bundle, reconstructed without runtime diagnostics or TB-state diagnostic tests
+not_used=current-debug or xfyun-debug
+force_lbt_disabled=option_enable_lbt is set to 0 in latx_apply_host_hwcap()

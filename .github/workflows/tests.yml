@@ -1,0 +1,107 @@
+name: LAT Tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+    paths:
+      - "**/*.c"
+      - "**/*.h"
+      - "**/*.S"
+      - "**/*.inc"
+      - "**/*.py"
+      - "**/meson.build"
+      - "meson_options.txt"
+      - "configure"
+      - "runtime/**"
+      - "tests/runtime/**"
+      - ".github/.ci/**"
+      - ".github/workflows/tests.yml"
+  pull_request:
+    paths:
+      - "**/*.c"
+      - "**/*.h"
+      - "**/*.S"
+      - "**/*.inc"
+      - "**/*.py"
+      - "**/meson.build"
+      - "meson_options.txt"
+      - "configure"
+      - "runtime/**"
+      - "tests/runtime/**"
+      - ".github/.ci/**"
+      - ".github/workflows/tests.yml"
+
+permissions:
+  contents: read
+
+# Test registration and suite selection rules are documented in tests/README.md.
+jobs:
+  meson-fast:
+    name: "test (${{ matrix.container.name }}, lat-pr-fast)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    strategy:
+      fail-fast: false
+      matrix:
+        container:
+          - name: "latx-runner-aosc"
+            tag: "loong64"
+            sanitizers: false
+            prepare_meson: "command -v meson >/dev/null || oma install -y meson"
+          - name: "latx-runner-debian"
+            tag: "loong64"
+            sanitizers: true
+            prepare_meson: "command -v meson >/dev/null || { apt-get update && apt-get install -y meson; }"
+          - name: "latx-runner-fedora"
+            tag: "loongarch64"
+            sanitizers: false
+            prepare_meson: "command -v meson >/dev/null"
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Run fast Meson tests
+        run: |
+          docker run --rm \
+            --platform linux/loong64 \
+            --volume "$(pwd):/io" \
+            --workdir /io \
+            "ghcr.io/${{ github.repository_owner }}/${{ matrix.container.name }}:${{ matrix.container.tag }}" \
+            sh -eux -c '
+              ${{ matrix.container.prepare_meson }}
+              meson --version
+              export CFLAGS="-Wno-error=unused-but-set-variable -Wno-error=unused-function -Wformat -Werror=format-y2k"
+              mkdir -p build64-tests
+              cd build64-tests
+              sanitizer_flags=
+              if [ "${{ matrix.container.sanitizers }}" = true ]; then
+                sanitizer_flags="--enable-debug --enable-sanitizers"
+              fi
+              ../configure \
+                --target-list=x86_64-linux-user,i386-linux-user \
+                --enable-latx \
+                --enable-tests \
+                --disable-werror \
+                --optimize-O1 \
+                --extra-ldflags=-ldl \
+                --disable-docs \
+                --meson=meson \
+                --with-git-submodules=ignore \
+                $sanitizer_flags
+              cd ..
+              export LATX_RUNTIME_TEST_SKIP_GUEST_EXECUTION=1
+              ASAN_OPTIONS=detect_leaks=0 \
+              UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+                meson test \
+                  -C build64-tests \
+                  --suite lat-pr-fast \
+                  --print-errorlogs
+            '

@@ -1,0 +1,86 @@
+name: Docker Image Builder
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Run once a week on Fridays
+    - cron: "0 0 * * FRI"
+  pull_request:
+    paths:
+      - '.github/.ci/**'
+      - '.github/workflows/build-docker-images.yml'
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/.ci/**'
+      - '.github/workflows/build-docker-images.yml'
+
+jobs:
+  build:
+    runs-on: ${{ matrix.IMAGE.RUNNER }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        IMAGE:
+          - {TAG_NAME: "latx-runner-aosc:loong64", DOCKER_PLATFORM: "linux/loong64", DOCKERFILE_PATH: ".github/.ci/aosc", RUNNER: "ubuntu-latest"}
+          - {TAG_NAME: "latx-runner-debian:loong64", DOCKER_PLATFORM: "linux/loong64", DOCKERFILE_PATH: ".github/.ci/debian", RUNNER: "ubuntu-latest"}
+          - {TAG_NAME: "latx-runner-fedora:loongarch64", DOCKER_PLATFORM: "linux/loong64", DOCKERFILE_PATH: ".github/.ci/fedora", RUNNER: "ubuntu-latest"}
+          - {TAG_NAME: "latx-runner-fedora-clang:loongarch64", DOCKER_PLATFORM: "linux/loong64", DOCKERFILE_PATH: ".github/.ci/clang", RUNNER: "ubuntu-latest"}
+          
+    name: "${{ matrix.IMAGE.TAG_NAME }}"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Pull existing image
+        run: docker pull --platform ${{ matrix.IMAGE.DOCKER_PLATFORM }} ghcr.io/${{ github.repository_owner }}/${{ matrix.IMAGE.TAG_NAME }} || true
+        if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
+
+      - name: Get image name
+        id: image-name
+        run: |
+          ATTEST_IMAGE=$(echo "${{ matrix.IMAGE.TAG_NAME }}" | cut -d ':' -f 1)
+          echo "ATTEST_IMAGE=${ATTEST_IMAGE}" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4.0.0
+        with:
+          cache-binary: false
+
+      - name: Login to ghcr.io
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+        if: (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/master'
+
+      - name: Build (and push if master) docker image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
+        id: docker-build
+        with:
+          context: ${{ matrix.IMAGE.DOCKERFILE_PATH }}
+          cache-from: ghcr.io/${{ github.repository_owner }}/${{ matrix.IMAGE.TAG_NAME }}
+          tags: ghcr.io/${{ github.repository_owner }}/${{ matrix.IMAGE.TAG_NAME }}
+          platforms: ${{ matrix.IMAGE.DOCKER_PLATFORM }}
+          pull: true
+          push: ${{ (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/master' }}
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-name: "ghcr.io/${{ github.repository_owner }}/${{ steps.image-name.outputs.ATTEST_IMAGE }}"
+          subject-digest: ${{ steps.docker-build.outputs.digest }}
+          push-to-registry: true
+        if: (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/master'
