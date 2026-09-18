@@ -61,3 +61,10 @@ la-dev配置回归已构建并13/13通过，日志build64-validation/config-test
 基线中位数1.427194秒（原始：1.425467、1.424093、1.451073、1.427194、1.437033）。至07db9d5中位数1.310792秒，较基线快8.88%；本轮softfpu2显示LASX=0，故这一步可归于受限相邻CMP/TEST分支组合，而非LASX。至688467c中位数1.294435秒，较上一步快1.26%、较基线快10.26%。完整候选中位数1.261689秒，较上一步快2.60%、较基线快13.12%。每项原始时间、命令、输出和WAV保存在目标validation-20260918/tts-components.json及同名前缀文件。
 
 该测量证明提交序列在该应用上的端到端增益，不能直接量化每条生成指令的执行次数；当前没有无扰动计数器证明TTS实际命中了每一种局部模式。LASX仍未在softfpu2路径下执行。最终严格对齐板卡尚未测，不能据此宣布产品接受。
+
+
+## 最终严格对齐板卡验证
+
+经xzy86临时登录root@192.168.8.200，在/tmp/codex-no-lbt-validation-20260918运行；未改动板卡现有LAT、配置或用户目录。该板卡为Loongson-2K1001，内核5.10.0.lsgd+，CPU特性仅含lsx和lbt_mips，不含lasx和lbt_x86。候选latx-candidate来自.7验证目录，SHA256 8e0333b8f48dc2b3170f8f4276ff1acbe5fef2ac5ab15b91f5d1c4283e2e711a；guest unaligned-v128 SHA256 71981ec75f3639f5d2adc72667a220749a060140c2b78e7f6c969e398fa190cf。
+
+命令：LATX_SOFTFPU=2 timeout 60 ./latx-candidate ./unaligned-v128。结果打印“LATX: software state mode enabled (LSX=1 LASX=0 LBT_X86=0)”，rc=0。guest覆盖源地址余数0..15乘目标地址余数0..15和跨64KB边界，验证16字节对齐vld/vst、8字节对齐双64位访问、其余地址的逐字节回退均可完成。该项关闭了“最终硬件不支持128位非对齐访问”的关键正确性缺口；仍未在该板卡运行TTS或完整lat-pr-fast，性能结论仍来自.7。
