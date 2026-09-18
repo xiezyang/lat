@@ -47,3 +47,8 @@ la-dev配置回归已构建并13/13通过，日志build64-validation/config-test
 同配置专项对照也已完成：baseline与candidate均通过unaligned-v128、signal-xmm-no-lbt、lock-cmpxchg-no-lbt、lua-number-conversion-no-lbt、latx-tso-ordering-no-lbt，全部rc=0。unaligned-v128已覆盖16种源地址余数乘16种目标地址余数，含跨64KB边界；它验证新增8字节对齐双64位路径与其余逐字节回退在.7工作，但.7不是最终不支持128位非对齐访问的板卡，不能替代该板卡验证。所有专项运行显式LATX_SOFTFPU=2、LD_LIBRARY_PATH=.、-latx-host-hwcap 0x10；因此LASX运行时为0，LASX保留策略尚未在本轮实际执行。
 
 结论：该候选已在.7上完成机制相关的专项正确性和单一TTS应用性能验证，继续调查；它尚不是最终板卡或完整回归意义上的产品接受。
+
+
+## 快速回归完成
+
+在192.168.8.2:22522的独立候选树以O1/static/no-KZT及--enable-tests完整构建后，lat-pr-fast为24/24通过。首次24项中仅x86_64-linux-user-latx-config-regression失败；原因是该静态源码审计测试没有收到G_TEST_SRCDIR，无法打开flag-lbt.h，不是候选二进制或运行语义失败。提交a889d61向该测试传入meson.project_source_root()，重新配置、构建和运行后24/24通过。完整日志：/home/yuerengan/lala/xzy/lat-no-lbt-o1-validation-20260918/build64/fast-test-output.log。
