@@ -14,3 +14,8 @@
 
 各优化逐提交对比，使用相同O1/static/no-KZT构建条件（比较优化时以01配置提交为基线）。先补lat-pr-fast及受影响的tests/latx测试，再在真实无LBT目标验证无非法指令、结果、信号与内存顺序；有LBT机器强制关闭不能代替真实无LBT验证。
 性能采用代表性应用及SPEC ref，基线/候选交错多轮，保留每次输出校验与耗时。不加探针测175通过率，不修改既有LAT结果。若需要路径证明，将诊断与正式计时分开。无收益或正确性失败即回退相应独立提交。
+
+## 02 LASX独立于LBT
+
+删除no-LBT策略对option_enable_lasx的无条件清零，保留latx_apply_host_hwcap的检测结果。不强制启用LASX，不开启guest AVX，不放宽no-LBT非对齐内存回退。意图是在具有LASX的机器保留既有向量指令选择，避免仅因LBT关闭而退化。
+待补：分别验证无LASX、有LASX无LBT、有LASX且强制no-LBT三种能力；SSE/SSSE3/SSE4结果、helper前后和信号前后向量状态、非对齐及跨页访问；检查不支持LASX时无xv指令。调整tests/latx/latx-config-regression.c旧的“no-LBT必关LASX”断言，覆盖独立能力组合。比较代表向量负载的指令数和总时间；未编译、未测试、收益未知。
