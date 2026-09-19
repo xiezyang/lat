@@ -58,6 +58,11 @@ static int curr_lib_seg_num;
 static char *curr_lib_name;
 static char curr_aot_file_name[PATH_MAX];
 uintptr_t table_end_addr;
+
+static bool aot_scan_enabled(void)
+{
+    return getenv("LATX_AOT_SCAN") != NULL;
+}
 const char *aot_process_profile = "browser";
 
 void aot_set_process_profile(int argc, char **argv)
@@ -986,6 +991,10 @@ static inline void gen_aot_by_lib(int first_seg_id, int end_seg_id,
 
     if (need_gen_aot(cpu, curr_lib_name, curr_aot_file_name,
                      &lockfd, tb_count) >= 0) {
+        if (aot_scan_enabled()) {
+            fprintf(stderr, "AOT_SCAN_GENERATE_BEGIN lib=%s tbs=%u\n",
+                    curr_lib_name, tb_count);
+        }
         if (get_aot_path(curr_aot_file_name, aot_file_path,
                          PATH_MAX) < 0) {
             goto unlock;
@@ -1006,7 +1015,13 @@ static inline void gen_aot_by_lib(int first_seg_id, int end_seg_id,
                 aot2_merge(curr_aot_file_name, first_seg_id, end_seg_id, cpu);
             if (merge_result == AOT_MERGE_NO_BASE ||
                 merge_result == AOT_MERGE_READY) {
-                generated_aot_file |= rename_aot_file(curr_aot_file_name);
+                bool generated = rename_aot_file(curr_aot_file_name);
+
+                generated_aot_file |= generated;
+                if (generated && aot_scan_enabled()) {
+                    fprintf(stderr, "AOT_SCAN_GENERATE_SUCCESS file=%s\n",
+                            aot_file_path);
+                }
             } else {
                 unlink(tmp_file_path);
             }
@@ -1476,6 +1491,9 @@ static aot_segment *get_segment(seg_info *seg, char *lib_name,
     if (lib == NULL) {
         *curr_aot_buffer = NULL;
         lib = aot_load(lib_name, aot_file_name, curr_aot_buffer);
+        if (lib && aot_scan_enabled()) {
+            fprintf(stderr, "AOT_SCAN_LOAD_SUCCESS file=%s\n", aot_file_name);
+        }
     } else if (!lib->is_unmapped){
         *curr_aot_buffer = lib->buffer;
     } else if (seg->aot_file_type & (PE_AOT_FILE | CACHE_AOT_FILE)) {

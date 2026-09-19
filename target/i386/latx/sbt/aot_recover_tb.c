@@ -390,6 +390,10 @@ inline int load_page(target_ulong pc, uint32_t cflags, seg_info *info)
 
     tcg_ctx->tb_cflags = cflags;
 
+    if (getenv("LATX_AOT_SCAN")) {
+        fprintf(stderr, "AOT_SCAN_RECOVER pc=0x" TARGET_FMT_lx " tbs=%d\n",
+                pc, tb_num_in_page);
+    }
     recover_tb_range(p1, p_aot_tbs, tb_num_in_page, info->seg_begin, info->seg_end);
     return 1;
 }
