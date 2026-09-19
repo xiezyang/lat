@@ -158,49 +158,6 @@ static bool is_contain_edx(IR1_OPND *opnd)
     return false;
 }
 
-static bool cmp_xxcc_no_lbt_supported(IR1_INST *cmp, IR1_INST *tail)
-{
-    if (tail != cmp + 1 || ir1_is_prefix_lock(cmp) || ir1_opnd_num(cmp) != 2) {
-        return false;
-    }
-    if (!ir1_opnd_is_gpr(ir1_get_opnd(cmp, 0)) ||
-        (!ir1_opnd_is_gpr(ir1_get_opnd(cmp, 1)) &&
-         !ir1_opnd_is_imm(ir1_get_opnd(cmp, 1)))) {
-        return false;
-    }
-    if (!ir1_opnd_is_gpr(ir1_get_opnd(tail, 0))) {
-        return false;
-    }
-    switch (ir1_opcode(tail)) {
-    case WRAP(CMOVB):
-    case WRAP(CMOVAE):
-    case WRAP(CMOVE):
-    case WRAP(CMOVNE):
-    case WRAP(CMOVBE):
-    case WRAP(CMOVA):
-    case WRAP(CMOVL):
-    case WRAP(CMOVGE):
-    case WRAP(CMOVLE):
-    case WRAP(CMOVG):
-        return ir1_opnd_num(tail) == 2 &&
-               (ir1_opnd_is_gpr(ir1_get_opnd(tail, 1)) ||
-                ir1_opnd_is_imm(ir1_get_opnd(tail, 1)));
-    case WRAP(SETB):
-    case WRAP(SETAE):
-    case WRAP(SETE):
-    case WRAP(SETNE):
-    case WRAP(SETBE):
-    case WRAP(SETA):
-    case WRAP(SETL):
-    case WRAP(SETGE):
-    case WRAP(SETLE):
-    case WRAP(SETG):
-        return ir1_opnd_num(tail) == 1;
-    default:
-        return false;
-    }
-}
-
 static int inst_pattern(TranslationBlock *tb,
         IR1_INST *pir1, scan_elem_t *scan)
 {
@@ -252,9 +209,6 @@ static int inst_pattern(TranslationBlock *tb,
         case WRAP(CMOVGE):
         case WRAP(CMOVLE):
         case WRAP(CMOVG):
-            if (!option_enable_lbt && !cmp_xxcc_no_lbt_supported(pir1, ir1)) {
-                return 0;
-            }
             pir1->instptn.opc  = INSTPTN_OPC_CMP_XXCC;
             pir1->instptn.next = ir1;
             ir1->instptn.opc  = INSTPTN_OPC_NOP;
