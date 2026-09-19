@@ -126,3 +126,8 @@ no-LBT的inst pattern从全关改为仅保留CMP_JCC/TEST_JCC位，并与原有�
 O1 已编译 AOT 代码，但 no-LBT 初始化关闭 `option_aot` 和 `option_load_aot`。当前真实 TTS 包没有可加载的 `.aot` 产物，因此不能把“打开 AOT 后生成或写出缓存文件”当作性能收益或加载成功。
 
 若继续 AOT，需要在独立缓存目录完成两阶段验证：先生成候选缓存，再在新的进程中运行并证明实际 AOT 加载路径被执行，随后与无 AOT 的同一静态 O1 no-LBT 二进制交错比较。还需要确认 AOT 生成代码不引入 LBT 指令，并在最终目标机重跑严格非对齐向量访问测试。
+
+
+## 12. 候选：no-LBT 模式保留 AOT
+
+该候选仅在 AOT 已编译时恢复 `option_aot` 和 `option_load_aot`；TU、JRRA、LBT、VPAES、fast atomic 和 rounding 优化仍关闭。验证必须使用隔离的 TTS 包，分别记录缓存生成和新进程加载；只有确认加载的代码实际执行后才比较性能。
