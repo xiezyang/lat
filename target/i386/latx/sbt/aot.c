@@ -1090,6 +1090,11 @@ void aot_generate(CPUState *cpu)
     get_tb();
     get_seg_infomation();
 
+    if (aot_scan_enabled()) {
+        fprintf(stderr, "AOT_SCAN_GENERATE_STATE tb_num=%d seg_info_num=%d\n",
+                tb_num, seg_info_num);
+    }
+
     if (tb_num == 0 || seg_info_num == 0) {
         return;
     }
@@ -1685,6 +1690,11 @@ void aot_exit_entry(CPUState *cpu, AOTExitReason reason)
     bool daemonize = aot_exit_worker_should_daemonize(
         ts && ts->ipc_namespace_isolated);
 
+    if (aot_scan_enabled()) {
+        fprintf(stderr, "AOT_SCAN_EXIT reason=%d option_aot=%d load=%d\n",
+                reason, option_aot, option_load_aot);
+    }
+
     if (!option_aot) {
         return;
     }
@@ -1780,6 +1790,10 @@ parent_exit:
 
 void aot_init(void)
 {
+    if (aot_scan_enabled()) {
+        fprintf(stderr, "AOT_SCAN_INIT option_aot=%d load=%d\n",
+                option_aot, option_load_aot);
+    }
     if (!option_aot) {
         return;
     }
