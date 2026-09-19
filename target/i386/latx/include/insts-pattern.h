@@ -28,8 +28,7 @@
  * have a no-LBT translation that does not patch single LBT flag instructions.
  */
 #define INSTPTN_NO_LBT_MASK \
-    ((INSTPTN_OPC_CMP_JCC | INSTPTN_OPC_TEST_JCC | \
-      INSTPTN_OPC_CMP_SBB) >> 4)
+    ((INSTPTN_OPC_CMP_JCC | INSTPTN_OPC_TEST_JCC) >> 4)
 #define INSTPTN_OPC_BT_JCC      0x000040
 #define INSTPTN_OPC_CQO_IDIV    0x000080
 #define INSTPTN_OPC_CMP_SBB     0x000100
