@@ -328,11 +328,7 @@ void latx_apply_no_lbt_restrictions(void)
     option_aot_wine = 0;
     option_jr_ra = 0;
     option_jr_ra_stack = 0;
-#ifdef CONFIG_LATX_TUNNEL_LIB
-    option_tunnel_lib = 1;
-#else
     option_tunnel_lib = 0;
-#endif
     option_vpaes = 0;
     option_fputag = 0;
     option_fast_atomic = 0;

@@ -110,9 +110,13 @@ no-LBT的inst pattern从全关改为仅保留CMP_JCC/TEST_JCC位，并与原有�
 
 候选中位数慢 0.000177 秒（0.014%），没有有效收益，已撤销。后续不应继续扩大这条屏障省略规则。
 
+## 10. 已撤销：no-LBT 模式保留 tunnel-lib
 
-## 10. 候选：no-LBT 模式保留 tunnel-lib
+以 `latx_host_scalar_libc=true` 静态 O1 构建，避免字符串和内存函数依赖宿主 libc 的向量化非对齐访问；候选仍关闭 LBT、JRRA、AOT、TU、VPAES、fast atomic 和 rounding 优化。五轮交错测试均正常退出，日志显示 `LBT_X86=0`，并生成参考 WAV。
 
-O1 会编译 tunnel-lib，但 no-LBT 初始化此前无条件关闭它。该候选保留 `option_tunnel_lib`，同时继续关闭 LBT、JRRA、JRRA_STACK、AOT、TU、VPAES、fast atomic 和 rounding 优化。tunnel-lib 的返回走普通间接跳转胶水，不使用 JRRA 返回地址缓存。
+| 版本 | 五次秒数（排序后） | 中位数 |
+| --- | --- | --- |
+| `b4634e7` 基线 | 1.267368, 1.267418, 1.267504, 1.272141, 1.318232 | 1.267504 s |
+| tunnel-lib 标量候选 | 1.267642, 1.267982, 1.268074, 1.317732, 1.321451 | 1.268074 s |
 
-构建验证使用 `latx_host_scalar_libc=true`，使 LAT 自己提供的字符串和内存例程采用标量实现，避免把宿主 libc 的向量化非对齐访问作为前提。待验证：静态 O1 构建、真实 TTS 输出和交错性能；最终目标机仍须执行严格非对齐向量回归。
+候选中位数慢 0.000570 秒（0.045%），没有有效收益，已撤销。现有 TTS 输入未从 tunnel-lib 获得可测量加速。
