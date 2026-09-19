@@ -543,6 +543,88 @@ static inline void boundary_set(TRANSLATION_DATA *lat_ctx)
     }
 }
 
+static bool no_lbt_scan_enabled;
+static bool no_lbt_scan_registered;
+static unsigned long long no_lbt_scan_tb_count;
+static unsigned long long no_lbt_scan_ir1_count;
+static unsigned long long no_lbt_scan_host_insn_count;
+static unsigned long long no_lbt_scan_lbt_insn_count;
+
+static bool no_lbt_scan_is_lbt_opcode(IR2_OPCODE opcode)
+{
+    switch (opcode) {
+    case LISA_GR2SCR:
+    case LISA_SCR2GR:
+    case LISA_X86MTTOP:
+    case LISA_X86MFTOP:
+    case LISA_X86INCTOP:
+    case LISA_X86DECTOP:
+    case LISA_X86SETTM:
+    case LISA_X86CLRTM:
+    case LISA_SETX86J:
+    case LISA_X86SETTAG:
+    case LISA_X86MFFLAG:
+    case LISA_X86MTFLAG:
+    case LISA_X86ADC_B:
+    case LISA_X86ADC_H:
+    case LISA_X86ADC_W:
+    case LISA_X86ADC_D:
+    case LISA_X86SBC_B:
+    case LISA_X86SBC_H:
+    case LISA_X86SBC_W:
+    case LISA_X86SBC_D:
+    case LISA_X86ROTR_B:
+    case LISA_X86ROTR_H:
+    case LISA_X86ROTR_W:
+    case LISA_X86ROTR_D:
+    case LISA_X86ROTL_B:
+    case LISA_X86ROTL_H:
+    case LISA_X86ROTL_W:
+    case LISA_X86ROTL_D:
+    case LISA_X86ROTRI_B:
+    case LISA_X86ROTRI_H:
+    case LISA_X86ROTRI_W:
+    case LISA_X86ROTRI_D:
+    case LISA_X86ROTLI_B:
+    case LISA_X86ROTLI_H:
+    case LISA_X86ROTLI_W:
+    case LISA_X86ROTLI_D:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static void no_lbt_scan_report(void)
+{
+    if (!no_lbt_scan_enabled) {
+        return;
+    }
+    fprintf(stderr,
+            "LATX_NO_LBT_SCAN tb=%llu ir1=%llu host_insns=%llu lbt_insns=%llu\n",
+            no_lbt_scan_tb_count, no_lbt_scan_ir1_count,
+            no_lbt_scan_host_insn_count, no_lbt_scan_lbt_insn_count);
+}
+
+static void no_lbt_scan_snapshot(void)
+{
+    if (no_lbt_scan_enabled && no_lbt_scan_tb_count % 100 == 0) {
+        no_lbt_scan_report();
+    }
+}
+
+static void no_lbt_scan_register(void)
+{
+    if (no_lbt_scan_registered) {
+        return;
+    }
+    no_lbt_scan_registered = true;
+    no_lbt_scan_enabled = getenv("LATX_NO_LBT_SCAN") != NULL;
+    if (no_lbt_scan_enabled) {
+        atexit(no_lbt_scan_report);
+    }
+}
+
 int tr_ir2_assemble(const void *code_start_addr, const IR2_INST *pir2)
 {
     if (option_dump) {
@@ -553,12 +635,32 @@ int tr_ir2_assemble(const void *code_start_addr, const IR2_INST *pir2)
     void *code_addr = (void *)code_start_addr;
     int code_nr = 0;
 
+    no_lbt_scan_register();
+    if (no_lbt_scan_enabled) {
+        no_lbt_scan_tb_count++;
+    }
+
 #ifdef CONFIG_LATX_DEBUG
     ir2_dump_init();
     int ir2_id = 0;
 #endif
 
     while (pir2 != NULL) {
+        if (no_lbt_scan_enabled) {
+            IR2_OPCODE opcode = ir2_opcode(pir2);
+
+            if (opcode == LISA_X86_INST) {
+                no_lbt_scan_ir1_count++;
+            } else if (opcode != LISA_LABEL) {
+                no_lbt_scan_host_insn_count++;
+                if (no_lbt_scan_is_lbt_opcode(opcode)) {
+                    no_lbt_scan_lbt_insn_count++;
+                    fprintf(stderr,
+                            "LATX_NO_LBT_SCAN_LBT tb=%llu opcode=%u\n",
+                            no_lbt_scan_tb_count, opcode);
+                }
+            }
+        }
 #if defined(CONFIG_LATX_PROFILER) && defined(CONFIG_LATX_DEBUG)
         if (ir2_opcode(pir2) == LISA_PROFILE) {
             ir2_id++;
@@ -587,6 +689,8 @@ int tr_ir2_assemble(const void *code_start_addr, const IR2_INST *pir2)
 #endif
         pir2 = ir2_next(pir2);
     }
+
+    no_lbt_scan_snapshot();
 
     return code_nr;
 }
