@@ -23,6 +23,11 @@
 #include "latx-options.h"
 #include "aot_page.h"
 
+static bool tu_scan_enabled(void)
+{
+    return getenv("LATX_TU_SCAN") != NULL;
+}
+
 void get_last_info(TranslationBlock *tb, IR1_INST* pir1)
 {
     if (tb->icount == 0) {
@@ -630,6 +635,11 @@ static TranslationBlock *tb_explore(CPUState *cpu,
     /* flag reduction */
     tu_ir1_optimization(tb_list, *tb_num_in_tu);
 
+    if (tu_scan_enabled()) {
+        fprintf(stderr, "TU_SCAN_BUILD tb_num=%u ir1_num=%u\n",
+                *tb_num_in_tu, *ir1_num_in_tu);
+    }
+
     return entry;
 }
 
@@ -1141,6 +1151,9 @@ TranslationBlock *tu_gen_code(CPUState *cpu,
 
     translate_tu(*tb_num_in_tu, tb_list);
     register_tu(*tb_num_in_tu, tb_list, cpu, cflags);
+    if (tu_scan_enabled()) {
+        fprintf(stderr, "TU_SCAN_REGISTER tb_num=%u\n", *tb_num_in_tu);
+    }
     tu_trees_reset();
 
     return entry;
@@ -1242,6 +1255,10 @@ bool judge_tu_eflag_gen(void *tb_in_tu) {
         TranslationBlock *tb_next = tb->s_data->next_tb[TU_TB_INDEX_NEXT];
         /* TODO */
         if (tb_target->eflag_use && !tb_next->eflag_use){
+            if (tu_scan_enabled()) {
+                fprintf(stderr, "TU_SCAN_EFLAG_FALLBACK pc=0x" TARGET_FMT_lx "\n",
+                        tb->pc);
+            }
             tb->tu_jmp[TU_TB_INDEX_NEXT] = TB_JMP_RESET_OFFSET_INVALID;
             tb->tu_jmp[TU_TB_INDEX_TARGET] = TB_JMP_RESET_OFFSET_INVALID;
             return false;
@@ -1275,12 +1292,18 @@ void set_use_tu_jmp(TranslationBlock *tb)
         tb->bool_flags &= ~IS_TU_JMP;
         return;
     }
+    if (tu_scan_enabled()) {
+        fprintf(stderr, "TU_SCAN_LINK pc=0x" TARGET_FMT_lx "\n", tb->pc);
+    }
     tb->bool_flags |= IS_TU_JMP;
     tb->bool_flags &= ~IS_TU_SPLIT;
 }
 
 void unset_use_tu_jmp(TranslationBlock *tb)
 {
+    if (tu_scan_enabled()) {
+        fprintf(stderr, "TU_SCAN_UNLINK pc=0x" TARGET_FMT_lx "\n", tb->pc);
+    }
     tb->bool_flags &= ~IS_TU_JMP;
     tb->bool_flags |= IS_TU_SPLIT;
 }
