@@ -560,6 +560,13 @@ bool insts_pattern_scan_jcc_end(TranslationBlock *tb, IR1_INST *pir1, int pir1_i
             return false;
         }
     case WRAP(SUB):
+        /* no-LBT pattern lowering bypasses the generic memory barrier. */
+        if (option_no_lbt_mode &&
+            (!ir1_opnd_is_gpr(ir1_get_opnd(pir1, 0)) ||
+             !(ir1_opnd_is_gpr(ir1_get_opnd(pir1, 1)) ||
+               ir1_opnd_is_imm(ir1_get_opnd(pir1, 1))))) {
+            return false;
+        }
         SCAN_CHECK(scan, 0);
         ir1_jcc = SCAN_IR1(tb, scan, 0);
         switch (ir1_opcode(ir1_jcc)) {
@@ -585,6 +592,11 @@ bool insts_pattern_scan_jcc_end(TranslationBlock *tb, IR1_INST *pir1, int pir1_i
             return false;
         }
     case WRAP(SHR):
+        /* Keep no-LBT patterns register-only: no skipped memory barrier. */
+        if (option_no_lbt_mode &&
+            !ir1_opnd_is_gpr(ir1_get_opnd(pir1, 0))) {
+            return false;
+        }
         SCAN_CHECK(scan, 0);
         ir1_jcc = SCAN_IR1(tb, scan, 0);
         opnd1 = ir1_get_opnd(pir1, 1);
@@ -604,6 +616,13 @@ bool insts_pattern_scan_jcc_end(TranslationBlock *tb, IR1_INST *pir1, int pir1_i
             return false;
         }
     case WRAP(AND):
+        /* Keep no-LBT patterns register-only: no skipped memory barrier. */
+        if (option_no_lbt_mode &&
+            (!ir1_opnd_is_gpr(ir1_get_opnd(pir1, 0)) ||
+             !(ir1_opnd_is_gpr(ir1_get_opnd(pir1, 1)) ||
+               ir1_opnd_is_imm(ir1_get_opnd(pir1, 1))))) {
+            return false;
+        }
         SCAN_CHECK(scan, 0);
         ir1_jcc = SCAN_IR1(tb, scan, 0);
         switch (ir1_opcode(ir1_jcc)) {
