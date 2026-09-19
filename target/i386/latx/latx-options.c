@@ -322,11 +322,7 @@ void latx_apply_no_lbt_restrictions(void)
     option_no_lbt_mode = 1;
     option_enable_lbt = 0;
     /* LASX is an independent host capability, already checked by HWCAP. */
-#ifdef CONFIG_LATX_TU
-    option_tu = 1;
-#else
     option_tu = 0;
-#endif
     option_aot = 0;
     option_load_aot = 0;
     option_aot_wine = 0;
