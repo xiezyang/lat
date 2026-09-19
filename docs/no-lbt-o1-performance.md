@@ -109,3 +109,10 @@ no-LBT的inst pattern从全关改为仅保留CMP_JCC/TEST_JCC位，并与原有�
 | 扩展规则候选 | 1.267012, 1.267427, 1.267464, 1.267735, 1.268281 | 1.267464 s |
 
 候选中位数慢 0.000177 秒（0.014%），没有有效收益，已撤销。后续不应继续扩大这条屏障省略规则。
+
+
+## 10. 候选：no-LBT 模式保留 tunnel-lib
+
+O1 会编译 tunnel-lib，但 no-LBT 初始化此前无条件关闭它。该候选保留 `option_tunnel_lib`，同时继续关闭 LBT、JRRA、JRRA_STACK、AOT、TU、VPAES、fast atomic 和 rounding 优化。tunnel-lib 的返回走普通间接跳转胶水，不使用 JRRA 返回地址缓存。
+
+构建验证使用 `latx_host_scalar_libc=true`，使 LAT 自己提供的字符串和内存例程采用标量实现，避免把宿主 libc 的向量化非对齐访问作为前提。待验证：静态 O1 构建、真实 TTS 输出和交错性能；最终目标机仍须执行严格非对齐向量回归。
