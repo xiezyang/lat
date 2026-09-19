@@ -158,6 +158,16 @@ static bool is_contain_edx(IR1_OPND *opnd)
     return false;
 }
 
+static bool bt_jcc_no_lbt_supported(IR1_INST *bt, IR1_INST *jcc)
+{
+    if (jcc != bt + 1 || ir1_is_prefix_lock(bt) || ir1_opnd_num(bt) != 2) {
+        return false;
+    }
+    return ir1_opnd_is_gpr(ir1_get_opnd(bt, 0)) &&
+           (ir1_opnd_is_gpr(ir1_get_opnd(bt, 1)) ||
+            ir1_opnd_is_imm(ir1_get_opnd(bt, 1)));
+}
+
 static int inst_pattern(TranslationBlock *tb,
         IR1_INST *pir1, scan_elem_t *scan)
 {
@@ -543,6 +553,10 @@ bool insts_pattern_scan_jcc_end(TranslationBlock *tb, IR1_INST *pir1, int pir1_i
         case WRAP(JAE):
             if (pir1_index + 1 == SCAN_IDX(scan, 0)) {
                 instptn_check_bt_jcc_0();
+                if (!option_enable_lbt &&
+                    !bt_jcc_no_lbt_supported(pir1, ir1_jcc)) {
+                    return false;
+                }
                 pir1->instptn.opc  = INSTPTN_OPC_BT_JCC;
                 pir1->instptn.next = ir1_jcc;
                 ir1_jcc->instptn.opc  = INSTPTN_OPC_NOP;

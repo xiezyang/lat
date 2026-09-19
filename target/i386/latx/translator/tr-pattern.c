@@ -586,6 +586,15 @@ static bool translate_bt_jcc(IR1_INST *ir1)
     IR1_INST *curr = ir1;
     IR1_INST *next = ir1->instptn.next;
 
+    static unsigned long long bt_jcc_count;
+    bt_jcc_count++;
+    if (getenv("LATX_INSTPTN_SCAN") &&
+        (bt_jcc_count <= 10 || bt_jcc_count % 1000 == 0)) {
+        fprintf(stderr,
+                "INSTPTN_SCAN BT_JCC count=%llu pc=0x" TARGET_FMT_lx "\n",
+                bt_jcc_count, ir1_addr(curr));
+    }
+
     curr->info->id = WRAP(BT);
     IR1_OPND *bt_opnd0 = ir1_get_opnd(curr, 0);
     IR1_OPND *bt_opnd1 = ir1_get_opnd(curr, 1);
