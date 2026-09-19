@@ -17,8 +17,6 @@
 
 #ifdef CONFIG_LATX_INSTS_PATTERN
 
-static unsigned long long cmp_xxcc_match_count;
-
 #define WRAP(ins) (dt_X86_INS_##ins)
 #define SCAN_CHECK(buf, i) do { \
     if (buf[i] == -1) return false; \
@@ -256,14 +254,6 @@ static int inst_pattern(TranslationBlock *tb,
         case WRAP(CMOVG):
             if (!option_enable_lbt && !cmp_xxcc_no_lbt_supported(pir1, ir1)) {
                 return 0;
-            }
-            cmp_xxcc_match_count++;
-            if (getenv("LATX_INSTPTN_SCAN") &&
-                (cmp_xxcc_match_count <= 10 ||
-                 cmp_xxcc_match_count % 1000 == 0)) {
-                fprintf(stderr,
-                        "INSTPTN_SCAN CMP_XXCC count=%llu pc=0x" TARGET_FMT_lx "\n",
-                        cmp_xxcc_match_count, ir1_addr(pir1));
             }
             pir1->instptn.opc  = INSTPTN_OPC_CMP_XXCC;
             pir1->instptn.next = ir1;
