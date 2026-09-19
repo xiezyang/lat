@@ -657,9 +657,7 @@ static void handle_arg_latx_softfpu(const char *arg)
 {
     option_softfpu = strtol(arg, NULL, 0);
     if (option_softfpu) {
-        if (!latx_no_lbt_mode_enabled()) {
-            option_aot = 0;
-        }
+        option_aot = 0;
         option_set_rounding_opt = 0;
     }
 }
