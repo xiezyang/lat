@@ -1892,23 +1892,51 @@ static uint8_t no_lbt_explicit_mem_access(IR1_INST *ir1)
     return have_mem ? access : 0;
 }
 
+static bool no_lbt_has_mem_operand(IR1_INST *ir1)
+{
+    for (int i = 0; i < ir1_opnd_num(ir1); i++) {
+        if (ir1_opnd_is_mem(ir1_get_opnd(ir1, i))) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /* x86 TSO permits a store followed by a load to become visible out of order.
- * Leave all other explicit memory pairs ordered, including read-modify-write
- * operations, unknown decoder metadata, and every basic-block boundary.
+ * Look across a short run of register-only, straight-line instructions, but
+ * stop on every memory-shaped operand (including unknown decoder metadata),
+ * control transfer, or translation-block boundary.  This leaves every other
+ * explicit memory pair ordered.
  */
 static bool no_lbt_store_load_pair(IR1_INST *ir1)
 {
     TRANSLATION_DATA *tr_data = lsenv->tr_data;
     TranslationBlock *tb = tr_data->curr_tb;
-    int next_index = tr_data->curr_ir1_count + 1;
+    int index = tr_data->curr_ir1_count;
 
-    if (no_lbt_explicit_mem_access(ir1) != dt_CS_AC_WRITE ||
-        next_index >= tb_ir1_num(tb)) {
+    if (no_lbt_explicit_mem_access(ir1) != dt_CS_AC_WRITE) {
         return false;
     }
 
-    return no_lbt_explicit_mem_access(tb_ir1_inst(tb, next_index)) ==
-           dt_CS_AC_READ;
+    for (int distance = 1; distance <= 4; distance++) {
+        IR1_INST *next;
+        uint8_t access;
+
+        if (index + distance >= tb_ir1_num(tb)) {
+            return false;
+        }
+        next = tb_ir1_inst(tb, index + distance);
+        access = no_lbt_explicit_mem_access(next);
+        if (access == dt_CS_AC_READ) {
+            return true;
+        }
+        if (no_lbt_has_mem_operand(next) || ir1_is_branch(next) ||
+            ir1_is_jump(next)) {
+            return false;
+        }
+    }
+
+    return false;
 }
 
 bool ir1_translate(IR1_INST *ir1)
