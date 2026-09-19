@@ -158,6 +158,23 @@ static bool is_contain_edx(IR1_OPND *opnd)
     return false;
 }
 
+static bool cmp_sbb_no_lbt_supported(IR1_INST *cmp, IR1_INST *sbb)
+{
+    if (sbb != cmp + 1 || ir1_is_prefix_lock(cmp) || ir1_opnd_num(cmp) != 2 ||
+        ir1_opnd_num(sbb) != 2) {
+        return false;
+    }
+    if (!ir1_opnd_is_gpr(ir1_get_opnd(cmp, 0)) ||
+        (!ir1_opnd_is_gpr(ir1_get_opnd(cmp, 1)) &&
+         !ir1_opnd_is_imm(ir1_get_opnd(cmp, 1)))) {
+        return false;
+    }
+    return ir1_opnd_is_gpr(ir1_get_opnd(sbb, 0)) &&
+           ir1_opnd_is_gpr(ir1_get_opnd(sbb, 1)) &&
+           ir1_opnd_is_same_reg(ir1_get_opnd(sbb, 0),
+                                ir1_get_opnd(sbb, 1));
+}
+
 static int inst_pattern(TranslationBlock *tb,
         IR1_INST *pir1, scan_elem_t *scan)
 {
@@ -175,6 +192,10 @@ static int inst_pattern(TranslationBlock *tb,
         ir1 = SCAN_IR1(tb, scan, 0);
         if(ir1_opcode(ir1) == WRAP(SBB)) {
             instptn_check_cmp_sbb_0();
+
+            if (!option_enable_lbt && !cmp_sbb_no_lbt_supported(pir1, ir1)) {
+                return 0;
+            }
 
             opnd0 = ir1_get_opnd(ir1, 0);
             opnd1 = ir1_get_opnd(ir1, 1);

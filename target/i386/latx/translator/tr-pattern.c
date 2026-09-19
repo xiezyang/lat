@@ -762,6 +762,15 @@ static bool translate_cmp_sbb(IR1_INST *ir1)
     IR1_INST *curr = ir1;
     IR1_INST *next = ir1->instptn.next;
 
+    static unsigned long long cmp_sbb_count;
+    cmp_sbb_count++;
+    if (getenv("LATX_INSTPTN_SCAN") &&
+        (cmp_sbb_count <= 10 || cmp_sbb_count % 1000 == 0)) {
+        fprintf(stderr,
+                "INSTPTN_SCAN CMP_SBB count=%llu pc=0x" TARGET_FMT_lx "\n",
+                cmp_sbb_count, ir1_addr(curr));
+    }
+
     /* cmp */
     IR1_OPND *cmp_opnd0 = ir1_get_opnd(curr, 0);
     IR1_OPND *cmp_opnd1 = ir1_get_opnd(curr, 1);
