@@ -990,7 +990,7 @@ bool translate_jmp(IR1_INST *pir1)
 
 #ifdef CONFIG_LATX_TU
     TranslationBlock *tb = lsenv->tr_data->curr_tb;
-    if (tb->s_data->next_tb[1] &&
+    if (latx_tu_enabled() && tb->s_data->next_tb[1] &&
         tb->tu_jmp[TU_TB_INDEX_TARGET] != TB_JMP_RESET_OFFSET_INVALID) {
         /* la_code_align(2, 0x03400000); */
         IR2_OPND target_label_opnd = ra_alloc_label();
@@ -1566,7 +1566,9 @@ bool translate_loopnz(IR1_INST *pir1)
     IR2_OPND translated_label_opnd = ra_alloc_label();
     TranslationBlock *tb = lsenv->tr_data->curr_tb;
 
-    if (tb->s_data->next_tb[TU_TB_INDEX_NEXT] && tb->s_data->next_tb[TU_TB_INDEX_TARGET]) {
+    if (latx_tu_enabled() &&
+        tb->s_data->next_tb[TU_TB_INDEX_NEXT] &&
+        tb->s_data->next_tb[TU_TB_INDEX_TARGET]) {
         IR2_OPND target_label2 = ra_alloc_label();
         la_label(target_label2);
         la_bne(temp_zf, zero_ir2_opnd, target_label2);
@@ -1635,7 +1637,9 @@ bool translate_loopz(IR1_INST *pir1)
     IR2_OPND translated_label_opnd = ra_alloc_label();
     TranslationBlock *tb = lsenv->tr_data->curr_tb;
 
-    if (tb->s_data->next_tb[TU_TB_INDEX_NEXT] && tb->s_data->next_tb[TU_TB_INDEX_TARGET]) {
+    if (latx_tu_enabled() &&
+        tb->s_data->next_tb[TU_TB_INDEX_NEXT] &&
+        tb->s_data->next_tb[TU_TB_INDEX_TARGET]) {
         IR2_OPND target_label2 = ra_alloc_label();
         la_label(target_label2);
         la_bne(temp_zf, zero_ir2_opnd, target_label2);
@@ -1697,7 +1701,9 @@ bool translate_loop(IR1_INST *pir1)
     IR2_OPND translated_label_opnd = ra_alloc_label();
     TranslationBlock *tb = lsenv->tr_data->curr_tb;
 
-    if (tb->s_data->next_tb[TU_TB_INDEX_NEXT] && tb->s_data->next_tb[TU_TB_INDEX_TARGET]) {
+    if (latx_tu_enabled() &&
+        tb->s_data->next_tb[TU_TB_INDEX_NEXT] &&
+        tb->s_data->next_tb[TU_TB_INDEX_TARGET]) {
 
         IR2_OPND target_label2 = ra_alloc_label();
         la_label(target_label2);

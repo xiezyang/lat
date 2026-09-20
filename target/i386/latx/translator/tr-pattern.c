@@ -365,7 +365,9 @@ static bool translate_sub_jcc(IR1_INST *ir1)
 #ifdef CONFIG_LATX_TU
     TranslationBlock *tb = lsenv->tr_data->curr_tb;
     /* if (judge_tu_eflag_gen(lsenv->tr_data->curr_tb)) { */
-    if (tb->s_data->next_tb[TU_TB_INDEX_NEXT] && tb->s_data->next_tb[TU_TB_INDEX_TARGET]) {
+    if (latx_tu_enabled() &&
+        tb->s_data->next_tb[TU_TB_INDEX_NEXT] &&
+        tb->s_data->next_tb[TU_TB_INDEX_TARGET]) {
         IR2_OPND tu_reset_label_opnd = ra_alloc_label();
         TranslationBlock *tb_next = tb->s_data->next_tb[TU_TB_INDEX_NEXT];
         TranslationBlock *tb_target = tb->s_data->next_tb[TU_TB_INDEX_TARGET];
@@ -494,7 +496,8 @@ static inline bool xcomisx_jcc(IR1_INST *ir1, bool is_double, bool qnan_exp)
         break;
     case WRAP(JGE):
 #ifdef CONFIG_LATX_TU
-        if (!tb->s_data->next_tb[TU_TB_INDEX_NEXT] ||
+        if (!latx_tu_enabled() ||
+            !tb->s_data->next_tb[TU_TB_INDEX_NEXT] ||
                 !tb->s_data->next_tb[TU_TB_INDEX_TARGET]) {
             la_b(target_label_opnd);
         }

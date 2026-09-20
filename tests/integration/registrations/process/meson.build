@@ -72,6 +72,14 @@ if 'x86_64-linux-user' in target_dirs
     ],
   }]
   latx_integration_tests += [{
+    'name': 'test-aot-no-lbt-jcc',
+    'runner': find_program('../../test-aot-no-lbt-jcc.sh'),
+    'args': [
+      emulators['latx-x86_64'],
+      files('../../aot-no-lbt-jcc.S'),
+    ],
+  }]
+  latx_integration_tests += [{
     'name': 'test-lock-ordering-no-lbt',
     'runner': find_program('../../test-lock-ordering-no-lbt.sh'),
     'args': [
