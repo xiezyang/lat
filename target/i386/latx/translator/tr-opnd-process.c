@@ -850,7 +850,7 @@ void load_64_bit_freg_from_ir1_80_bit_mem(IR2_OPND opnd2,
 #endif
 
     la_fld_s(ir2_sign_exp, mem_opnd, mem_imm + 8);
-    la_fld_d(ir2_fraction, mem_opnd, mem_imm);
+    latx_load_f64(ir2_fraction, mem_opnd, mem_imm);
 
     IR2_OPND itemp_reg = ra_alloc_itemp();
     IR2_OPND itemp1_reg = ra_alloc_itemp();
@@ -920,7 +920,7 @@ static void load_freg_from_ir1_mem(IR2_OPND opnd2, IR1_OPND *opnd1,
             la_fcvt_d_s(opnd2, opnd2);
     } else if (ir1_opnd_size(opnd1) == 64 || ir1_opnd_size(opnd1) == 128) {
         IR2_OPND ftemp = ra_alloc_ftemp_internal();
-        la_fld_d(opnd2, mem_opnd, mem_imm);
+        latx_load_f64(opnd2, mem_opnd, mem_imm);
         //64->80->64 to handle the implicit SNAN->QNAN of fld
         if (!is_integer) {
             la_fcvt_ld_d(ftemp, opnd2);
@@ -1303,6 +1303,40 @@ static void latx_load_u64_bytes(IR2_OPND value, IR2_OPND byte,
     }
 }
 
+void latx_load_f64(IR2_OPND dest, IR2_OPND base, int disp)
+{
+    if (!latx_no_lbt_mode_enabled()) {
+        la_fld_d(dest, base, disp);
+        return;
+    }
+
+    IR2_OPND address = ra_alloc_itemp();
+    IR2_OPND value = ra_alloc_itemp();
+    IR2_OPND byte = ra_alloc_itemp();
+    IR2_OPND bytes = ra_alloc_label();
+    IR2_OPND done = ra_alloc_label();
+
+    if (si12_overflow(disp)) {
+        li_d(value, disp);
+        la_add_d(address, base, value);
+    } else {
+        la_addi_d(address, base, disp);
+    }
+    la_andi(value, address, 7);
+    la_bne(value, zero_ir2_opnd, bytes);
+    la_ld_d(value, address, 0);
+    la_b(done);
+    la_label(bytes);
+    /* Read only the requested bytes, including at guest page boundaries. */
+    latx_load_u64_bytes(value, byte, address, 0);
+    la_label(done);
+    la_movgr2fr_d(dest, value);
+
+    ra_free_temp(byte);
+    ra_free_temp(value);
+    ra_free_temp(address);
+}
+
 static void latx_store_u64_bytes(IR2_OPND value, IR2_OPND address, int disp)
 {
     for (int i = 0; i < 8; ++i) {
@@ -1345,6 +1379,19 @@ void latx_load_v128(IR2_OPND dest, IR2_OPND base, int disp)
     la_b(done);
 
     la_label(scalar);
+    /* Eight-byte alignment is sufficient for scalar doubleword accesses.
+     * Touch exactly the original 16 bytes; never round the address down.
+     */
+    IR2_OPND bytes = ra_alloc_label();
+    la_andi(scratch, address, 0x7);
+    la_bne(scratch, zero_ir2_opnd, bytes);
+    la_ld_d(scratch, address, 0);
+    la_ld_d(byte, address, 8);
+    la_vinsgr2vr_d(dest, scratch, 0);
+    la_vinsgr2vr_d(dest, byte, 1);
+    la_b(done);
+
+    la_label(bytes);
     latx_load_u64_bytes(scratch, byte, address, 0);
     la_vinsgr2vr_d(dest, scratch, 0);
     latx_load_u64_bytes(scratch, byte, address, 8);
@@ -1386,6 +1433,16 @@ void latx_store_v128(IR2_OPND src, IR2_OPND base, int disp)
     la_b(done);
 
     la_label(scalar);
+    IR2_OPND bytes = ra_alloc_label();
+    la_andi(scratch, address, 0x7);
+    la_bne(scratch, zero_ir2_opnd, bytes);
+    la_vpickve2gr_du(scratch, src, 0);
+    la_st_d(scratch, address, 0);
+    la_vpickve2gr_du(scratch, src, 1);
+    la_st_d(scratch, address, 8);
+    la_b(done);
+
+    la_label(bytes);
     la_vpickve2gr_du(scratch, src, 0);
     latx_store_u64_bytes(scratch, address, 0);
     la_vpickve2gr_du(scratch, src, 1);

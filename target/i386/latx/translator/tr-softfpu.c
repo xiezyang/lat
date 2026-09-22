@@ -643,7 +643,7 @@ static void gen_float64_ST0_MEM(IR1_INST *pir1, IR2_OPND mem_opnd,
     IR2_OPND src_opnd = ra_alloc_ftemp();
 
     if (opnd_size == 64) {
-        la_fld_d(src_opnd, mem_opnd, 0);
+        latx_load_f64(src_opnd, mem_opnd, 0);
         if (is_integer) {
             la_ffint_d_l(src_opnd, src_opnd);
         }
@@ -1829,13 +1829,13 @@ static bool translate_fld_softfpu(IR1_INST *pir1)
                 la_fcvt_ld_d(st0_opnd, src_opnd);
                 la_vextrins_h(st0_opnd, ftemp, 0x40);
             } else if (opnd_size == 64) {
-                la_fld_d(src_opnd, mem_opnd, 0);
+                latx_load_f64(src_opnd, mem_opnd, 0);
                 la_fcvt_ud_d(ftemp, src_opnd);
                 la_fcvt_ld_d(st0_opnd, src_opnd);
                 la_vextrins_h(st0_opnd, ftemp, 0x40);
             } else if (opnd_size == 80) {
                 IR2_OPND high_itemp = ra_alloc_itemp();
-                la_fld_d(st0_opnd, mem_opnd, 0);
+                latx_load_f64(st0_opnd, mem_opnd, 0);
                 la_ld_hu(high_itemp, mem_opnd, 8);
                 la_movgr2fr_d(ftemp, high_itemp);
                 la_vextrins_h(st0_opnd, ftemp, 0x40);
