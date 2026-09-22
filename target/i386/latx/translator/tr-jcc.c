@@ -22,7 +22,9 @@ bool translate_jcc(IR1_INST *pir1)
     IR2_OPND translated_label_opnd = ra_alloc_label();
     TranslationBlock *tb = lsenv->tr_data->curr_tb;
 
-    if (tb->s_data->next_tb[TU_TB_INDEX_NEXT] && tb->s_data->next_tb[TU_TB_INDEX_TARGET]) {
+    if (latx_tu_enabled() &&
+        tb->s_data->next_tb[TU_TB_INDEX_NEXT] &&
+        tb->s_data->next_tb[TU_TB_INDEX_TARGET]) {
         /* calculate eflag */
         IR2_OPND tu_target_label_opnd = ra_alloc_label();
         la_label(tu_target_label_opnd);
@@ -68,7 +70,9 @@ bool translate_jcxz(IR1_INST *pir1)
 
 #ifdef CONFIG_LATX_TU
     TranslationBlock *tb = lsenv->tr_data->curr_tb;
-    if (tb->s_data->next_tb[TU_TB_INDEX_NEXT] && tb->s_data->next_tb[TU_TB_INDEX_TARGET]) {
+    if (latx_tu_enabled() &&
+        tb->s_data->next_tb[TU_TB_INDEX_NEXT] &&
+        tb->s_data->next_tb[TU_TB_INDEX_TARGET]) {
 			/* && tb->tu_jmp[TU_TB_INDEX_TARGET] != TB_JMP_RESET_OFFSET_INVALID) { */
         /* IR2_OPND cx_opnd = load_ireg_from_ir1(&cx_ir1_opnd, ZERO_EXTENSION, false); */
         IR2_OPND tu_target_label_opnd = ra_alloc_label();
@@ -117,7 +121,9 @@ bool translate_jecxz(IR1_INST *pir1)
 
 #ifdef CONFIG_LATX_TU
     TranslationBlock *tb = lsenv->tr_data->curr_tb;
-    if (tb->s_data->next_tb[TU_TB_INDEX_NEXT] && tb->s_data->next_tb[TU_TB_INDEX_TARGET]) {
+    if (latx_tu_enabled() &&
+        tb->s_data->next_tb[TU_TB_INDEX_NEXT] &&
+        tb->s_data->next_tb[TU_TB_INDEX_TARGET]) {
 			/* && tb->tu_jmp[TU_TB_INDEX_TARGET] != TB_JMP_RESET_OFFSET_INVALID) { */
         IR2_OPND tu_target_label_opnd = ra_alloc_label();
         la_label(tu_target_label_opnd);
@@ -163,7 +169,9 @@ bool translate_jrcxz(IR1_INST *pir1)
     IR2_OPND target_label_opnd = ra_alloc_label();
 #ifdef CONFIG_LATX_TU
     TranslationBlock *tb = lsenv->tr_data->curr_tb;
-    if (tb->s_data->next_tb[TU_TB_INDEX_NEXT] && tb->s_data->next_tb[TU_TB_INDEX_TARGET]) {
+    if (latx_tu_enabled() &&
+        tb->s_data->next_tb[TU_TB_INDEX_NEXT] &&
+        tb->s_data->next_tb[TU_TB_INDEX_TARGET]) {
 			/* && tb->tu_jmp[TU_TB_INDEX_TARGET] != TB_JMP_RESET_OFFSET_INVALID) { */
         IR2_OPND tu_target_label_opnd = ra_alloc_label();
         la_label(tu_target_label_opnd);

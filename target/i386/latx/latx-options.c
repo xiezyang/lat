@@ -12,6 +12,7 @@
 #include "latx-runtime.h"
 #include "latx-string-utils.h"
 #include "translate.h"
+#include "insts-pattern.h"
 #if defined(CONFIG_LATX_KZT)
 #include "kzt-groups.h"
 #endif
@@ -324,10 +325,15 @@ void latx_apply_no_lbt_restrictions(void)
     if (!option_softfpu) {
         option_softfpu = 2;
     }
-    option_enable_lasx = 0;
-    option_tu = 0;
+    /* LASX is an independent host capability, already checked by HWCAP. */
+    option_tu = 1;
+#ifdef CONFIG_LATX_AOT
+    option_aot = 1;
+    option_load_aot = 1;
+#else
     option_aot = 0;
     option_load_aot = 0;
+#endif
     option_aot_wine = 0;
     option_jr_ra = 0;
     option_jr_ra_stack = 0;
@@ -340,7 +346,7 @@ void latx_apply_no_lbt_restrictions(void)
     }
     option_set_rounding_opt = 0;
 #ifdef CONFIG_LATX_INSTS_PATTERN
-    option_instptn = 0;
+    option_instptn &= INSTPTN_NO_LBT_MASK;
 #endif
 #ifdef CONFIG_LATX_AVX_OPT
     option_avx_cpuid = 0;
@@ -354,10 +360,11 @@ void latx_apply_host_hwcap(unsigned long hwcap)
 {
     option_host_hwcap = hwcap;
 #if defined(__loongarch__)
-    option_enable_lbt = (hwcap & HWCAP_LOONGARCH_LBT_X86) != 0;
+    /* This release target must never emit LoongArch LBT x86 instructions. */
+    option_enable_lbt = 0;
     option_enable_lasx = (hwcap & HWCAP_LOONGARCH_LASX) != 0;
 #else
-    option_enable_lbt = 1;
+    option_enable_lbt = 0;
     option_enable_lasx = 1;
 #endif
     option_no_lbt_mode = 0;
