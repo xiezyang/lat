@@ -147,6 +147,8 @@ static void test_no_lbt_helper_source_audit(void)
     g_autofree char *config_source = NULL;
     g_autofree char *fctrl_path = NULL;
     g_autofree char *fctrl_source = NULL;
+    g_autofree char *logic_path = NULL;
+    g_autofree char *logic_source = NULL;
     g_autofree char *extcontext_path = NULL;
     g_autofree char *extcontext_source = NULL;
     gsize length = 0;
@@ -255,6 +257,15 @@ static void test_no_lbt_helper_source_audit(void)
                                       &length, NULL));
     g_assert_nonnull(strstr(fctrl_source,
                             "if (option_enable_lbt) {\n        la_x86settm();\n    }"));
+
+    logic_path = g_test_build_filename(G_TEST_DIST,
+                                       "target", "i386", "latx",
+                                       "translator", "tr-logic.c", NULL);
+    g_assert_true(g_file_get_contents(logic_path, &logic_source, &length,
+                                      NULL));
+    g_assert_nonnull(strstr(logic_source, "latx_rotate_imm_without_lbt"));
+    g_assert_null(strstr(logic_source, "la_rotri_b("));
+    g_assert_null(strstr(logic_source, "la_rotri_h("));
 
     extcontext_path = g_test_build_filename(G_TEST_DIST,
                                             "include", "loongarch-extcontext.h", NULL);

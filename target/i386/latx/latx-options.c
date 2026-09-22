@@ -321,6 +321,10 @@ void latx_apply_no_lbt_restrictions(void)
 {
     option_no_lbt_mode = 1;
     option_enable_lbt = 0;
+    /* The register-backed x87 stack requires LBT top-mode remapping. */
+    if (!option_softfpu) {
+        option_softfpu = 2;
+    }
     /* LASX is an independent host capability, already checked by HWCAP. */
     option_tu = 1;
 #ifdef CONFIG_LATX_AOT
@@ -372,6 +376,10 @@ void latx_apply_host_hwcap(unsigned long hwcap)
 
 bool latx_options_finalize(void)
 {
+    /* Recheck after configuration and environment overrides are applied. */
+    if (!option_enable_lbt && !option_softfpu) {
+        option_softfpu = 2;
+    }
 #if defined(CONFIG_LATX_KZT)
     if (option_kzt_log_error) {
         kzt_groups_reject_configuration(option_kzt_log_error, true);

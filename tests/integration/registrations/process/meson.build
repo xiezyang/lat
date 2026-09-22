@@ -127,3 +127,12 @@ if 'i386-linux-user' in target_dirs
     ],
   }]
 endif
+if 'latx-x86_64' in emulators
+  latx_integration_tests += [{
+    'name': 'test-fcvt-no-lbt',
+    'runner': find_program('../../test-fcvt-no-lbt.sh'),
+    'args': [emulators['latx-x86_64'], files('../../fcvt-no-lbt-matrix.S'),
+             files('../../fcvt-no-lbt.S')],
+    'timeout': 240,
+  }]
+endif
