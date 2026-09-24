@@ -165,6 +165,27 @@ static int inst_pattern(TranslationBlock *tb,
     IR1_OPND *opnd0 = NULL;
     IR1_OPND *opnd1 = NULL;
 
+    if (!option_enable_lbt) {
+        if ((tb->flags & HF_TF_MASK) || scan[0] < 0 ||
+            SCAN_IR1(tb, scan, 0) != pir1 + 1 ||
+            (ir1_opcode(pir1) != WRAP(CMP) &&
+             ir1_opcode(pir1) != WRAP(TEST))) {
+            return 0;
+        }
+        IR1_INST *tail = SCAN_IR1(tb, scan, 0);
+        for (int i = 0; i < ir1_opnd_num(pir1); i++) {
+            IR1_OPND *op = ir1_get_opnd(pir1, i);
+            if (!ir1_opnd_is_gpr(op) && !ir1_opnd_is_imm(op)) {
+                return 0;
+            }
+        }
+        for (int i = 0; i < ir1_opnd_num(tail); i++) {
+            if (!ir1_opnd_is_gpr(ir1_get_opnd(tail, i))) {
+                return 0;
+            }
+        }
+    }
+
     /*
      * pir1 is pattern head
      * scan[] contains ir1 following the head

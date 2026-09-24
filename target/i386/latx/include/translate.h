@@ -1698,6 +1698,7 @@ void generate_context_switch_native_to_bt(void);
 
 void generate_eflag_calculation(IR2_OPND, IR2_OPND, IR2_OPND, IR1_INST *, bool);
 bool generate_soft_addsub(IR2_OPND, IR2_OPND, IR2_OPND, IR1_INST *);
+void generate_eflags_from_result(IR2_OPND, IR2_OPND, IR2_OPND, IR1_INST *);
 
 #ifdef CONFIG_LATX_XCOMISX_OPT
 void generate_xcomisx(IR2_OPND, IR2_OPND, bool, bool, uint8_t);

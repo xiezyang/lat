@@ -436,8 +436,12 @@ bool translate_adc(IR1_INST *pir1)
     }
 #endif
 
-    /* set eflag */
-    generate_eflag_calculation(dest, src0, src1, pir1, true);
+    /* ADC already computed the result without overwriting its operands. */
+    if (option_enable_lbt) {
+        generate_eflag_calculation(dest, src0, src1, pir1, true);
+    } else {
+        generate_eflags_from_result(dest, src0, src1, pir1);
+    }
 
     /* write back */
     if (ir1_opnd_is_gpr(opnd0)) {
@@ -767,8 +771,12 @@ bool translate_sbb(IR1_INST *pir1)
     }
 #endif
 
-    /* set eflag */
-    generate_eflag_calculation(dest, src0, src1, pir1, true);
+    /* SBB needs the incoming CF until its outgoing flags are generated. */
+    if (option_enable_lbt) {
+        generate_eflag_calculation(dest, src0, src1, pir1, true);
+    } else {
+        generate_eflags_from_result(dest, src0, src1, pir1);
+    }
 
     /* write back */
     if (ir1_opnd_is_gpr(opnd0)) {

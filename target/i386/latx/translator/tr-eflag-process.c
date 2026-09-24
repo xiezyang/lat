@@ -1057,6 +1057,24 @@ static void generate_soft_flags(IR2_OPND result, IR2_OPND src0,
     }
 }
 
+void generate_eflags_from_result(IR2_OPND result, IR2_OPND src0,
+                                 IR2_OPND src1, IR1_INST *pir1)
+{
+    if (!ir1_need_calculate_any_flag(pir1)) {
+        return;
+    }
+    int size = ir1_opnd_size(ir1_get_opnd(pir1, 0));
+    IR2_OPND narrowed = result;
+    if (size < 64) {
+        narrowed = ra_alloc_itemp();
+        la_bstrpick_d(narrowed, result, size - 1, 0);
+    }
+    generate_soft_flags(narrowed, src0, src1, pir1);
+    if (size < 64) {
+        ra_free_temp(narrowed);
+    }
+}
+
 bool generate_soft_addsub(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
                           IR1_INST *pir1)
 {

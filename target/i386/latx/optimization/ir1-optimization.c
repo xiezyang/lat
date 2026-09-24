@@ -13,6 +13,31 @@
 #include "insts-pattern.h"
 #include "tu.h"
 
+static void reduce_fused_conditions(TranslationBlock *tb, uint8 pending)
+{
+#if defined(CONFIG_LATX_FLAG_REDUCTION) && defined(CONFIG_LATX_INSTS_PATTERN)
+    if (option_enable_lbt || !option_flag_reduction) {
+        return;
+    }
+    for (int i = tb_ir1_num(tb) - 1; i >= 0; i--) {
+        IR1_INST *inst = tb_ir1_inst(tb, i);
+        if (i > 0) {
+            IR1_INST *prev = tb_ir1_inst(tb, i - 1);
+            if ((prev->instptn.opc == INSTPTN_OPC_CMP_XXCC ||
+                 prev->instptn.opc == INSTPTN_OPC_TEST_XXCC ||
+                 prev->instptn.opc == INSTPTN_OPC_CMP_JCC ||
+                 prev->instptn.opc == INSTPTN_OPC_TEST_JCC) &&
+                prev->instptn.next == inst) {
+                ir1_set_eflag_use(inst, 0);
+                continue;
+            }
+        }
+        flag_reduction(inst, &pending);
+    }
+    tb->eflag_use = pending;
+#endif
+}
+
 /**
  * @brief ir1 optimization, which can get global
  * tb-ir1 information and store into IR1_INST
@@ -67,6 +92,7 @@ static void ir1_optimization_over_tb(TranslationBlock *tb)
 #endif
     }
     SAVE_FLAG_TO_TB(rdtn, tb);
+    reduce_fused_conditions(tb, tb->s_data->eflag_out);
 }
 
 static void get_eflag_out(TranslationBlock *tb)
@@ -181,4 +207,5 @@ void ir1_optimization(TranslationBlock *tb)
         OPT_INSTS_PTN(tb, ir1, i, ptn);
     }
     SAVE_FLAG_TO_TB(rdtn, tb);
+    reduce_fused_conditions(tb, __ALL_EFLAGS);
 }

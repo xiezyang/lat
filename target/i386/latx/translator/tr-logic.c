@@ -140,11 +140,18 @@ bool translate_xor(IR1_INST *pir1)
         return true;
     }
 
-    generate_eflag_calculation(dest, src0, src1, pir1, true);
+    bool result_flags = !option_enable_lbt && ir1_opnd_is_gpr(opnd0) &&
+                        !ir1_need_calculate_af(pir1);
+    if (!result_flags) {
+        generate_eflag_calculation(dest, src0, src1, pir1, true);
+    }
     if (opt_imm) {
         la_xori(dest, src0, ir1_opnd_s2uimm(opnd1));
     } else {
         la_xor(dest, src0, src1);
+    }
+    if (result_flags) {
+        generate_eflags_from_result(dest, dest, dest, pir1);
     }
 
     /* write back */
@@ -291,10 +298,12 @@ bool translate_and(IR1_INST *pir1)
         la_ld_by_op_size(src0, mem_opnd, imm, opnd0_size);
     }
 
-    /* set eflag */
-    generate_eflag_calculation(dest, src0, src1, pir1, true);
+    bool result_flags = !option_enable_lbt && ir1_opnd_is_gpr(opnd0) &&
+                        !ir1_need_calculate_af(pir1);
+    if (!result_flags) {
+        generate_eflag_calculation(dest, src0, src1, pir1, true);
+    }
 
-    /* calculate */
     if (special_mask) {
         lsassert(IR2_OPND_EQ(dest, src0));
         if (low_mask) {
@@ -309,6 +318,9 @@ bool translate_and(IR1_INST *pir1)
         la_andi(dest, src0, ir1_opnd_s2uimm(opnd1));
     } else {
         la_and(dest, src0, src1);
+    }
+    if (result_flags) {
+        generate_eflags_from_result(dest, dest, dest, pir1);
     }
 
     /* write back */
@@ -400,14 +412,19 @@ bool translate_or(IR1_INST *pir1)
         la_ld_by_op_size(src0, mem_opnd, imm, opnd0_size);
     }
 
-    /* set eflag */
-    generate_eflag_calculation(dest, src0, src1, pir1, true);
+    bool result_flags = !option_enable_lbt && ir1_opnd_is_gpr(opnd0) &&
+                        !ir1_need_calculate_af(pir1);
+    if (!result_flags) {
+        generate_eflag_calculation(dest, src0, src1, pir1, true);
+    }
 
-    /* calculate */
     if (opt_imm) {
         la_ori(dest, src0, ir1_opnd_s2uimm(opnd1));
     } else {
         la_or(dest, src0, src1);
+    }
+    if (result_flags) {
+        generate_eflags_from_result(dest, dest, dest, pir1);
     }
 
     /* write back */
