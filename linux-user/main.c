@@ -658,7 +658,6 @@ static void handle_arg_latx_softfpu(const char *arg)
 {
     option_softfpu = strtol(arg, NULL, 0);
     if (option_softfpu) {
-        option_aot = 0;
         option_set_rounding_opt = 0;
     }
 }
@@ -848,7 +847,7 @@ static void handle_arg_latx_fork_unlink(const char *arg)
 static void handle_arg_latx_aot(const char *arg)
 {
     option_aot = strtol(arg, NULL, 0);
-    if (option_softfpu || option_mem_test) {
+    if (option_mem_test) {
         option_aot = 0;
     }
 }
