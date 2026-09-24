@@ -1141,6 +1141,40 @@ void generate_eflag_calculation(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
 #endif
 
     if (!option_enable_lbt) {
+        /* Equality and unsigned borrow do not need a subtraction result.
+         * Reduction has already established which architectural bits live. */
+        if (ir1_opcode(pir1) == dt_X86_INS_CMP &&
+            !ir1_need_calculate_pf(pir1) &&
+            !ir1_need_calculate_af(pir1) &&
+            !ir1_need_calculate_sf(pir1) &&
+            !ir1_need_calculate_of(pir1)) {
+            int size = ir1_opnd_size(ir1_get_opnd(pir1, 0));
+            bool lhs_allocated, rhs_allocated;
+            IR2_OPND lhs = soft_flag_operand(src0, pir1, 0, size,
+                                             &lhs_allocated);
+            IR2_OPND rhs = soft_flag_operand(src1, pir1, 1, size,
+                                             &rhs_allocated);
+            IR2_OPND bit = ra_alloc_itemp();
+            if (ir1_need_calculate_cf(pir1)) {
+                la_sltu(bit, lhs, rhs);
+                la_bstrins_d(ra_alloc_eflags(), bit,
+                             CF_BIT_INDEX, CF_BIT_INDEX);
+            }
+            if (ir1_need_calculate_zf(pir1)) {
+                la_xor(bit, lhs, rhs);
+                la_sltui(bit, bit, 1);
+                la_bstrins_d(ra_alloc_eflags(), bit,
+                             ZF_BIT_INDEX, ZF_BIT_INDEX);
+            }
+            ra_free_temp(bit);
+            if (rhs_allocated) {
+                ra_free_temp(rhs);
+            }
+            if (lhs_allocated) {
+                ra_free_temp(lhs);
+            }
+            return;
+        }
         if (ir1_opcode(pir1) == dt_X86_INS_MUL ||
             ir1_opcode(pir1) == dt_X86_INS_IMUL) {
             /* CF and OF describe the same overflow for integer multiply. */
