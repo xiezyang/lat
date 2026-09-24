@@ -39,9 +39,9 @@ extern  const char *aot_left_file_minsize_optarg;
  * +--------------+
  */
 #ifdef CONFIG_LATX_DEBUG
-#define AOT_VERSION "Version: "LATX_VERSION"-debug"
+#define AOT_VERSION "Version: "LATX_VERSION"-debug-no-lbt-fcvt1"
 #else
-#define AOT_VERSION "Version: "LATX_VERSION"-release"
+#define AOT_VERSION "Version: "LATX_VERSION"-release-no-lbt-fcvt1"
 #endif
 typedef struct aot_header {
     uint32_t lib_size;
@@ -261,6 +261,7 @@ typedef enum aot_rel_kind {
     LOAD_HELPER_CVTPS2PH_YMM,
     LOAD_HELPER_CVTPS2PH_XMM,
 
+    LOAD_HELPER_FCVT_SOFT,
     LOAD_HELPER_END,
 
     LOAD_TUNNEL_ADDR_BEGIN,

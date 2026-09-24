@@ -1416,7 +1416,7 @@ static bool translate_fild_softfpu(IR1_INST *pir1)
     int opnd_size = ir1_opnd_size(opnd0);
     IR2_OPND mem_opnd = convert_mem_no_offset(opnd0);
 
-    if (option_softfpu == 2) {
+    if (option_enable_lbt && option_softfpu == 2) {
         IR2_OPND src_opnd = ra_alloc_itemp();
         IR2_OPND src_ftemp = ra_alloc_ftemp();
 
@@ -1804,7 +1804,7 @@ static bool translate_fld1_softfpu(IR1_INST *pir1)
 
 static bool translate_fld_softfpu(IR1_INST *pir1)
 {
-    if (option_softfpu == 2) {
+    if (option_enable_lbt && option_softfpu == 2) {
         int index = get_src_index(pir1);
         IR1_OPND *opnd0 = ir1_get_opnd(pir1, index);
         int opnd_size = ir1_opnd_size(opnd0);
