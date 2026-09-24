@@ -149,14 +149,6 @@ struct image_info info1, *info = &info1;
 static bool enable_strace;
 static bool enable_strace_error;
 
-#ifdef CONFIG_LATX
-static void handle_arg_latx_tb_state(const char *arg)
-{
-    options_parse_trace(arg);
-    qemu_set_log(CPU_LOG_TB_NOCHAIN);
-}
-#endif
-
 /*
  * The last log mask given by the user in an environment variable or argument.
  * Used to support command line arguments overriding environment variables.
@@ -1006,8 +998,6 @@ static const struct qemu_argument arg_table[] = {
     "",           "force mmap with address to be MAP_FIXED"},
     {"latx-unimp-dump",     "LATX_UNIMP_DUMP", false, handle_arg_latx_unimp_dump,
     "",                 "LATX dump unsupport syscall"},
-    {"latx-tb-state", "LATX_TB_STATE", true, handle_arg_latx_tb_state,
-    "bitmap", "trace every TB entry PC and EFLAGS without chaining"},
 #endif
 #if defined(CONFIG_LATX_DEBUG) || defined(CONFIG_DEBUG_TCG)
 #ifdef CONFIG_LATX

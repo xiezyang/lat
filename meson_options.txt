@@ -131,5 +131,3 @@ option('latx_version', type: 'string', value: '',
        description: 'Custom version string')
 option('latx_host_scalar_libc', type: 'boolean', value: false,
        description: 'Force baseline host libc string and memory routines')
-option('latx_field_diagnostics', type: 'boolean', value: false,
-       description: 'Enable release-equivalent LATX signal diagnostics')

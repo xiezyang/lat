@@ -48,10 +48,6 @@
 #include "debug.h"
 #endif
 #endif
-#if defined(CONFIG_LATX_DEBUG) || defined(CONFIG_LATX_FIELD_DIAGNOSTICS)
-#include "reg-map.h"
-#endif
-
 #undef EAX
 #undef ECX
 #undef EDX
@@ -133,15 +129,11 @@ static void show_sig_x86_eflags(ucontext_t *uc)
     fprintf(stderr, "=================== EFLAGS ===================\n");
     unsigned int eflags;
 #if defined(__loongarch__)
-    if (latx_no_lbt_mode_enabled()) {
-        eflags = UC_GR(uc)[la_a6];
-    } else {
-        __asm__ __volatile__ (
-                "    .word 0x17 << 18 | 0x3f << 10 | 0 << 5 | 0xc\n"
-                "    or %[eflags], $zero, $t0\n"
-                : [eflags] "=&r" (eflags)
-                : );
-    }
+    __asm__ __volatile__ (
+            "    .word 0x17 << 18 | 0x3f << 10 | 0 << 5 | 0xc\n"
+            "    or %[eflags], $zero, $t0\n"
+            : [eflags] "=&r" (eflags)
+            : );
 #elif defined(__mips__)
     __asm__ __volatile__ (
             "    .word ((0x70004034) | (0xc) << 16) | (0x3f) << 6\n"
@@ -211,34 +203,6 @@ static void show_latx_signal_debuginfo(siginfo_t *info, uintptr_t pc,
 #if defined(CONFIG_LATX_KZT) && defined(CONFIG_LATX_DEBUG)
     latx_kzt_debuginfo_check();
 #endif
-}
-#endif
-
-#if defined(CONFIG_LATX_FIELD_DIAGNOSTICS)
-static void show_latx_field_signal_info(siginfo_t *info, uintptr_t pc,
-                                        ucontext_t *uc)
-{
-    int cpu_index = current_cpu ? current_cpu->cpu_index : -1;
-    TranslationBlock *tb = tcg_tb_lookup(pc);
-
-    fprintf(stderr, "\n========== LATX FIELD SIG INFO ==========\n");
-    fprintf(stderr,
-            "pid=%d cpu=%d signo=%d si_code=%d si_addr=%p epc=0x%lx insn=0x%08x\n",
-            getpid(), cpu_index, info->si_signo, info->si_code,
-            info->si_addr, pc, *(uint32_t *)pc);
-    if (tb) {
-        fprintf(stderr, "guest_tb_pc=0x" TARGET_FMT_lx
-                " host_tb=%p host_size=%u\n",
-                tb->pc, tb->tc.ptr, tb->tc.size);
-    }
-    for (int i = 0; i < 32; i += 4) {
-        fprintf(stderr,
-                "r%-2d=%016llx r%-2d=%016llx r%-2d=%016llx r%-2d=%016llx\n",
-                i, UC_GR(uc)[i], i + 1, UC_GR(uc)[i + 1],
-                i + 2, UC_GR(uc)[i + 2], i + 3, UC_GR(uc)[i + 3]);
-    }
-    fprintf(stderr, "software_eflags=0x%llx\n", UC_GR(uc)[la_a6]);
-    fprintf(stderr, "=========================================\n");
 }
 #endif
 
@@ -543,11 +507,10 @@ static inline int handle_cpu_signal(uintptr_t pc, siginfo_t *info,
     uint64_t guest_store_address;
 #endif
 
-#if defined(CONFIG_LATX_DEBUG) || defined(CONFIG_LATX_FIELD_DIAGNOSTICS)
+#if defined(CONFIG_LATX_DEBUG)
     uintptr_t epc = pc;
 #endif
-#if defined(CONFIG_LATX_SMC_OPT) || defined(CONFIG_LATX_DEBUG) || \
-    defined(CONFIG_LATX_FIELD_DIAGNOSTICS)
+#if defined(CONFIG_LATX_SMC_OPT) || defined(CONFIG_LATX_DEBUG)
 #ifndef CONFIG_LOONGARCH_NEW_WORLD
     mcontext_t * uc_mctx = (void *)old_set - 0x1540;
     ucontext_t *uc = container_of(uc_mctx, ucontext_t, uc_mcontext);
@@ -716,10 +679,6 @@ static inline int handle_cpu_signal(uintptr_t pc, siginfo_t *info,
 #if defined(CONFIG_LATX_DEBUG)
     show_latx_signal_debuginfo(info, epc, uc);
 #endif
-#if defined(CONFIG_LATX_FIELD_DIAGNOSTICS)
-    show_latx_field_signal_info(info, epc, uc);
-#endif
-
     /* For synchronous signals we expect to be coming from the vCPU
      * thread (so current_cpu should be valid) and either from running
      * code or during translation which can fault as we cross pages.
@@ -728,7 +687,7 @@ static inline int handle_cpu_signal(uintptr_t pc, siginfo_t *info,
      * abort rather than try and restart the vCPU execution.
      */
     if (!cpu || !cpu->running) {
-#if defined(CONFIG_LATX_DEBUG) || defined(CONFIG_LATX_FIELD_DIAGNOSTICS)
+#if defined(CONFIG_LATX_DEBUG)
         printf("qemu:%s received signal outside vCPU context @ pc=0x%"
                PRIxPTR "\n",  __func__, pc);
 #endif
