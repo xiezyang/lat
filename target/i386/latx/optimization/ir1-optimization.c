@@ -51,6 +51,20 @@ static void ir1_optimization_over_tb(TranslationBlock *tb)
         OPT_FLAG_RDTN(rdtn, ir1);
         /* TODO: TU */
         OPT_INSTS_PTN(tb, ir1, i, ptn);
+#if defined(CONFIG_LATX_FLAG_REDUCTION) && defined(CONFIG_LATX_INSTS_PATTERN)
+        /* A fused terminal Jcc compares operands directly. Only its
+         * successors consume stored flags; unknown successors keep all bits
+         * live in eflag_out. Do not subtract Jcc's use mask: a successor may
+         * consume exactly the same flag. */
+        if (!option_enable_lbt && option_flag_reduction &&
+            i == tb_ir1_num(tb) - 2 &&
+            (ir1->instptn.opc == INSTPTN_OPC_CMP_JCC ||
+             ir1->instptn.opc == INSTPTN_OPC_TEST_JCC) &&
+            ir1->instptn.next == tb_ir1_inst_last(tb)) {
+            ir1_set_eflag_def(ir1,
+                             ir1_get_eflag_def(ir1) & tb->s_data->eflag_out);
+        }
+#endif
     }
     SAVE_FLAG_TO_TB(rdtn, tb);
 }

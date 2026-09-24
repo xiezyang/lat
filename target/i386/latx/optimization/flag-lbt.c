@@ -171,6 +171,7 @@ void latx_write_eflags(IR2_OPND value, uint8_t mask)
     IR2_OPND eflags;
     IR2_OPND selected;
     uint16_t eflags_mask;
+    int bit;
 
     if (option_enable_lbt) {
         la_x86mtflag(value, mask);
@@ -179,6 +180,45 @@ void latx_write_eflags(IR2_OPND value, uint8_t mask)
 
     eflags_mask = usedef_to_eflags_mask(mask);
     eflags = ra_alloc_eflags();
+
+    if (value._type == IR2_OPND_GPR &&
+        value._reg_num == zero_ir2_opnd._reg_num) {
+        if (eflags_mask & CF_BIT) {
+            la_bstrins_d(eflags, zero_ir2_opnd,
+                          CF_BIT_INDEX, CF_BIT_INDEX);
+        }
+        if (eflags_mask & PF_BIT) {
+            la_bstrins_d(eflags, zero_ir2_opnd,
+                          PF_BIT_INDEX, PF_BIT_INDEX);
+        }
+        if (eflags_mask & AF_BIT) {
+            la_bstrins_d(eflags, zero_ir2_opnd,
+                          AF_BIT_INDEX, AF_BIT_INDEX);
+        }
+        if (eflags_mask & ZF_BIT) {
+            la_bstrins_d(eflags, zero_ir2_opnd,
+                          ZF_BIT_INDEX, ZF_BIT_INDEX);
+        }
+        if (eflags_mask & SF_BIT) {
+            la_bstrins_d(eflags, zero_ir2_opnd,
+                          SF_BIT_INDEX, SF_BIT_INDEX);
+        }
+        if (eflags_mask & OF_BIT) {
+            la_bstrins_d(eflags, zero_ir2_opnd,
+                          OF_BIT_INDEX, OF_BIT_INDEX);
+        }
+        return;
+    }
+
+    if (eflags_mask && !(eflags_mask & (eflags_mask - 1))) {
+        bit = __builtin_ctz(eflags_mask);
+        selected = ra_alloc_itemp();
+        la_bstrpick_d(selected, value, bit, bit);
+        la_bstrins_d(eflags, selected, bit, bit);
+        ra_free_temp(selected);
+        return;
+    }
+
     selected = ra_alloc_itemp();
     if (eflags_mask & CF_BIT) {
         la_bstrins_d(eflags, zero_ir2_opnd, CF_BIT_INDEX, CF_BIT_INDEX);

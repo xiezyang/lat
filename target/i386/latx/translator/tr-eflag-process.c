@@ -193,7 +193,9 @@ static void generate_af(IR2_OPND dest, IR2_OPND src0,
         la_xor(af_opnd, src0, src1);
     }
     la_xor(af_opnd, af_opnd, dest);
-    la_andi(af_opnd, af_opnd, 0x10);
+    if (option_enable_lbt) {
+        la_andi(af_opnd, af_opnd, 0x10);
+    }
     la_x86mtflag(af_opnd, 0x4);
     ra_free_temp(af_opnd);
 
@@ -202,6 +204,23 @@ static void generate_af(IR2_OPND dest, IR2_OPND src0,
 static void generate_zf(IR2_OPND dest, IR2_OPND src0,
                         IR2_OPND src1, IR1_INST *pir1)
 {
+    if (!option_enable_lbt) {
+        IR2_OPND zf = dest;
+        int size = ir1_opnd_size(ir1_get_opnd(pir1, 0));
+
+        if (size < 64) {
+            zf = ra_alloc_itemp();
+            la_bstrpick_d(zf, dest, size - 1, 0);
+        }
+        IR2_OPND bit = ra_alloc_itemp();
+        la_sltui(bit, zf, 1);
+        la_bstrins_d(ra_alloc_eflags(), bit, ZF_BIT_INDEX, ZF_BIT_INDEX);
+        ra_free_temp(bit);
+        if (size < 64) {
+            ra_free_temp(zf);
+        }
+        return;
+    }
     IR2_OPND zf = ra_alloc_itemp();
     IR2_OPND tmp = ra_alloc_itemp();
     int opnd_size = ir1_opnd_size(ir1_get_opnd(pir1, 0));
@@ -227,6 +246,12 @@ static void generate_sf(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1)
     IR1_INST *pir1 = lsenv->tr_data->curr_ir1_inst;
     int operation_size = ir1_opnd_size(ir1_get_opnd(pir1, 0));
     IR2_OPND sf_opnd = ra_alloc_itemp();
+    if (!option_enable_lbt) {
+        la_bstrpick_d(sf_opnd, dest, operation_size - 1, operation_size - 1);
+        la_bstrins_d(ra_alloc_eflags(), sf_opnd, SF_BIT_INDEX, SF_BIT_INDEX);
+        ra_free_temp(sf_opnd);
+        return;
+    }
     if (operation_size > 8) {
         la_srli_d(sf_opnd, dest, operation_size - 8);
         la_andi(sf_opnd, sf_opnd, 0x80);
@@ -670,9 +695,8 @@ static bool generate_common_cf(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
     case dt_X86_INS_AND:
     case dt_X86_INS_ANDN:
     case dt_X86_INS_OR:
-        cf = ra_alloc_itemp();
-        la_or(cf, zero_ir2_opnd, zero_ir2_opnd);
-        break;
+        latx_write_eflags(zero_ir2_opnd, CF_USEDEF_BIT);
+        return true;
     case dt_X86_INS_SAL:
     case dt_X86_INS_SHL:
     case dt_X86_INS_SHR:
@@ -707,7 +731,7 @@ static bool generate_common_cf(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
     if (lhs_allocated) {
         ra_free_temp(lhs);
     }
-    latx_write_eflags(cf, CF_USEDEF_BIT);
+    la_bstrins_d(ra_alloc_eflags(), cf, CF_BIT_INDEX, CF_BIT_INDEX);
     ra_free_temp(cf);
     return true;
 }
@@ -731,8 +755,7 @@ static bool generate_common_of(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
         ir1_opcode(pir1) == dt_X86_INS_IMUL) {
         of = ra_alloc_itemp();
         generate_multiply_overflow(of, src0, src1, pir1);
-        la_slli_d(of, of, OF_BIT_INDEX);
-        latx_write_eflags(of, OF_USEDEF_BIT);
+        la_bstrins_d(ra_alloc_eflags(), of, OF_BIT_INDEX, OF_BIT_INDEX);
         ra_free_temp(of);
         return true;
     }
@@ -804,10 +827,8 @@ static bool generate_common_of(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
     case dt_X86_INS_AND:
     case dt_X86_INS_ANDN:
     case dt_X86_INS_OR:
-        of = ra_alloc_itemp();
-        of_allocated = true;
-        la_or(of, zero_ir2_opnd, zero_ir2_opnd);
-        break;
+        latx_write_eflags(zero_ir2_opnd, OF_USEDEF_BIT);
+        goto out;
     case dt_X86_INS_SAL:
     case dt_X86_INS_SHL:
     case dt_X86_INS_SHR:
@@ -831,7 +852,6 @@ static bool generate_common_of(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
         } else {
             la_or(of, zero_ir2_opnd, zero_ir2_opnd);
         }
-        la_slli_d(of, of, OF_BIT_INDEX);
         ra_free_temp(one);
         ra_free_temp(count);
         if (rhs_allocated) {
@@ -842,7 +862,7 @@ static bool generate_common_of(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
             ra_free_temp(lhs);
             lhs_allocated = false;
         }
-        latx_write_eflags(of, OF_USEDEF_BIT);
+        la_bstrins_d(ra_alloc_eflags(), of, OF_BIT_INDEX, OF_BIT_INDEX);
         la_label(done);
         goto out;
     }
@@ -851,7 +871,6 @@ static bool generate_common_of(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
         goto out;
     }
     la_bstrpick_d(of, of, size - 1, size - 1);
-    la_slli_d(of, of, OF_BIT_INDEX);
     if (first_allocated) {
         ra_free_temp(first);
         first_allocated = false;
@@ -864,7 +883,7 @@ static bool generate_common_of(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
         ra_free_temp(lhs);
         lhs_allocated = false;
     }
-    latx_write_eflags(of, OF_USEDEF_BIT);
+    la_bstrins_d(ra_alloc_eflags(), of, OF_BIT_INDEX, OF_BIT_INDEX);
 
 out:
     if (of_allocated) {
@@ -1013,6 +1032,64 @@ static bool generate_xcomisx_eflags(IR2_OPND src0, IR2_OPND src1,
 }
 #endif
 
+static void generate_soft_flags(IR2_OPND result, IR2_OPND src0,
+                                IR2_OPND src1, IR1_INST *pir1)
+{
+    if (ir1_need_calculate_pf(pir1)) {
+        generate_pf(result, src0, src1);
+    }
+    if (ir1_need_calculate_af(pir1)) {
+        generate_af(result, src0, src1, pir1);
+    }
+    if (ir1_need_calculate_zf(pir1)) {
+        generate_zf(result, src0, src1, pir1);
+    }
+    if (ir1_need_calculate_sf(pir1)) {
+        generate_sf(result, src0, src1);
+    }
+    if (ir1_need_calculate_cf(pir1) &&
+        !generate_common_cf(result, src0, src1, pir1)) {
+        generate_cf(result, src0, src1, pir1);
+    }
+    if (ir1_need_calculate_of(pir1) &&
+        !generate_common_of(result, src0, src1, pir1)) {
+        generate_of(result, src0, src1, pir1);
+    }
+}
+
+bool generate_soft_addsub(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
+                          IR1_INST *pir1)
+{
+    if (option_enable_lbt || !ir1_need_calculate_any_flag(pir1) ||
+        !ir1_opnd_is_gpr(ir1_get_opnd(pir1, 0))) {
+        return false;
+    }
+
+    int size = ir1_opnd_size(ir1_get_opnd(pir1, 0));
+    IR2_OPND result = ra_alloc_itemp();
+    IR2_OPND flag_result = result;
+
+    /* Keep original operands alive until all flags have been computed.
+     * Low result bits do not require input zero-extension for ADD/SUB. */
+    if (ir1_opcode(pir1) == dt_X86_INS_ADD) {
+        la_add_d(result, src0, src1);
+    } else {
+        lsassert(ir1_opcode(pir1) == dt_X86_INS_SUB);
+        la_sub_d(result, src0, src1);
+    }
+    if (size < 64) {
+        flag_result = ra_alloc_itemp();
+        la_bstrpick_d(flag_result, result, size - 1, 0);
+    }
+    generate_soft_flags(flag_result, src0, src1, pir1);
+    la_or(dest, result, zero_ir2_opnd);
+    if (size < 64) {
+        ra_free_temp(flag_result);
+    }
+    ra_free_temp(result);
+    return true;
+}
+
 void generate_eflag_calculation(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
                                 IR1_INST *pir1, bool flags)
 {
@@ -1046,6 +1123,38 @@ void generate_eflag_calculation(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
 #endif
 
     if (!option_enable_lbt) {
+        if (ir1_opcode(pir1) == dt_X86_INS_MUL ||
+            ir1_opcode(pir1) == dt_X86_INS_IMUL) {
+            /* CF and OF describe the same overflow for integer multiply. */
+            if (ir1_need_calculate_cf(pir1) || ir1_need_calculate_of(pir1)) {
+                IR2_OPND overflow = ra_alloc_itemp();
+                generate_multiply_overflow(overflow, src0, src1, pir1);
+                if (ir1_need_calculate_cf(pir1)) {
+                    la_bstrins_d(ra_alloc_eflags(), overflow,
+                                 CF_BIT_INDEX, CF_BIT_INDEX);
+                }
+                if (ir1_need_calculate_of(pir1)) {
+                    la_bstrins_d(ra_alloc_eflags(), overflow,
+                                 OF_BIT_INDEX, OF_BIT_INDEX);
+                }
+                ra_free_temp(overflow);
+            }
+            /* Other multiply flags are undefined, but keep existing values
+             * generated by this translator for compatibility. */
+            if (ir1_need_calculate_pf(pir1)) {
+                generate_pf(dest, src0, src1);
+            }
+            if (ir1_need_calculate_af(pir1)) {
+                generate_af(dest, src0, src1, pir1);
+            }
+            if (ir1_need_calculate_zf(pir1)) {
+                generate_zf(dest, src0, src1, pir1);
+            }
+            if (ir1_need_calculate_sf(pir1)) {
+                generate_sf(dest, src0, src1);
+            }
+            return;
+        }
         bool soft_result_handled;
         IR2_OPND soft_result =
             generate_common_result(src0, src1, pir1, &soft_result_handled);
@@ -1058,26 +1167,7 @@ void generate_eflag_calculation(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
             flag_result = dest;
         }
 
-        if (ir1_need_calculate_pf(pir1)) {
-            generate_pf(flag_result, src0, src1);
-        }
-        if (ir1_need_calculate_af(pir1)) {
-            generate_af(flag_result, src0, src1, pir1);
-        }
-        if (ir1_need_calculate_zf(pir1)) {
-            generate_zf(flag_result, src0, src1, pir1);
-        }
-        if (ir1_need_calculate_sf(pir1)) {
-            generate_sf(flag_result, src0, src1);
-        }
-        if (ir1_need_calculate_cf(pir1) &&
-            !generate_common_cf(flag_result, src0, src1, pir1)) {
-            generate_cf(flag_result, src0, src1, pir1);
-        }
-        if (ir1_need_calculate_of(pir1) &&
-            !generate_common_of(flag_result, src0, src1, pir1)) {
-            generate_of(flag_result, src0, src1, pir1);
-        }
+        generate_soft_flags(flag_result, src0, src1, pir1);
         if (soft_result_handled) {
             ra_free_temp(soft_result);
         }

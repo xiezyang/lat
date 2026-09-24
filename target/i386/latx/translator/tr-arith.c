@@ -349,14 +349,13 @@ bool translate_add(IR1_INST *pir1)
         la_ld_by_op_size(src0, mem_opnd, imm, opnd0_size);
     }
 
-    /* set eflag */
-    generate_eflag_calculation(dest, src0, src1, pir1, true);
-
-    /* calculate */
-    if (opt_imm) {
-        la_addi_d(dest, src0, (int)ir1_opnd_simm(opnd1));
-    } else {
-        la_add_d(dest, src0, src1);
+    if (!generate_soft_addsub(dest, src0, src1, pir1)) {
+        generate_eflag_calculation(dest, src0, src1, pir1, true);
+        if (opt_imm) {
+            la_addi_d(dest, src0, (int)ir1_opnd_simm(opnd1));
+        } else {
+            la_add_d(dest, src0, src1);
+        }
     }
 #ifdef TARGET_X86_64
     if (!GHBR_ON(pir1) && CODEIS64 && ir1_opnd_is_gpr(opnd0) && opnd0_size == 32) {
@@ -675,14 +674,13 @@ bool translate_sub(IR1_INST *pir1)
         la_ld_by_op_size(src0, mem_opnd, imm, opnd0_size);
     }
 
-    /* set eflag */
-    generate_eflag_calculation(dest, src0, src1, pir1, true);
-
-    /* calculate */
-    if (opt_imm) {
-        la_addi_d(dest, src0, src1_imm);
-    } else {
-        la_sub_d(dest, src0, src1);
+    if (!generate_soft_addsub(dest, src0, src1, pir1)) {
+        generate_eflag_calculation(dest, src0, src1, pir1, true);
+        if (opt_imm) {
+            la_addi_d(dest, src0, src1_imm);
+        } else {
+            la_sub_d(dest, src0, src1);
+        }
     }
 #ifdef TARGET_X86_64
     if (!GHBR_ON(pir1) && CODEIS64 && ir1_opnd_is_gpr(opnd0) && opnd0_size == 32) {
