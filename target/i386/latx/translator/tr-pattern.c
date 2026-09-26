@@ -79,6 +79,53 @@
         generate_eflag_calculation(opnd0, opnd0, opnd1, inst, flags); \
     } while (0)
 
+/* Duplicate the final conditional branch for TU unlink recovery. Flags have
+ * already been materialized; none of their instructions may be patched. */
+static void soft_pattern_tu_branch(void)
+{
+#ifdef CONFIG_LATX_TU
+    TranslationBlock *tb = lsenv->tr_data->curr_tb;
+    IR2_INST *branch = lsenv->tr_data->last_ir2;
+    IR2_OPCODE opcode = ir2_opcode(branch);
+    if (option_enable_lbt || use_tu_jmp(tb) || !latx_tu_enabled() ||
+        !tb->s_data->next_tb[TU_TB_INDEX_NEXT] ||
+        !tb->s_data->next_tb[TU_TB_INDEX_TARGET] ||
+        !(ir2_opcode_is_branch_with_3opnds(opcode) ||
+          ir2_opcode_is_branch_with_2opnds(opcode) ||
+          ir2_opcode_is_f_branch(opcode))) {
+        return;
+    }
+    IR2_OPND operands[4];
+    memcpy(operands, branch->_opnd, sizeof(operands));
+    int count = branch->op_count;
+    IR2_OPND target = ra_alloc_label();
+    ir2_insert_before(generate_label(target), ir2_get_id(branch));
+    branch->_opnd[count - 1] = target;
+    tb->tu_jmp[TU_TB_INDEX_TARGET] = target._label_id;
+    tu_jcc_nop_gen(tb);
+    if (tb->tu_jmp[TU_TB_INDEX_NEXT] != TB_JMP_RESET_OFFSET_INVALID) {
+        IR2_OPND next = ra_alloc_label();
+        la_label(next);
+        la_b(imm_zero_ir2_opnd);
+        la_nop();
+        tb->tu_jmp[TU_TB_INDEX_NEXT] = next._label_id;
+    }
+    IR2_OPND unlink = ra_alloc_label();
+    la_label(unlink);
+    tb->tu_unlink.stub_offset = unlink._label_id;
+    tb->tu_unlink.rel_num = 2;
+    tb->eflags_target_arg[0] = TB_JMP_RESET_OFFSET_INVALID;
+    tb->eflags_target_arg[1] = TB_JMP_RESET_OFFSET_INVALID;
+    tb->eflags_target_arg[2] = TB_JMP_RESET_OFFSET_INVALID;
+    set_use_tu_jmp(tb);
+    IR2_INST *backup = ir2_allocate();
+    ir2_set_opcode(backup, opcode);
+    backup->op_count = count;
+    memcpy(backup->_opnd, operands, sizeof(operands));
+    ir2_append(backup);
+#endif
+}
+
 static inline void cmp_jcc_gen_bcc(IR2_OPND src_opnd_0, IR2_OPND src_opnd_1,
         IR2_OPND target_label_opnd, IR1_INST *jcc_inst)
 {
@@ -150,6 +197,7 @@ static bool translate_cmp_jcc(IR1_INST *ir1)
         generate_eflag_calculation(src_opnd_0, src_opnd_0,
                                    src_opnd_1, curr, true);
         cmp_jcc_gen_bcc(src_opnd_0, src_opnd_1, target_label_opnd, next);
+        soft_pattern_tu_branch();
         tr_generate_exit_tb(next, 0);
         la_label(target_label_opnd);
         tr_generate_exit_tb(next, 1);
@@ -304,6 +352,31 @@ static bool translate_sub_jcc(IR1_INST *ir1)
     IR1_INST *curr = ir1;
     IR1_INST *next = ir1->instptn.next;
 
+    if (!option_enable_lbt) {
+        int em = ZERO_EXTENSION;
+        switch (ir1_opcode(next)) {
+        case WRAP(JL): case WRAP(JGE): case WRAP(JLE): case WRAP(JG):
+            em = SIGN_EXTENSION;
+            break;
+        default:
+            break;
+        }
+        /* Keep comparison inputs outside the seven-register temporary pool:
+         * software SUB flags can consume that pool on their own. */
+        IR2_OPND lhs = a0_ir2_opnd;
+        IR2_OPND rhs = a1_ir2_opnd;
+        load_ireg_from_ir1_2(lhs, ir1_get_opnd(curr, 0), em, false);
+        load_ireg_from_ir1_2(rhs, ir1_get_opnd(curr, 1), em, false);
+        translate_sub(curr);
+        IR2_OPND taken = ra_alloc_label();
+        cmp_jcc_gen_bcc(lhs, rhs, taken, next);
+        soft_pattern_tu_branch();
+        tr_generate_exit_tb(next, 0);
+        la_label(taken);
+        tr_generate_exit_tb(next, 1);
+        return true;
+    }
+
     CPUArchState* env = (CPUArchState*)(lsenv->cpu_state);
     CPUState *cpu = env_cpu(env);
     IR1_OPND *opnd0 = ir1_get_opnd(ir1, 0);
@@ -400,6 +473,7 @@ static bool translate_sub_jcc(IR1_INST *ir1)
         set_use_tu_jmp(tb);
         /* For unlink. */
         cmp_jcc_gen_bcc(bcc_src0, bcc_src1, target_label_opnd, next);
+        soft_pattern_tu_branch();
         tr_generate_exit_tb(next, 0);
         la_label(target_label_opnd);
         tr_generate_exit_tb(next, 1);
@@ -444,6 +518,10 @@ static inline bool xcomisx_jcc(IR1_INST *ir1, bool is_double, bool qnan_exp)
     IR1_INST *next = ir1->instptn.next;
     bool (*trans)(IR1_INST *) = translate_xcomisx;
     IR2_INST* (*la_fcmp)(IR2_OPND, IR2_OPND, IR2_OPND, int);
+
+    if (!option_enable_lbt) {
+        translate_xcomisx(curr);
+    }
 
     if (is_double) {
         la_fcmp = la_fcmp_cond_d;
@@ -495,6 +573,9 @@ static inline bool xcomisx_jcc(IR1_INST *ir1, bool is_double, bool qnan_exp)
     case WRAP(JL):
         break;
     case WRAP(JGE):
+        if (!option_enable_lbt) {
+            break;
+        }
 #ifdef CONFIG_LATX_TU
         if (!latx_tu_enabled() ||
             !tb->s_data->next_tb[TU_TB_INDEX_NEXT] ||
@@ -510,6 +591,18 @@ static inline bool xcomisx_jcc(IR1_INST *ir1, bool is_double, bool qnan_exp)
         break;
     }
 
+    if (!option_enable_lbt) {
+        if (ir1_opcode(next) == WRAP(JGE)) {
+            la_b(target_label_opnd);
+        } else if (ir1_opcode(next) != WRAP(JL)) {
+            la_bcnez(fcc7_ir2_opnd, target_label_opnd);
+        }
+        soft_pattern_tu_branch();
+        tr_generate_exit_tb(next, 0);
+        la_label(target_label_opnd);
+        tr_generate_exit_tb(next, 1);
+        return true;
+    }
 #ifdef CONFIG_LATX_TU
     if (judge_tu_eflag_gen(tb)) {
         IR2_OPND tu_reset_label_opnd = ra_alloc_label();
@@ -641,6 +734,27 @@ static bool translate_bt_jcc(IR1_INST *ir1)
     la_srl_d(temp_opnd, src_opnd_0, bit_offset);
     la_andi(temp_opnd, temp_opnd, 1);
     IR2_OPND target_label_opnd = ra_alloc_label();
+
+    if (!option_enable_lbt) {
+        if (ir1_need_calculate_cf(curr)) {
+            latx_write_eflags(temp_opnd, CF_USEDEF_BIT);
+        }
+        if (ir1_opcode(next) == WRAP(JB)) {
+            la_bne(temp_opnd, zero_ir2_opnd, target_label_opnd);
+        } else {
+            lsassert(ir1_opcode(next) == WRAP(JAE));
+            la_beq(temp_opnd, zero_ir2_opnd, target_label_opnd);
+        }
+        soft_pattern_tu_branch();
+        tr_generate_exit_tb(next, 0);
+        la_label(target_label_opnd);
+        tr_generate_exit_tb(next, 1);
+        ra_free_temp(temp_opnd);
+        ra_free_temp_auto(src_opnd_0);
+        ra_free_temp(bit_offset);
+        ra_free_temp_auto(src_opnd_1);
+        return true;
+    }
 
 #ifdef CONFIG_LATX_TU
     TranslationBlock *tb = lsenv->tr_data->curr_tb;
@@ -898,6 +1012,7 @@ static bool translate_test_jcc(IR1_INST *ir1)
                                    is_same_reg ? src_opnd_0 : src_opnd_1,
                                    curr, true);
         test_jcc_gen_bcc(src_opnd_0, target_label_opnd, temp, is_same_reg, next);
+        soft_pattern_tu_branch();
         tr_generate_exit_tb(next, 0);
         la_label(target_label_opnd);
         tr_generate_exit_tb(next, 1);
@@ -1574,8 +1689,21 @@ bool translate_cmp_xx_jcc(IR1_INST *pir1)
         td->ptn_itemp1 = a1_ir2_opnd;
         load_ireg_from_ir1_2(td->ptn_itemp0, opnd0, SIGN_EXTENSION, false);
         load_ireg_from_ir1_2(td->ptn_itemp1, opnd1, SIGN_EXTENSION, false);
+        if (!option_enable_lbt) {
+            generate_eflag_calculation(td->ptn_itemp0, td->ptn_itemp0,
+                                       td->ptn_itemp1, pir1, true);
+        }
     } else {
         IR2_OPND target_label_opnd = ra_alloc_label();
+        if (!option_enable_lbt) {
+            cmp_jcc_gen_bcc(td->ptn_itemp0, td->ptn_itemp1,
+                            target_label_opnd, pir1);
+            soft_pattern_tu_branch();
+            tr_generate_exit_tb(pir1, 0);
+            la_label(target_label_opnd);
+            tr_generate_exit_tb(pir1, 1);
+            return true;
+        }
 #ifdef CONFIG_LATX_TU
         TranslationBlock *tb = lsenv->tr_data->curr_tb;
         if (judge_tu_eflag_gen(tb)) {
@@ -1616,6 +1744,7 @@ bool translate_cmp_xx_jcc(IR1_INST *pir1)
 
         /* not taken */
         EFLAGS_CACULATE(td->ptn_itemp0, td->ptn_itemp1, pir1->instptn.next, 0, true);
+        soft_pattern_tu_branch();
         tr_generate_exit_tb(pir1, 0);
 
         la_label(target_label_opnd);
@@ -1705,6 +1834,10 @@ bool translate_test_xx_jcc(IR1_INST *pir1)
         } else {
             td->ptn_itemp1 = td->ptn_itemp0;
         }
+        if (!option_enable_lbt) {
+            generate_eflag_calculation(td->ptn_itemp0, td->ptn_itemp0,
+                                       td->ptn_itemp1, pir1, true);
+        }
     } else {
         IR1_INST *next = pir1->instptn.next;
         IR2_OPND itemp;
@@ -1716,6 +1849,15 @@ bool translate_test_xx_jcc(IR1_INST *pir1)
         }
 
         IR2_OPND target_label_opnd = ra_alloc_label();
+
+        if (!option_enable_lbt) {
+            test_xx_jcc_gen_bcc(itemp, target_label_opnd, pir1);
+            soft_pattern_tu_branch();
+            tr_generate_exit_tb(pir1, 0);
+            la_label(target_label_opnd);
+            tr_generate_exit_tb(pir1, 1);
+            return true;
+        }
 
 #ifdef CONFIG_LATX_TU
         TranslationBlock *tb = lsenv->tr_data->curr_tb;
@@ -1764,6 +1906,7 @@ bool translate_test_xx_jcc(IR1_INST *pir1)
 
         /* not taken */
         EFLAGS_CACULATE(td->ptn_itemp0, td->ptn_itemp1, next, 0, true);
+        soft_pattern_tu_branch();
         tr_generate_exit_tb(pir1, 0);
 
         la_label(target_label_opnd);
@@ -1833,6 +1976,10 @@ bool translate_bt_xx_jcc(IR1_INST *pir1)
             }
             ra_free_temp(mem_opnd);
         }
+        if (!option_enable_lbt) {
+            generate_eflag_calculation(td->ptn_itemp0, td->ptn_itemp0,
+                                       td->ptn_itemp1, curr, true);
+        }
     } else {
         IR1_INST *next = pir1->instptn.next;
         IR2_OPND tempi = ra_alloc_itemp();
@@ -1840,6 +1987,20 @@ bool translate_bt_xx_jcc(IR1_INST *pir1)
         la_andi(tempi, tempi, 1);
 
         IR2_OPND target_label_opnd = ra_alloc_label();
+        if (!option_enable_lbt) {
+            if (ir1_opcode(curr) == WRAP(JB)) {
+                la_bne(tempi, zero_ir2_opnd, target_label_opnd);
+            } else {
+                lsassert(ir1_opcode(curr) == WRAP(JAE));
+                la_beq(tempi, zero_ir2_opnd, target_label_opnd);
+            }
+            ra_free_temp(tempi);
+            soft_pattern_tu_branch();
+            tr_generate_exit_tb(curr, 0);
+            la_label(target_label_opnd);
+            tr_generate_exit_tb(curr, 1);
+            return true;
+        }
 
 #ifdef CONFIG_LATX_TU
         TranslationBlock *tb = lsenv->tr_data->curr_tb;
@@ -1902,6 +2063,7 @@ bool translate_bt_xx_jcc(IR1_INST *pir1)
         }
 
         EFLAGS_CACULATE(td->ptn_itemp0, td->ptn_itemp1, next, 0, true);
+        soft_pattern_tu_branch();
         tr_generate_exit_tb(curr, 0);
 
         la_label(target_label_opnd);
@@ -1919,6 +2081,20 @@ static bool translate_shr_jcc(IR1_INST *pir1)
 {
     IR1_INST *curr = pir1;
     IR1_INST *next = curr->instptn.next;
+
+    if (!option_enable_lbt) {
+        translate_shr(curr);
+        IR2_OPND result = load_ireg_from_ir1(ir1_get_opnd(curr, 0),
+                                             ZERO_EXTENSION, false);
+        IR2_OPND taken = ra_alloc_label();
+        la_bne(result, zero_ir2_opnd, taken);
+        ra_free_temp_auto(result);
+        soft_pattern_tu_branch();
+        tr_generate_exit_tb(next, 0);
+        la_label(taken);
+        tr_generate_exit_tb(next, 1);
+        return true;
+    }
 
     IR1_OPND *opnd0 = ir1_get_opnd(curr, 0);
     IR1_OPND *opnd1 = ir1_get_opnd(curr, 1);
@@ -2054,6 +2230,22 @@ static bool translate_and_jcc(IR1_INST *pir1)
 {
     IR1_INST *curr = pir1;
     IR1_INST *next = curr->instptn.next;
+
+    if (!option_enable_lbt) {
+        lsassert(ir1_opnd_is_gpr(ir1_get_opnd(curr, 0)));
+        lsassert(ir1_opcode(next) == WRAP(JNE));
+        translate_and(curr);
+        IR2_OPND result = load_ireg_from_ir1(ir1_get_opnd(curr, 0),
+                                             ZERO_EXTENSION, false);
+        IR2_OPND taken = ra_alloc_label();
+        la_bne(result, zero_ir2_opnd, taken);
+        ra_free_temp_auto(result);
+        soft_pattern_tu_branch();
+        tr_generate_exit_tb(next, 0);
+        la_label(taken);
+        tr_generate_exit_tb(next, 1);
+        return true;
+    }
 
     IR1_OPND *opnd0 = ir1_get_opnd(curr, 0);
     IR1_OPND *opnd1 = ir1_get_opnd(curr, 1);
@@ -2325,6 +2517,7 @@ static inline bool xcomisx_xx_jcc(IR1_INST *pir1, bool is_jcc, bool is_double, b
         }
 
         /* not taken */
+        soft_pattern_tu_branch();
         tr_generate_exit_tb(curr, 0);
 
         la_label(target_label_opnd);
@@ -2504,6 +2697,9 @@ bool try_translate_instptn(IR1_INST *pir1)
 
 void opt_instptn_fix(CPUState *cpu, TranslationBlock *tb, int index)
 {
+    if (!option_enable_lbt) {
+        return; /* Software flags are generated at the producer. */
+    }
     CPUArchState *env = cpu->env_ptr;
     // int num_insns = tb->icount;
     for (int i = 0; i < index; i++) {

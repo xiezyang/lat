@@ -166,16 +166,27 @@ static int inst_pattern(TranslationBlock *tb,
     IR1_OPND *opnd1 = NULL;
 
     if (!option_enable_lbt) {
+        if (!(tb->flags & HF_TF_MASK) &&
+            (ir1_opcode(pir1) == WRAP(MOVAPS) ||
+             ir1_opcode(pir1) == WRAP(MOVDQA))) {
+            goto no_lbt_pair_checked;
+        }
         if ((tb->flags & HF_TF_MASK) || scan[0] < 0 ||
             SCAN_IR1(tb, scan, 0) != pir1 + 1 ||
             (ir1_opcode(pir1) != WRAP(CMP) &&
-             ir1_opcode(pir1) != WRAP(TEST))) {
+             ir1_opcode(pir1) != WRAP(TEST) &&
+             ir1_opcode(pir1) != WRAP(CQO) &&
+             ir1_opcode(pir1) != WRAP(CDQ) &&
+             ir1_opcode(pir1) != WRAP(NEG) &&
+             ir1_opcode(pir1) != WRAP(UCOMISD) &&
+             ir1_opcode(pir1) != WRAP(XOR))) {
             return 0;
         }
         IR1_INST *tail = SCAN_IR1(tb, scan, 0);
         for (int i = 0; i < ir1_opnd_num(pir1); i++) {
             IR1_OPND *op = ir1_get_opnd(pir1, i);
-            if (!ir1_opnd_is_gpr(op) && !ir1_opnd_is_imm(op)) {
+            if (!ir1_opnd_is_gpr(op) && !ir1_opnd_is_imm(op) &&
+                !(ir1_opcode(pir1) == WRAP(UCOMISD) && ir1_opnd_is_xmm(op))) {
                 return 0;
             }
         }
@@ -186,6 +197,7 @@ static int inst_pattern(TranslationBlock *tb,
         }
     }
 
+no_lbt_pair_checked:
     /*
      * pir1 is pattern head
      * scan[] contains ir1 following the head
@@ -461,14 +473,43 @@ bool insts_pattern_scan_jcc_end(TranslationBlock *tb, IR1_INST *pir1, int pir1_i
     }
 
     if (!option_enable_lbt) {
-        /* Avoid memory faults/barrier relocation and the *_XX_JCC recovery
-         * path, which still executes raw LBT instructions.  Do not fuse
-         * instructions when guest single stepping is requested.
-         */
-        if ((tb->flags & HF_TF_MASK) ||
-            pir1_index + 1 != SCAN_IDX(scan, 0) ||
-            (ir1_opcode(pir1) != WRAP(CMP) &&
-             ir1_opcode(pir1) != WRAP(TEST)) ||
+        /* Only cross instructions that cannot fault or call helpers.
+         * Software flags are materialized at the producer for recovery. */
+        if (tb->flags & HF_TF_MASK) {
+            return false;
+        }
+        bool float_cmp = ir1_opcode(pir1) == WRAP(COMISD) ||
+                         ir1_opcode(pir1) == WRAP(COMISS) ||
+                         ir1_opcode(pir1) == WRAP(UCOMISD) ||
+                         ir1_opcode(pir1) == WRAP(UCOMISS);
+        if (float_cmp) {
+            if (!ir1_opnd_is_xmm(ir1_get_opnd(pir1, 0)) ||
+                !ir1_opnd_is_xmm(ir1_get_opnd(pir1, 1))) {
+                return false;
+            }
+            goto no_lbt_pattern_checked;
+        }
+        if (ir1_opcode(pir1) == WRAP(NOP) ||
+            ir1_opcode(pir1) == WRAP(LEA)) {
+            return true;
+        }
+        if (ir1_opcode(pir1) == WRAP(MOV) ||
+            ir1_opcode(pir1) == WRAP(MOVZX) ||
+            ir1_opcode(pir1) == WRAP(MOVSX) ||
+            ir1_opcode(pir1) == WRAP(MOVSXD)) {
+            for (int i = 0; i < ir1_opnd_num(pir1); i++) {
+                if (ir1_opnd_is_mem(ir1_get_opnd(pir1, i))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        if ((ir1_opcode(pir1) != WRAP(CMP) &&
+             ir1_opcode(pir1) != WRAP(TEST) &&
+             ir1_opcode(pir1) != WRAP(BT) &&
+             ir1_opcode(pir1) != WRAP(AND) &&
+             ir1_opcode(pir1) != WRAP(SUB) &&
+             ir1_opcode(pir1) != WRAP(SHR)) ||
             ir1_is_prefix_lock(pir1) || ir1_opnd_num(pir1) != 2 ||
             !ir1_opnd_is_gpr(ir1_get_opnd(pir1, 0)) ||
             (!ir1_opnd_is_gpr(ir1_get_opnd(pir1, 1)) &&
@@ -477,6 +518,8 @@ bool insts_pattern_scan_jcc_end(TranslationBlock *tb, IR1_INST *pir1, int pir1_i
         }
     }
 
+no_lbt_pattern_checked:
+    ;
     IR1_INST *ir1_jcc = NULL;
     IR1_OPND *opnd0 = NULL;
     IR1_OPND *opnd1 = NULL;
@@ -611,6 +654,11 @@ bool insts_pattern_scan_jcc_end(TranslationBlock *tb, IR1_INST *pir1, int pir1_i
         opnd1 = ir1_get_opnd(pir1, 1);
         if (!ir1_opnd_is_imm(opnd1))
             return false;
+        if (!option_enable_lbt &&
+            !(ir1_opnd_uimm(opnd1) &
+              (ir1_opnd_size(ir1_get_opnd(pir1, 0)) == 64 ? 63 : 31))) {
+            return false;
+        }
         switch (ir1_opcode(ir1_jcc)) {
         case WRAP(JNE):
             if (pir1_index + 1 == SCAN_IDX(scan, 0)) {

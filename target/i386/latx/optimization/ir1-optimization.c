@@ -22,19 +22,36 @@ static void reduce_software_flags(TranslationBlock *tb, uint8 pending)
     for (int i = tb_ir1_num(tb) - 1; i >= 0; i--) {
         IR1_INST *inst = tb_ir1_inst(tb, i);
 #ifdef CONFIG_LATX_INSTS_PATTERN
-        if (i > 0) {
-            IR1_INST *prev = tb_ir1_inst(tb, i - 1);
+        for (int j = i - 1; j >= 0; j--) {
+            IR1_INST *prev = tb_ir1_inst(tb, j);
             if ((prev->instptn.opc == INSTPTN_OPC_CMP_XXCC ||
                  prev->instptn.opc == INSTPTN_OPC_TEST_XXCC ||
                  prev->instptn.opc == INSTPTN_OPC_CMP_JCC ||
-                 prev->instptn.opc == INSTPTN_OPC_TEST_JCC) &&
+                 prev->instptn.opc == INSTPTN_OPC_TEST_JCC ||
+                 prev->instptn.opc == INSTPTN_OPC_BT_JCC ||
+                 prev->instptn.opc == INSTPTN_OPC_AND_JCC ||
+                 prev->instptn.opc == INSTPTN_OPC_SUB_JCC ||
+                 prev->instptn.opc == INSTPTN_OPC_SHR_JCC ||
+                 prev->instptn.opc == INSTPTN_OPC_CMP_XX_JCC ||
+                 prev->instptn.opc == INSTPTN_OPC_TEST_XX_JCC ||
+                 prev->instptn.opc == INSTPTN_OPC_BT_XX_JCC ||
+                 prev->instptn.opc == INSTPTN_OPC_COMISD_JCC ||
+                 prev->instptn.opc == INSTPTN_OPC_COMISS_JCC ||
+                 prev->instptn.opc == INSTPTN_OPC_UCOMISD_JCC ||
+                 prev->instptn.opc == INSTPTN_OPC_UCOMISS_JCC ||
+                 prev->instptn.opc == INSTPTN_OPC_COMISD_XX_JCC ||
+                 prev->instptn.opc == INSTPTN_OPC_COMISS_XX_JCC ||
+                 prev->instptn.opc == INSTPTN_OPC_UCOMISD_XX_JCC ||
+                 prev->instptn.opc == INSTPTN_OPC_UCOMISS_XX_JCC) &&
                 prev->instptn.next == inst) {
                 ir1_set_eflag_use(inst, 0);
-                continue;
+                goto next_inst;
             }
         }
 #endif
         flag_reduction(inst, &pending);
+next_inst:
+        ;
     }
     tb->eflag_use = pending;
 }
