@@ -121,7 +121,7 @@ static void ir1_optimization_over_tb(TranslationBlock *tb)
     reduce_fused_conditions(tb, tb->s_data->eflag_out);
 }
 
-static void get_eflag_out(TranslationBlock *tb)
+static void get_eflag_out(TranslationBlock *tb, uint8 ret_demand)
 {
     switch (tb->s_data->last_ir1_type) {
         case IR1_TYPE_BRANCH:
@@ -157,8 +157,10 @@ static void get_eflag_out(TranslationBlock *tb)
             break;
         case IR1_TYPE_CALLIN:
         case IR1_TYPE_JUMPIN:
-        case IR1_TYPE_RET:
             tb->s_data->eflag_out |= __ALL_EFLAGS;
+            break;
+        case IR1_TYPE_RET:
+            tb->s_data->eflag_out |= ret_demand;
             break;
         case IR1_TYPE_SYSCALL:
             break;
@@ -171,6 +173,13 @@ void over_tb_rfd(TranslationBlock **tb_list, int tb_num)
 {
 #ifdef CONFIG_LATX_FLAG_REDUCTION
     if (!option_enable_lbt && option_flag_reduction) {
+        GHashTable *known_tbs = NULL;
+        if (option_tu_ret_eflags) {
+            known_tbs = g_hash_table_new(g_direct_hash, g_direct_equal);
+            for (int i = 0; i < tb_num; i++) {
+                g_hash_table_add(known_tbs, tb_list[i]);
+            }
+        }
         /* Discover patterns once with conservative output requirements. Their
          * direct comparisons must be known before solving flag liveness. */
         for (int i = 0; i < tb_num; i++) {
@@ -186,6 +195,32 @@ void over_tb_rfd(TranslationBlock **tb_list, int tb_num)
         bool changed;
         do {
             changed = false;
+            uint8 ret_demand = __NONE;
+            bool have_call = false;
+            if (option_tu_ret_eflags) {
+                /* The return address is dynamic: combine every known call
+                 * continuation in this TU, rather than choosing one caller. */
+                for (int i = 0; i < tb_num; i++) {
+                    TranslationBlock *call = tb_list[i];
+                    if (!call->icount ||
+                        call->s_data->last_ir1_type != IR1_TYPE_CALL) {
+                        continue;
+                    }
+                    TranslationBlock *next =
+                        call->s_data->next_tb[TU_TB_INDEX_NEXT];
+                    if (!g_hash_table_contains(known_tbs, next) ||
+                        !next->icount) {
+                        ret_demand = __ALL_EFLAGS;
+                        have_call = true;
+                        break;
+                    }
+                    ret_demand |= next->eflag_use;
+                    have_call = true;
+                }
+            }
+            if (!have_call) {
+                ret_demand = __ALL_EFLAGS;
+            }
             for (int i = tb_num - 1; i >= 0; i--) {
                 TranslationBlock *tb = tb_list[i];
                 if (!tb->icount) {
@@ -194,7 +229,7 @@ void over_tb_rfd(TranslationBlock **tb_list, int tb_num)
                 uint8 old_in = tb->eflag_use;
                 uint8 old_out = tb->s_data->eflag_out;
                 tb->s_data->eflag_out = __NONE;
-                get_eflag_out(tb);
+                get_eflag_out(tb, ret_demand);
                 /* Recompute the transfer from the real exit demand. Unlike
                  * a union of instruction defs, flag_reduction also preserves
                  * incoming flags for shifts/rotates whose count may be zero.
@@ -205,6 +240,9 @@ void over_tb_rfd(TranslationBlock **tb_list, int tb_num)
                            old_out != tb->s_data->eflag_out;
             }
         } while (changed);
+        if (known_tbs) {
+            g_hash_table_destroy(known_tbs);
+        }
         return;
     }
 #endif
@@ -236,7 +274,7 @@ void over_tb_rfd(TranslationBlock **tb_list, int tb_num)
             tb = tb_list[i];
             old_livein = tb->eflag_use;
             old_liveout = tb->s_data->eflag_out;
-            get_eflag_out(tb);
+            get_eflag_out(tb, __ALL_EFLAGS);
             tb->eflag_use |= (tb->s_data->eflag_out & (~eflag_def[i]));
             if (tb->eflag_use != old_livein || tb->s_data->eflag_out != old_liveout) {
                 unfinished = true;

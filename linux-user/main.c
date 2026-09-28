@@ -644,6 +644,15 @@ static void handle_arg_latx_host_hwcap(const char *arg)
     option_host_hwcap = hwcap;
 }
 
+static void handle_arg_latx_tu_ret_eflags(const char *arg)
+{
+    if (!arg || (strcmp(arg, "0") && strcmp(arg, "1"))) {
+        fprintf(stderr, "LATX_TU_RET_EFLAGS must be 0 or 1\n");
+        exit(EXIT_FAILURE);
+    }
+    option_tu_ret_eflags = arg[0] == '1';
+}
+
 static void handle_arg_latx_vpaes(const char *arg)
 {
     option_vpaes = strtol(arg, NULL, 0);
@@ -919,6 +928,9 @@ static const struct qemu_argument arg_table[] = {
     "",           "specify enabled optimize type"},
     {"latx-host-hwcap", "LATX_HOST_HWCAP", true, handle_arg_latx_host_hwcap,
     "mask",       "override the detected host AT_HWCAP mask for LATX feature tests"},
+    {"latx-tu-ret-eflags", "LATX_TU_RET_EFLAGS", true,
+     handle_arg_latx_tu_ret_eflags, "0|1",
+     "experimentally reduce no-LBT EFLAGS across TU returns"},
     {"latx-vpaes",      "LATX_VPAES",         true,  handle_arg_latx_vpaes,
     "",           "enable vpaes AES translation"},
     {"latx-smc",        "LATX_SMC",         true,   handle_arg_latx_smc,

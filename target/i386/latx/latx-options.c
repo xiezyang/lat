@@ -121,6 +121,7 @@ int option_set_rounding_opt;
 int option_cvt_opt;
 int option_fast_atomic;
 int option_tu = 1;
+int option_tu_ret_eflags;
 char *option_wine_pe_fixed_base;
 char *option_wine_pe_fixed_address;
 int option_aot_pe_profile;
@@ -251,6 +252,7 @@ void options_init(void)
     option_enable_lbt = 1;
     option_enable_lasx = 1;
     option_tu = 1;
+    option_tu_ret_eflags = 0;
     option_vpaes = 0;
 
     counter_tb_exec = 0;

@@ -202,13 +202,13 @@ static void generate_af(IR2_OPND dest, IR2_OPND src0,
 }
 
 static void generate_zf(IR2_OPND dest, IR2_OPND src0,
-                        IR2_OPND src1, IR1_INST *pir1)
+                        IR2_OPND src1, IR1_INST *pir1, bool narrowed)
 {
     if (!option_enable_lbt) {
         IR2_OPND zf = dest;
         int size = ir1_opnd_size(ir1_get_opnd(pir1, 0));
 
-        if (size < 64) {
+        if (size < 64 && !narrowed) {
             zf = ra_alloc_itemp();
             la_bstrpick_d(zf, dest, size - 1, 0);
         }
@@ -216,7 +216,7 @@ static void generate_zf(IR2_OPND dest, IR2_OPND src0,
         la_sltui(bit, zf, 1);
         la_bstrins_d(ra_alloc_eflags(), bit, ZF_BIT_INDEX, ZF_BIT_INDEX);
         ra_free_temp(bit);
-        if (size < 64) {
+        if (size < 64 && !narrowed) {
             ra_free_temp(zf);
         }
         return;
@@ -1033,7 +1033,7 @@ static bool generate_xcomisx_eflags(IR2_OPND src0, IR2_OPND src1,
 #endif
 
 static void generate_soft_flags(IR2_OPND result, IR2_OPND src0,
-                                IR2_OPND src1, IR1_INST *pir1)
+                                IR2_OPND src1, IR1_INST *pir1, bool narrowed)
 {
     if (ir1_need_calculate_pf(pir1)) {
         generate_pf(result, src0, src1);
@@ -1042,7 +1042,7 @@ static void generate_soft_flags(IR2_OPND result, IR2_OPND src0,
         generate_af(result, src0, src1, pir1);
     }
     if (ir1_need_calculate_zf(pir1)) {
-        generate_zf(result, src0, src1, pir1);
+        generate_zf(result, src0, src1, pir1, narrowed);
     }
     if (ir1_need_calculate_sf(pir1)) {
         generate_sf(result, src0, src1);
@@ -1069,7 +1069,7 @@ void generate_eflags_from_result(IR2_OPND result, IR2_OPND src0,
         narrowed = ra_alloc_itemp();
         la_bstrpick_d(narrowed, result, size - 1, 0);
     }
-    generate_soft_flags(narrowed, src0, src1, pir1);
+    generate_soft_flags(narrowed, src0, src1, pir1, true);
     if (size < 64) {
         ra_free_temp(narrowed);
     }
@@ -1099,7 +1099,7 @@ bool generate_soft_addsub(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
         flag_result = ra_alloc_itemp();
         la_bstrpick_d(flag_result, result, size - 1, 0);
     }
-    generate_soft_flags(flag_result, src0, src1, pir1);
+    generate_soft_flags(flag_result, src0, src1, pir1, true);
     la_or(dest, result, zero_ir2_opnd);
     if (size < 64) {
         ra_free_temp(flag_result);
@@ -1200,7 +1200,7 @@ void generate_eflag_calculation(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
                 generate_af(dest, src0, src1, pir1);
             }
             if (ir1_need_calculate_zf(pir1)) {
-                generate_zf(dest, src0, src1, pir1);
+                generate_zf(dest, src0, src1, pir1, false);
             }
             if (ir1_need_calculate_sf(pir1)) {
                 generate_sf(dest, src0, src1);
@@ -1219,7 +1219,8 @@ void generate_eflag_calculation(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
             flag_result = dest;
         }
 
-        generate_soft_flags(flag_result, src0, src1, pir1);
+        generate_soft_flags(flag_result, src0, src1, pir1,
+                            soft_result_handled);
         if (soft_result_handled) {
             ra_free_temp(soft_result);
         }
@@ -1242,7 +1243,7 @@ void generate_eflag_calculation(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
     if (ir1_need_calculate_af(pir1))
         generate_af(dest, src0, src1, pir1);
     if (ir1_need_calculate_zf(pir1))
-        generate_zf(dest, src0, src1, pir1);
+        generate_zf(dest, src0, src1, pir1, false);
     if (ir1_need_calculate_sf(pir1))
         generate_sf(dest, src0, src1);
 

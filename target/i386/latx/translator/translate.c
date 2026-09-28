@@ -544,6 +544,7 @@ static inline void boundary_set(TRANSLATION_DATA *lat_ctx)
 }
 
 static bool no_lbt_scan_enabled;
+static bool no_lbt_scan_detail;
 static bool no_lbt_scan_registered;
 static unsigned long long no_lbt_scan_tb_count;
 static unsigned long long no_lbt_scan_ir1_count;
@@ -620,6 +621,8 @@ static void no_lbt_scan_register(void)
     }
     no_lbt_scan_registered = true;
     no_lbt_scan_enabled = getenv("LATX_NO_LBT_SCAN") != NULL;
+    no_lbt_scan_detail = no_lbt_scan_enabled &&
+                         getenv("LATX_NO_LBT_SCAN_DETAIL") != NULL;
     if (no_lbt_scan_enabled) {
         atexit(no_lbt_scan_report);
     }
@@ -634,11 +637,26 @@ int tr_ir2_assemble(const void *code_start_addr, const IR2_INST *pir2)
     /* assemble */
     void *code_addr = (void *)code_start_addr;
     int code_nr = 0;
+    TranslationBlock *scan_tb;
+    int scan_ir1 = -1;
+    int scan_ir1_code = 0;
+    int scan_unmarked_code = 0;
 
     no_lbt_scan_register();
+    scan_tb = no_lbt_scan_detail ? lsenv->tr_data->curr_tb : NULL;
     if (no_lbt_scan_enabled) {
         no_lbt_scan_tb_count++;
     }
+
+#define REPORT_SCAN_IR1() do {                                             \
+    if (scan_tb && scan_ir1 >= 0 && scan_ir1 < tb_ir1_num(scan_tb)) {     \
+        IR1_INST *inst = tb_ir1_inst(scan_tb, scan_ir1);                  \
+        fprintf(stderr, "LATX_SCAN_IR1 tb=" TARGET_FMT_lx                 \
+                " pc=" TARGET_FMT_lx " index=%d def=%u code=%d\n",      \
+                scan_tb->pc, ir1_addr(inst), scan_ir1,                    \
+                ir1_get_eflag_def(inst), scan_ir1_code);                  \
+    }                                                                     \
+} while (0)
 
 #ifdef CONFIG_LATX_DEBUG
     ir2_dump_init();
@@ -651,8 +669,20 @@ int tr_ir2_assemble(const void *code_start_addr, const IR2_INST *pir2)
 
             if (opcode == LISA_X86_INST) {
                 no_lbt_scan_ir1_count++;
-            } else if (opcode != LISA_LABEL) {
+                if (scan_tb) {
+                    REPORT_SCAN_IR1();
+                    scan_ir1++;
+                    scan_ir1_code = 0;
+                }
+            } else if (opcode != LISA_LABEL && opcode != LISA_PROFILE) {
                 no_lbt_scan_host_insn_count++;
+                if (scan_tb) {
+                    if (scan_ir1 < 0) {
+                        scan_unmarked_code++;
+                    } else {
+                        scan_ir1_code++;
+                    }
+                }
                 if (no_lbt_scan_is_lbt_opcode(opcode)) {
                     no_lbt_scan_lbt_insn_count++;
                     fprintf(stderr,
@@ -689,6 +719,14 @@ int tr_ir2_assemble(const void *code_start_addr, const IR2_INST *pir2)
 #endif
         pir2 = ir2_next(pir2);
     }
+
+    REPORT_SCAN_IR1();
+    if (scan_tb) {
+        fprintf(stderr, "LATX_SCAN_TB tb=" TARGET_FMT_lx
+                " ir1=%d code=%d unmarked=%d\n", scan_tb->pc,
+                scan_ir1 + 1, code_nr, scan_unmarked_code);
+    }
+#undef REPORT_SCAN_IR1
 
     no_lbt_scan_snapshot();
 

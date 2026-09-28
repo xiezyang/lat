@@ -114,6 +114,7 @@ extern int option_set_rounding_opt;
 extern int option_cvt_opt;
 extern int option_fast_atomic;
 extern int option_tu;
+extern int option_tu_ret_eflags;
 static inline int latx_smc_default(void) { return 0x2 | 0x4; }
 static inline int latx_smc_inv_page(void) { return option_smc_opt == 0; }
 static inline int latx_smc_inv_tb(void) { return option_smc_opt != 0; }
@@ -133,6 +134,7 @@ extern unsigned long long counter_mips_tr;
 #define ENVSUP_LATX \
     ENVFUN(LATX_OPTIMIZE, handle_arg_optimize) \
     ENVFUN(LATX_HOST_HWCAP, handle_arg_latx_host_hwcap) \
+    ENVFUN(LATX_TU_RET_EFLAGS, handle_arg_latx_tu_ret_eflags) \
     ENVFUN(LATX_VPAES, handle_arg_latx_vpaes) \
     ENVFUN(LATX_SMC, handle_arg_latx_smc) \
     ENVFUN(LATX_CLOSE_PARALLEL, handle_arg_latx_parallel) \

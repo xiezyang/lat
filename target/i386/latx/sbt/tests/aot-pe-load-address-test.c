@@ -6,6 +6,7 @@
 
 int qemu_loglevel;
 int option_aot_pe_profile;
+int option_tu_ret_eflags;
 const char *aot_process_profile = "browser";
 
 int qemu_log(const char *fmt G_GNUC_UNUSED, ...)
@@ -56,6 +57,11 @@ int main(void)
     get_cache_name(&colliding_elf_seg, colliding_cache_name);
     g_assert(g_str_has_prefix(elf_cache_name, "v2-01-"));
     g_assert(g_str_has_prefix(first_name, "v2-02-"));
+    option_tu_ret_eflags = 1;
+    get_cache_name(&elf_seg, second_name);
+    g_assert(g_str_has_prefix(second_name, "v2-ret-eflags-01-"));
+    g_assert(strcmp(second_name, elf_cache_name) != 0);
+    option_tu_ret_eflags = 0;
     g_assert(g_str_has_suffix(first_name, "-140000000"));
     g_assert(strcmp(first_name, colliding_cache_name) != 0);
 

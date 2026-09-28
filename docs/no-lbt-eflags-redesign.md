@@ -253,3 +253,125 @@ Logs: /root/xzy/instpattern-tu-fixed-timing-20260926.
 Binary: /root/xzy/instpattern-expand-20260926/lat-pattern-tu-fixed.
 Full asynchronous exception / forced TU unlink coverage and matched generated
 instruction counts remain outstanding. Changes are not committed or pushed.
+
+## Experimental Return-Exit EFLAGS Elimination
+
+Do not clear `eflag_out` for a TB ending in `RET` just because the `RET`
+instruction does not consume condition flags. A return target is dynamic. In
+particular, the static TU builder records only the continuation of a CALL and
+does not add a RET edge, so it cannot enumerate all callers. An AOT TB can
+also be entered independently of the TU that originally translated it.
+
+Delaying a register-only CMP or TEST until the return target is known is not a
+safe substitute. `translate_ret_without_ss_opt` loads the return address from
+the guest stack before it updates RSP. That load can fault. The architectural
+fault or signal context must contain the flags produced before RET, not the
+flags from before CMP or TEST. Restoring them immediately before this load is
+correct, but produces the same software-flags sequence as at the producer and
+does not eliminate it.
+
+A real delayed-flags implementation would need per-host-PC descriptions of
+the deferred producer and its operands. State restoration would have to use
+those descriptions before constructing an exception or signal context. It
+would also need equivalent coverage for normal TBs, TU relocation/unlink
+stubs, AOT code recovery, independently entered TBs, and all producer forms.
+The current restore path recovers guest position/register state from host PC;
+it does not carry such deferred-flags metadata. This is a larger redesign, not
+a safe no-LBT TU subcase.
+
+`LATX_TU_RET_EFLAGS=1` now enables a deliberately aggressive alternative for
+no-LBT AOT/TU translation. For each return TB, its outgoing flag demand is the
+union of the incoming demands of every direct CALL continuation found in the
+same TU. If there is no such CALL, or one continuation is absent from the TU,
+the analysis keeps all six flags. The ordinary JIT and the default value (0)
+retain the old behavior. AOT files generated in the experimental mode use a
+separate `v2-ret-eflags-*` name to avoid mixing code from the two modes.
+
+This does not prove that those calls are the only callers of a function or
+that a return target cannot be changed on the stack. It also does not restore
+elided flags when a fault or asynchronous signal occurs before/at RET. Keep
+the option disabled for correctness-sensitive workloads; passing the return
+regression guest does not establish correctness for all programs.
+
+Board 200, same static O1 build, separate AOT caches, five interleaved warm
+XFYun runs: option 0 = 3.75/3.70/3.70/3.76/3.71 seconds (mean 3.724), option
+1 = 3.52/3.73/3.68/3.79/3.55 seconds (mean 3.654). WAV hashes all matched.
+The AOT cache sizes include metadata, so they cannot be used as direct
+LoongArch instruction counts. Logs are under
+`/root/xzy/tu-ret-eflags-20260928/xfyun`.
+After replacing the per-call TU membership scan with a hash lookup, the final
+binary passed both direct/indirect caller and RET-fault guests on board 200
+with option 0 and 1 (cold and warm AOT). Its five additional option-1 warm
+XFYun runs were 3.74/3.63/3.76/3.65/3.73 seconds (mean 3.702). Thus the
+earlier 3.654 vs 3.724 comparison does not establish a repeatable speedup.
+The final logs are under `/root/xzy/tu-ret-eflags-20260928/final-xfyun`.
+
+Generated-code measurement (same final implementation with diagnostic-only
+`LATX_NO_LBT_SCAN=1 LATX_NO_LBT_SCAN_DETAIL=1`, board 200, fresh independent
+AOT caches, one identical XFYun input per mode): both output WAV files have
+SHA256 `e0f9aeaf8619a87fa510ba8891138aa0bc19e1dd1d2d10c72b9c428cdb21348a`.
+The assembler reports one 4-byte LoongArch instruction per emitted IR2 machine
+instruction; labels and x86 markers are excluded. Both modes report zero LBT
+instructions. Match TBs by guest start PC and translation occurrence, and
+match individual IR1s by TB PC, guest instruction PC, index and occurrence:
+
+| Matched code | Option 0 | Option 1 | Reduction |
+| --- | ---: | ---: | ---: |
+| 82,006 TB translations | 2,258,375 | 2,234,285 | 24,090 (1.07%) |
+| 370,217 IR1 translations | 2,258,315 | 2,234,235 | 24,080 (1.07%) |
+| 1,000 IR1 translations with different flag definition masks | 26,574 | 2,510 | 24,064 |
+| IR1 translations with unchanged flag masks | - | - | 16 |
+| First translation of 25,116 matched TB PCs | 748,114 | 748,114 | 0 |
+| Later translations of matched TB PCs | 1,510,261 | 1,486,171 | 24,090 |
+
+The 1,000 IR1 occurrences include 981 with fewer flag-definition bits and
+19 with more. For example, guest TB `00000055082f80d6` changes from 45 to 19
+machine instructions when the CMP producer at `00000055082f80e3` goes from
+`def=63, code=27` to `def=0, code=1`; its other instructions are unchanged.
+These are counts of *all* machine instructions attributed to flag-producing
+x86 instructions, not an exact classification of each machine instruction as
+flag computation. They show that flag elimination genuinely removes emitted
+instructions. There are 30 TB PCs only in option 0, 31 only in option 1 and
+two with unequal translation counts, excluded from the matched comparison.
+Logs: `/root/xzy/tu-ret-eflags-20260928/scan-{0,1}.log`. Generated code
+size measures translation output, not the executed hot-path instruction count
+or a repeatable runtime speedup.
+
+## Safe No-LBT ZF Code Reduction (2026-09-28)
+
+The experimental cross-RET mode remains disabled by default: its TU-local
+caller list does not cover external entry, modified return addresses or
+asynchronous EFLAGS observation. Expanding that deletion without restoring
+architectural flags in these cases is not safe.
+
+For required flags, `generate_eflags_from_result`, register ADD/SUB and
+`generate_common_result` already truncate sub-64-bit results before passing
+them to `generate_soft_flags`. The no-LBT ZF generator previously truncated
+that same result again. Pass whether the result is already truncated to the
+ZF generator; retain its old truncation for other call paths. This changes
+neither the required flag mask nor the point where EFLAGS is written.
+
+Compiled O1/static on 23; board 200 no-LBT differential test matches x86
+for 327,680 defined-result/flag/condition cases. XFYun cold and warm AOT
+produced the reference WAV SHA256, and direct/indirect RET and RET-fault
+guests passed with `LATX_TU_RET_EFLAGS=0/1` (cold/warm). Both cold runs made
+11 AOT cache files; the code scan saw zero LBT instructions. Matching TBs by
+guest PC and translation occurrence against the same-build baseline yields
+76,633 translations, 2,110,564 to 2,087,262 emitted LoongArch instructions:
+23,302 fewer (1.10%). Among the matched IR1 translations, 22,973 emitted
+one fewer instruction. Unmatched TBs and TBs with unequal translation counts
+are excluded. Four interleaved warm runs: baseline 3.77/3.88/3.99/3.93 s,
+candidate 3.82/3.89/3.88/4.03 s. This does not establish a runtime gain.
+Board logs: `/root/xzy/tu-ret-eflags-20260928/zf-narrowed-20260928.log`
+and `zf-timed-*-{baseline,candidate}.err`; prior baseline scan at `scan-0.log`.
+
+A separate attempt to replace the no-LBT PF lookup table with XOR folding
+passed the differential test, but the matched TBs decreased by only 284 of
+2,111,050 instructions (0.013%); that change was discarded.
+
+`CONFIG_LATX_RADICAL_EFLAGS` is enabled only by `_OPT_UNSTABLE_` and
+`CONFIG_LATX_FLAG_REDUCTION_EXTEND` only by `_OPT_NO_IMPL_`; neither is part
+of the default configuration. This conclusion does not depend on either
+macro. The no-LBT return regression guest checks both normal CMP/TEST returns
+from multiple call sites and the SIGSEGV context produced when a CMP immediately
+before RET faults while loading its return address.
