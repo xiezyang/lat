@@ -13,14 +13,15 @@
 #include "insts-pattern.h"
 #include "tu.h"
 
-static void reduce_fused_conditions(TranslationBlock *tb, uint8 pending)
+#ifdef CONFIG_LATX_FLAG_REDUCTION
+static void reduce_software_flags(TranslationBlock *tb, uint8 pending)
 {
-#if defined(CONFIG_LATX_FLAG_REDUCTION) && defined(CONFIG_LATX_INSTS_PATTERN)
     if (option_enable_lbt || !option_flag_reduction) {
         return;
     }
     for (int i = tb_ir1_num(tb) - 1; i >= 0; i--) {
         IR1_INST *inst = tb_ir1_inst(tb, i);
+#ifdef CONFIG_LATX_INSTS_PATTERN
         if (i > 0) {
             IR1_INST *prev = tb_ir1_inst(tb, i - 1);
             if ((prev->instptn.opc == INSTPTN_OPC_CMP_XXCC ||
@@ -32,9 +33,17 @@ static void reduce_fused_conditions(TranslationBlock *tb, uint8 pending)
                 continue;
             }
         }
+#endif
         flag_reduction(inst, &pending);
     }
     tb->eflag_use = pending;
+}
+#endif
+
+static void reduce_fused_conditions(TranslationBlock *tb, uint8 pending)
+{
+#if defined(CONFIG_LATX_FLAG_REDUCTION) && defined(CONFIG_LATX_INSTS_PATTERN)
+    reduce_software_flags(tb, pending);
 #endif
 }
 
@@ -143,6 +152,45 @@ static void get_eflag_out(TranslationBlock *tb)
 
 void over_tb_rfd(TranslationBlock **tb_list, int tb_num)
 {
+#ifdef CONFIG_LATX_FLAG_REDUCTION
+    if (!option_enable_lbt && option_flag_reduction) {
+        /* Discover patterns once with conservative output requirements. Their
+         * direct comparisons must be known before solving flag liveness. */
+        for (int i = 0; i < tb_num; i++) {
+            tb_list[i]->s_data->eflag_out = __ALL_EFLAGS;
+            ir1_optimization_over_tb(tb_list[i]);
+        }
+        for (int i = 0; i < tb_num; i++) {
+            /* Empty/untranslated blocks are conservative boundaries. */
+            tb_list[i]->eflag_use = tb_list[i]->icount ? __NONE : __ALL_EFLAGS;
+            tb_list[i]->s_data->eflag_out = __NONE;
+        }
+
+        bool changed;
+        do {
+            changed = false;
+            for (int i = tb_num - 1; i >= 0; i--) {
+                TranslationBlock *tb = tb_list[i];
+                if (!tb->icount) {
+                    continue;
+                }
+                uint8 old_in = tb->eflag_use;
+                uint8 old_out = tb->s_data->eflag_out;
+                tb->s_data->eflag_out = __NONE;
+                get_eflag_out(tb);
+                /* Recompute the transfer from the real exit demand. Unlike
+                 * a union of instruction defs, flag_reduction also preserves
+                 * incoming flags for shifts/rotates whose count may be zero.
+                 * Starting internal edges at NONE finds the least fixed point;
+                 * get_eflag_out keeps unknown exits conservative. */
+                reduce_software_flags(tb, tb->s_data->eflag_out);
+                changed |= old_in != tb->eflag_use ||
+                           old_out != tb->s_data->eflag_out;
+            }
+        } while (changed);
+        return;
+    }
+#endif
     TranslationBlock *tb;
     uint8_t  eflag_def[tb_num];
     IR1_INST *ir1 = NULL;
