@@ -626,6 +626,12 @@ no_lbt_pattern_checked:
     case WRAP(SUB):
         SCAN_CHECK(scan, 0);
         ir1_jcc = SCAN_IR1(tb, scan, 0);
+        /* The no-LBT SUB+Jcc translator cannot safely preserve the
+         * comparison operands across software EFLAGS generation.  Leave
+         * both instructions on their ordinary translation paths. */
+        if (!option_enable_lbt) {
+            return false;
+        }
         switch (ir1_opcode(ir1_jcc)) {
         case WRAP(JB):
         case WRAP(JAE):
