@@ -2,6 +2,7 @@
 #include "cpu.h"
 #include "qemu.h"
 #include "guest-seccomp.h"
+#include "latx-options.h"
 #include "signal-common.h"
 
 #include <linux/audit.h>
@@ -330,6 +331,7 @@ static abi_long seccomp_install_filter(CPUArchState *env, abi_ulong flags,
         return ret;
     }
     filter->previous = task->seccomp_filter;
+    option_direct_syscall = 0;
 
     if (flags & SECCOMP_FILTER_FLAG_TSYNC) {
         CPUState *other_cpu;

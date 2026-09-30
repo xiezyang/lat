@@ -1750,6 +1750,12 @@ bool ir1_is_tb_ending(IR1_INST *ir1)
     return ir1_is_branch(ir1) || ir1_is_jump(ir1) || ir1_is_call(ir1) ||
            ir1_is_return(ir1);
 #else
+#ifdef TARGET_X86_64
+    if (option_direct_syscall) {
+        return ir1_is_branch(ir1) || ir1_is_jump(ir1) || ir1_is_call(ir1) ||
+               ir1_is_return(ir1);
+    }
+#endif
     return ir1_is_branch(ir1) || ir1_is_jump(ir1) || ir1_is_call(ir1) ||
            ir1_is_return(ir1) || ir1_is_syscall(ir1);
 #endif

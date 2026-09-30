@@ -653,6 +653,15 @@ static void handle_arg_latx_tu_ret_eflags(const char *arg)
     option_tu_ret_eflags = arg[0] == '1';
 }
 
+static void handle_arg_latx_direct_syscall(const char *arg)
+{
+    if (!arg || (strcmp(arg, "0") && strcmp(arg, "1"))) {
+        fprintf(stderr, "LATX_DIRECT_SYSCALL must be 0 or 1\n");
+        exit(EXIT_FAILURE);
+    }
+    option_direct_syscall = arg[0] == '1';
+}
+
 static void handle_arg_latx_vpaes(const char *arg)
 {
     option_vpaes = strtol(arg, NULL, 0);
@@ -931,6 +940,9 @@ static const struct qemu_argument arg_table[] = {
     {"latx-tu-ret-eflags", "LATX_TU_RET_EFLAGS", true,
      handle_arg_latx_tu_ret_eflags, "0|1",
      "experimentally reduce no-LBT EFLAGS across TU returns"},
+    {"latx-direct-syscall", "LATX_DIRECT_SYSCALL", true,
+     handle_arg_latx_direct_syscall, "0|1",
+     "experimentally execute compatible x86-64 syscalls directly"},
     {"latx-vpaes",      "LATX_VPAES",         true,  handle_arg_latx_vpaes,
     "",           "enable vpaes AES translation"},
     {"latx-smc",        "LATX_SMC",         true,   handle_arg_latx_smc,
@@ -1521,6 +1533,9 @@ int main(int argc, char **argv, char **envp)
     if (log_mask) {
         qemu_log_needs_buffers();
         qemu_set_log(log_mask);
+        if (log_mask & (LOG_STRACE | LOG_STRACE_ERROR)) {
+            option_direct_syscall = 0;
+        }
     }
 
     if (!trace_init_backends()) {

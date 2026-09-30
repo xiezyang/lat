@@ -113,6 +113,7 @@ extern int option_fork_unlink;
 extern int option_set_rounding_opt;
 extern int option_cvt_opt;
 extern int option_fast_atomic;
+extern int option_direct_syscall;
 extern int option_tu;
 extern int option_tu_ret_eflags;
 static inline int latx_smc_default(void) { return 0x2 | 0x4; }
@@ -135,6 +136,7 @@ extern unsigned long long counter_mips_tr;
     ENVFUN(LATX_OPTIMIZE, handle_arg_optimize) \
     ENVFUN(LATX_HOST_HWCAP, handle_arg_latx_host_hwcap) \
     ENVFUN(LATX_TU_RET_EFLAGS, handle_arg_latx_tu_ret_eflags) \
+    ENVFUN(LATX_DIRECT_SYSCALL, handle_arg_latx_direct_syscall) \
     ENVFUN(LATX_VPAES, handle_arg_latx_vpaes) \
     ENVFUN(LATX_SMC, handle_arg_latx_smc) \
     ENVFUN(LATX_CLOSE_PARALLEL, handle_arg_latx_parallel) \

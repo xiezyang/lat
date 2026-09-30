@@ -265,6 +265,9 @@ typedef enum aot_rel_kind {
     LOAD_HELPER_END,
 
     LOAD_TUNNEL_ADDR_BEGIN,
+
+    LOAD_HOST_GUEST_BASE = 0x10000,
+    LOAD_DIRECT_SYSCALL_ENABLED,
 } aot_rel_kind;
 
 typedef struct aot_rel {

@@ -13538,6 +13538,7 @@ static abi_long do_prctl_syscall_user_dispatch(CPUArchState *env,
         ts->sys_dispatch_selector = selector;
         ts->sys_dispatch_inclusive =
             mode == PR_SYS_DISPATCH_INCLUSIVE_ON;
+        option_direct_syscall = 0;
         return 0;
     default:
         return -TARGET_EINVAL;

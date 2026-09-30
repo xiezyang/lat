@@ -1340,8 +1340,194 @@ bool translate_syscall(IR1_INST *pir1)
     return false;
 }
 #else
+typedef struct LatxDirectSyscall {
+    uint16_t guest_nr;
+    uint16_t host_nr;
+    uint8_t pointer_mask;
+} LatxDirectSyscall;
+
+#define LATX_DIRECT_ARG1 (1 << 0)
+#define LATX_DIRECT_ARG2 (1 << 1)
+#define LATX_DIRECT_ARG3 (1 << 2)
+#define LATX_DIRECT_ARG4 (1 << 3)
+#define LATX_DIRECT_ARG5 (1 << 4)
+#define LATX_DIRECT_ARG6 (1 << 5)
+
+/* LoongArch uses the asm-generic 64-bit syscall numbers. */
+static const LatxDirectSyscall latx_direct_syscalls[] = {
+    {   3,  57, 0 },                         /* close */
+    {   8,  62, 0 },                         /* lseek */
+    {  24, 124, 0 },                         /* sched_yield */
+    {  39, 172, 0 },                         /* getpid */
+    {  96, 169, LATX_DIRECT_ARG1 |
+                LATX_DIRECT_ARG2 },           /* gettimeofday */
+    { 102, 174, 0 },                         /* getuid */
+    { 104, 176, 0 },                         /* getgid */
+    { 107, 175, 0 },                         /* geteuid */
+    { 108, 177, 0 },                         /* getegid */
+    { 110, 173, 0 },                         /* getppid */
+    { 186, 178, 0 },                         /* gettid */
+    { 217,  61, LATX_DIRECT_ARG2 },           /* getdents64 */
+    { 228, 113, LATX_DIRECT_ARG2 },           /* clock_gettime */
+    { 267,  78, LATX_DIRECT_ARG2 |
+                LATX_DIRECT_ARG3 },           /* readlinkat */
+};
+
+static void translate_direct_pointer(IR2_OPND arg, IR2_OPND guest_base)
+{
+    IR2_OPND ptr_valid = ra_alloc_label();
+
+    la_beqz(arg, ptr_valid);
+    la_add_d(arg, arg, guest_base);
+    la_label(ptr_valid);
+}
+
+static void translate_direct_syscall(const LatxDirectSyscall *direct,
+                                     IR1_INST *pir1,
+                                     IR2_OPND save_r8, IR2_OPND save_r9,
+                                     IR2_OPND guest_base_opnd)
+{
+    IR2_OPND next_pc = ra_alloc_gpr(ecx_index);
+    IR2_OPND result = ra_alloc_gpr(eax_index);
+    IR2_OPND r11 = ra_alloc_gpr(r11_index);
+    IR2_OPND eflags = ra_alloc_eflags();
+    IR2_OPND syscall_num = a7_ir2_opnd;
+
+    /* a0-a7 and the temporary registers are not preserved by syscall. */
+    la_addi_d(sp_ir2_opnd, sp_ir2_opnd, -64);
+    la_st_d(ra_alloc_gpr(r8_index), sp_ir2_opnd, 0);
+    la_st_d(ra_alloc_gpr(r9_index), sp_ir2_opnd, 8);
+    la_st_d(ra_alloc_gpr(r10_index), sp_ir2_opnd, 16);
+    la_st_d(eflags, sp_ir2_opnd, 24);
+    la_st_d(ra_alloc_gpr(r12_index), sp_ir2_opnd, 32);
+    la_st_d(ra_alloc_gpr(r13_index), sp_ir2_opnd, 40);
+    la_st_d(ra_alloc_gpr(r14_index), sp_ir2_opnd, 48);
+    la_st_d(ra_alloc_gpr(r15_index), sp_ir2_opnd, 56);
+
+    la_or(save_r8, zero_ir2_opnd, ra_alloc_gpr(r8_index));
+    la_or(save_r9, zero_ir2_opnd, ra_alloc_gpr(r9_index));
+
+    la_or(a0_ir2_opnd, zero_ir2_opnd, ra_alloc_gpr(edi_index));
+    la_or(a1_ir2_opnd, zero_ir2_opnd, ra_alloc_gpr(esi_index));
+    la_or(a2_ir2_opnd, zero_ir2_opnd, ra_alloc_gpr(edx_index));
+    la_or(a3_ir2_opnd, zero_ir2_opnd, ra_alloc_gpr(r10_index));
+    la_or(a4_ir2_opnd, zero_ir2_opnd, save_r8);
+    la_or(a5_ir2_opnd, zero_ir2_opnd, save_r9);
+
+    if (direct->pointer_mask) {
+        aot_load_host_addr(guest_base_opnd, (ADDR)&guest_base,
+                           LOAD_HOST_GUEST_BASE, 0);
+        la_ld_d(guest_base_opnd, guest_base_opnd, 0);
+    }
+    if (direct->pointer_mask & LATX_DIRECT_ARG1) {
+        translate_direct_pointer(a0_ir2_opnd, guest_base_opnd);
+    }
+    if (direct->pointer_mask & LATX_DIRECT_ARG2) {
+        translate_direct_pointer(a1_ir2_opnd, guest_base_opnd);
+    }
+    if (direct->pointer_mask & LATX_DIRECT_ARG3) {
+        translate_direct_pointer(a2_ir2_opnd, guest_base_opnd);
+    }
+    if (direct->pointer_mask & LATX_DIRECT_ARG4) {
+        translate_direct_pointer(a3_ir2_opnd, guest_base_opnd);
+    }
+    if (direct->pointer_mask & LATX_DIRECT_ARG5) {
+        translate_direct_pointer(a4_ir2_opnd, guest_base_opnd);
+    }
+    if (direct->pointer_mask & LATX_DIRECT_ARG6) {
+        translate_direct_pointer(a5_ir2_opnd, guest_base_opnd);
+    }
+
+    li_d(syscall_num, direct->host_nr);
+    la_syscall(0);
+
+    la_or(result, zero_ir2_opnd, a0_ir2_opnd);
+    la_ld_d(ra_alloc_gpr(r8_index), sp_ir2_opnd, 0);
+    la_ld_d(ra_alloc_gpr(r9_index), sp_ir2_opnd, 8);
+    la_ld_d(ra_alloc_gpr(r10_index), sp_ir2_opnd, 16);
+    la_ld_d(eflags, sp_ir2_opnd, 24);
+    la_ld_d(ra_alloc_gpr(r12_index), sp_ir2_opnd, 32);
+    la_ld_d(ra_alloc_gpr(r13_index), sp_ir2_opnd, 40);
+    la_ld_d(ra_alloc_gpr(r14_index), sp_ir2_opnd, 48);
+    la_ld_d(ra_alloc_gpr(r15_index), sp_ir2_opnd, 56);
+    la_addi_d(sp_ir2_opnd, sp_ir2_opnd, 64);
+
+    target_ulong call_offset __attribute__((unused)) =
+        aot_get_call_offset(ir1_addr_next(pir1));
+    aot_load_guest_addr(next_pc, ir1_addr_next(pir1),
+                        LOAD_CALL_TARGET, call_offset);
+
+    la_or(r11, zero_ir2_opnd, eflags);
+    la_bstrins_d(r11, zero_ir2_opnd, 16, 16); /* syscall clears RF in R11. */
+}
+
 bool translate_syscall(IR1_INST *pir1)
 {
+    bool direct_enabled = option_direct_syscall && !option_enable_lbt && CODEIS64;
+    IR2_OPND label_fallback = ir2_opnd_new_none();
+    IR2_OPND label_finish = ir2_opnd_new_none();
+
+    if (direct_enabled) {
+        IR2_OPND temp[7];
+        IR2_OPND non_a7[6];
+        IR2_OPND eax_opnd = ra_alloc_gpr(eax_index);
+        int non_a7_num = 0;
+        bool a7_reserved = false;
+        int free_temps = 0;
+
+        for (int i = 0; i < ARRAY_SIZE(temp); i++) {
+            if (itemp_is_free(i)) {
+                free_temps++;
+            }
+        }
+        if (free_temps < ARRAY_SIZE(temp)) {
+            direct_enabled = false;
+        } else {
+            label_fallback = ra_alloc_label();
+            label_finish = ra_alloc_label();
+
+            for (int i = 0; i < ARRAY_SIZE(temp); i++) {
+                temp[i] = ra_alloc_itemp();
+                if (temp[i]._reg_num == la_a7) {
+                    a7_reserved = true;
+                } else {
+                    non_a7[non_a7_num++] = temp[i];
+                }
+            }
+            if (!a7_reserved || non_a7_num != ARRAY_SIZE(non_a7)) {
+                direct_enabled = false;
+            } else {
+                IR2_OPND enabled = non_a7[0];
+                IR2_OPND expected = non_a7[1];
+                IR2_OPND save_r8 = non_a7[2];
+                IR2_OPND save_r9 = non_a7[3];
+                IR2_OPND guest_base = non_a7[4];
+
+                aot_load_host_addr(enabled, (ADDR)&option_direct_syscall,
+                                   LOAD_DIRECT_SYSCALL_ENABLED, 0);
+                la_ld_w(enabled, enabled, 0);
+                la_beqz(enabled, label_fallback);
+
+                for (int i = 0; i < ARRAY_SIZE(latx_direct_syscalls); i++) {
+                    const LatxDirectSyscall *direct = &latx_direct_syscalls[i];
+                    IR2_OPND label_next = ra_alloc_label();
+
+                    li_d(expected, direct->guest_nr);
+                    la_bne(eax_opnd, expected, label_next);
+                    translate_direct_syscall(direct, pir1, save_r8, save_r9,
+                                             guest_base);
+                    la_b(label_finish);
+                    la_label(label_next);
+                }
+                la_b(label_fallback);
+                la_label(label_fallback);
+            }
+            for (int i = 0; i < ARRAY_SIZE(temp); i++) {
+                ra_free_temp(temp[i]);
+            }
+        }
+    }
+
     tr_save_fcsr_to_env();
     tr_save_registers_to_env(0xff, 0xff, 0xff, options_to_save());
     tr_save_x64_8_registers_to_env(0xff, 0xff);
@@ -1373,6 +1559,10 @@ bool translate_syscall(IR1_INST *pir1)
     /* load registers from env */
     tr_load_registers_from_env(0x1, 0, 0, options_to_save());
     tr_load_x64_8_registers_from_env(0xf0, 0);
+
+    if (direct_enabled) {
+        la_label(label_finish);
+    }
 
     return true;
 }

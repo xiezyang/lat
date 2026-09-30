@@ -1436,6 +1436,27 @@ void aot_do_tb_reloc(TranslationBlock *tb, struct aot_tb *stb,
             *pinsn |= ((helper_address >> 32) & 0xfffff) << 5;
 
             break;
+        case LOAD_HOST_GUEST_BASE:
+        case LOAD_DIRECT_SYSCALL_ENABLED:
+            helper_address = aot_rel_table[i].kind == LOAD_HOST_GUEST_BASE ?
+                             (uintptr_t)&guest_base :
+                             (uintptr_t)&option_direct_syscall;
+            lsassert(helper_address);
+            lsassert((*pinsn & 0xfe000000) == 0x14000000); /* lu12i.w */
+            *pinsn &= 0xfe00001f;
+            *pinsn |= ((helper_address >> 12) & 0xfffff) << 5;
+
+            pinsn++;
+            lsassert((*pinsn & 0xffc00000) == 0x03800000); /* ori */
+            *pinsn &= 0xffc003ff;
+            *pinsn |= (helper_address & 0xfff) << 10;
+
+            pinsn++;
+            lsassert((*pinsn & 0xfe000000) == 0x16000000); /* lu32i.d */
+            *pinsn &= 0xfe00001f;
+            *pinsn |= ((helper_address >> 32) & 0xfffff) << 5;
+
+            break;
         default:
             lib_method_index = aot_rel_table[i].kind - LOAD_TUNNEL_ADDR_BEGIN;
             lsassert(lib_method_index >= 0 &&
