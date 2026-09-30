@@ -1584,6 +1584,12 @@ void update_fcsr_by_sw(IR2_OPND sw);
 void tr_gen_call_to_helper(ADDR, enum aot_rel_kind);
 void convert_fpregs_64_to_x80(void);
 void convert_fpregs_x80_to_64(void);
+void latx_fcvt_soft(void *opaque, unsigned int operation,
+                    unsigned int dest, unsigned int src, unsigned int high);
+void latx_xfyun_fir_add(int32_t *coeff, int32_t *buf, uint32_t start,
+                        uint32_t count);
+void latx_xfyun_inv_transform(const int16_t *input, int32_t *output,
+                              const int16_t *table);
 void helper_raise_int(void);
 void helper_raise_illop(void);
 void helper_raise_trapop(void);

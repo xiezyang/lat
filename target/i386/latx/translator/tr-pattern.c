@@ -142,6 +142,44 @@ static bool translate_cmp_jcc(IR1_INST *ir1)
     IR2_OPND src_opnd_1 = load_ireg_from_ir1(ir1_get_opnd(curr, 1), em, false);
 
     IR2_OPND target_label_opnd = ra_alloc_label();
+#ifdef CONFIG_LATX_TU
+    if (!option_enable_lbt &&
+            xfyun_hot_no_lbt_tu_branch(lsenv->tr_data->curr_tb)) {
+        TranslationBlock *tb = lsenv->tr_data->curr_tb;
+        IR2_OPND tu_reset_label_opnd = ra_alloc_label();
+
+        la_label(tu_reset_label_opnd);
+        tb->tu_jmp[TU_TB_INDEX_TARGET] = tu_reset_label_opnd._label_id;
+        cmp_jcc_gen_bcc(src_opnd_0, src_opnd_1, target_label_opnd, next);
+        tu_jcc_nop_gen(tb);
+
+        /* The fallthrough returns to the caller with the final CMP flags. */
+        generate_eflag_calculation(src_opnd_0, src_opnd_0,
+                                   src_opnd_1, curr, true);
+        if (tb->tu_jmp[TU_TB_INDEX_NEXT] != TB_JMP_RESET_OFFSET_INVALID) {
+            IR2_OPND translated_label_opnd = ra_alloc_label();
+            la_label(translated_label_opnd);
+            la_b(imm_zero_ir2_opnd);
+            la_nop();
+            tb->tu_jmp[TU_TB_INDEX_NEXT] = translated_label_opnd._label_id;
+        }
+
+        IR2_OPND unlink_label_opnd = ra_alloc_label();
+        la_label(unlink_label_opnd);
+        tb->tu_unlink.stub_offset = unlink_label_opnd._label_id;
+        tb->tu_unlink.rel_num = 2;
+        set_use_tu_jmp(tb);
+
+        /* The unlinked branch may leave the TU on either side. */
+        generate_eflag_calculation(src_opnd_0, src_opnd_0,
+                                   src_opnd_1, curr, true);
+        cmp_jcc_gen_bcc(src_opnd_0, src_opnd_1, target_label_opnd, next);
+        tr_generate_exit_tb(next, 0);
+        la_label(target_label_opnd);
+        tr_generate_exit_tb(next, 1);
+        return true;
+    }
+#endif
     if (!option_enable_lbt) {
         /* Software flags are a sequence, not one patchable instruction.
          * Materialize live flags once, before branching, and leave the
@@ -364,6 +402,48 @@ static bool translate_sub_jcc(IR1_INST *ir1)
     IR2_OPND target_label_opnd = ra_alloc_label();
 #ifdef CONFIG_LATX_TU
     TranslationBlock *tb = lsenv->tr_data->curr_tb;
+    if (xfyun_hot_no_lbt_sub_jcc(tb, curr, next)) {
+        IR2_OPND tu_reset_label_opnd = ra_alloc_label();
+        IR2_OPND unlink_label_opnd = ra_alloc_label();
+
+        gen_sub(dest, src_opnd_0, src_opnd_1, mem_opnd, imm, curr,
+                opnd0, opnd0_size);
+        la_label(tu_reset_label_opnd);
+        tb->tu_jmp[TU_TB_INDEX_TARGET] = tu_reset_label_opnd._label_id;
+        la_bne(dest, zero_ir2_opnd, target_label_opnd);
+        tu_jcc_nop_gen(tb);
+
+        /* The fallthrough reaches RET with RSI=0 after subtracting 1. */
+        generate_eflag_calculation(dest, src_opnd_1, src_opnd_1, curr, true);
+        if (tb->tu_jmp[TU_TB_INDEX_NEXT] != TB_JMP_RESET_OFFSET_INVALID) {
+            IR2_OPND next_label = ra_alloc_label();
+            la_label(next_label);
+            la_b(imm_zero_ir2_opnd);
+            la_nop();
+            tb->tu_jmp[TU_TB_INDEX_NEXT] = next_label._label_id;
+        }
+
+        la_label(unlink_label_opnd);
+        tb->tu_unlink.stub_offset = unlink_label_opnd._label_id;
+        tb->tu_unlink.rel_num = 2;
+        set_use_tu_jmp(tb);
+        /* Only the unlinked path needs the old RSI for full SUB flags. */
+        IR2_OPND old_rsi = ra_alloc_itemp();
+        la_add_d(old_rsi, dest, src_opnd_1);
+        generate_eflag_calculation(dest, old_rsi, src_opnd_1, curr, true);
+        la_bne(dest, zero_ir2_opnd, target_label_opnd);
+        tr_generate_exit_tb(next, 0);
+        la_label(target_label_opnd);
+        tr_generate_exit_tb(next, 1);
+        if (getenv("LATX_TU_SCAN")) {
+            fprintf(stderr, "TU_SCAN_XFYUN_HOT_SUB_JCC pc=0x" TARGET_FMT_lx
+                    " next=0x" TARGET_FMT_lx " target=0x" TARGET_FMT_lx
+                    "\n", tb->pc,
+                    tb->s_data->next_tb[TU_TB_INDEX_NEXT]->pc,
+                    tb->s_data->next_tb[TU_TB_INDEX_TARGET]->pc);
+        }
+        return true;
+    }
     /* if (judge_tu_eflag_gen(lsenv->tr_data->curr_tb)) { */
     if (latx_tu_enabled() &&
         tb->s_data->next_tb[TU_TB_INDEX_NEXT] &&
@@ -890,6 +970,44 @@ static bool translate_test_jcc(IR1_INST *ir1)
 
     IR2_OPND target_label_opnd = ra_alloc_label();
 
+#ifdef CONFIG_LATX_TU
+    if (!option_enable_lbt &&
+            xfyun_hot_no_lbt_tu_branch(lsenv->tr_data->curr_tb)) {
+        TranslationBlock *tb = lsenv->tr_data->curr_tb;
+        IR2_OPND tu_reset_label_opnd = ra_alloc_label();
+
+        la_label(tu_reset_label_opnd);
+        tb->tu_jmp[TU_TB_INDEX_TARGET] = tu_reset_label_opnd._label_id;
+        bool is_branch = test_jcc_gen_bcc(src_opnd_0, target_label_opnd,
+                temp, is_same_reg, next);
+        if (!is_branch) {
+            la_nop();
+        }
+        tu_jcc_nop_gen(tb);
+
+        if (tb->tu_jmp[TU_TB_INDEX_NEXT] != TB_JMP_RESET_OFFSET_INVALID) {
+            IR2_OPND translated_label_opnd = ra_alloc_label();
+            la_label(translated_label_opnd);
+            la_b(imm_zero_ir2_opnd);
+            la_nop();
+            tb->tu_jmp[TU_TB_INDEX_NEXT] = translated_label_opnd._label_id;
+        }
+
+        IR2_OPND unlink_label_opnd = ra_alloc_label();
+        la_label(unlink_label_opnd);
+        tb->tu_unlink.stub_offset = unlink_label_opnd._label_id;
+        tb->tu_unlink.rel_num = 2;
+        set_use_tu_jmp(tb);
+
+        /* Fallback body used after unlinking the direct TU branch. */
+        test_jcc_gen_bcc(src_opnd_0, target_label_opnd, temp,
+                is_same_reg, next);
+        tr_generate_exit_tb(next, 0);
+        la_label(target_label_opnd);
+        tr_generate_exit_tb(next, 1);
+        return true;
+    }
+#endif
     if (!option_enable_lbt) {
         /* Keep the whole software flag sequence outside the branch and
          * outside the single-instruction flag elimination/recovery scheme.

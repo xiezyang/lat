@@ -821,6 +821,35 @@ bool translate_sar(IR1_INST *pir1)
     return true;
 }
 
+/* Narrow rotates belong to LBT, unlike rotri.w/d.  Mask the source
+ * before rotating: guest byte/word registers may have nonzero upper bits.
+ */
+static void latx_rotri_narrow(IR2_OPND result, IR2_OPND source,
+                              int width, int count)
+{
+    count &= width - 1;
+    if (option_enable_lbt) {
+        if (width == 8) {
+            la_rotri_b(result, source, count);
+        } else {
+            la_rotri_h(result, source, count);
+        }
+        return;
+    }
+
+    IR2_OPND tmp = ra_alloc_itemp();
+    la_bstrpick_d(tmp, source, width - 1, 0);
+    if (count) {
+        la_srli_d(result, tmp, count);
+        la_slli_d(tmp, tmp, width - count);
+        la_or(result, result, tmp);
+        la_bstrpick_d(result, result, width - 1, 0);
+    } else {
+        la_or(result, tmp, zero_ir2_opnd);
+    }
+    ra_free_temp(tmp);
+}
+
 bool translate_rol(IR1_INST *pir1)
 {
     IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
@@ -856,9 +885,9 @@ bool translate_rol(IR1_INST *pir1)
             IR2_OPND tmp_dest = ra_alloc_itemp();
 
             if (dest_size == 8) {
-                la_rotri_b(tmp_dest, dest, dest_size - shift);
+                latx_rotri_narrow(tmp_dest, dest, 8, dest_size - shift);
             } else if (dest_size == 16) {
-                la_rotri_h(tmp_dest, dest, dest_size - shift);
+                latx_rotri_narrow(tmp_dest, dest, 16, dest_size - shift);
             } else if (dest_size == 32) {
                 la_rotri_w(tmp_dest, dest, dest_size - shift);
             } else if (dest_size == 64) {
@@ -1020,9 +1049,9 @@ bool translate_ror(IR1_INST *pir1)
             IR2_OPND tmp_dest = ra_alloc_itemp();
 
             if (dest_size == 8) {
-                la_rotri_b(tmp_dest, dest, shift);
+                latx_rotri_narrow(tmp_dest, dest, 8, shift);
             } else if (dest_size == 16) {
-                la_rotri_h(tmp_dest, dest, shift);
+                latx_rotri_narrow(tmp_dest, dest, 16, shift);
             } else if (dest_size == 32) {
                 la_rotri_w(tmp_dest, dest, shift);
             } else if (dest_size == 64) {

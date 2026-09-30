@@ -19,6 +19,7 @@
 #include "imm-cache.h"
 #include "latx-smc.h"
 #include "jrra.h"
+#include "jrra-translator.h"
 #include "latx-native-asm.h"
 
 extern void *helper_tb_lookup_ptr(CPUArchState *);
@@ -2199,6 +2200,1010 @@ static inline void tr_init_for_each_ir1_in_tb(IR1_INST *pir1, int nr, int index)
 
 bool need_trace;
 
+#ifdef CONFIG_LATX_TU
+static bool xfyun_hot_native_loop_shape(TranslationBlock *tb, bool copy);
+static void xfyun_hot_native_zero_result_flags(void);
+
+void latx_xfyun_fir_add(int32_t *coeff, int32_t *buf, uint32_t start,
+                        uint32_t count)
+{
+    int32_t *out = buf + start;
+
+    for (uint32_t i = 0; i < count; i++) {
+        uint32_t acc = 0;
+        int32_t *in = out + i - 40;
+
+        for (uint32_t j = 0; j < 40; j++) {
+            int64_t product = (int64_t)(int16_t)in[j] * coeff[j];
+            acc += (uint32_t)product;
+        }
+        int16_t inc = (int16_t)((int32_t)acc >> 15);
+        out[i] = (int32_t)((uint32_t)out[i] + (uint32_t)(int32_t)inc);
+    }
+}
+
+static int32_t xfyun_hot_inv_interp(const int16_t *table, uint16_t value)
+{
+    uint32_t index = value & 0x7f;
+    uint32_t offset = value >> 7;
+
+    if (value & 0x8000) {
+        index = 0x80 - index;
+        offset = 0x1ff - offset;
+    }
+    return ((int32_t)table[offset] * (int32_t)(0x80 - index) +
+            (int32_t)table[offset + 1] * (int32_t)index) >> 7;
+}
+
+static uint64_t xfyun_hot_inv_scale_low(uint64_t value, int16_t input)
+{
+    uint64_t product = value * (uint64_t)(int64_t)input;
+
+    return (uint64_t)((int64_t)(product + 0x2000) >> 14);
+}
+
+static uint64_t xfyun_hot_inv_scale_high(uint64_t value, int16_t input)
+{
+    int64_t signed_value = (int64_t)value;
+    int64_t high = signed_value >> 14;
+    uint32_t low = (uint32_t)value & 0x3fff;
+    int32_t low_product = (int32_t)((uint32_t)((int32_t)input *
+                                   (int32_t)low));
+    int64_t low_shift = (int64_t)low_product >> 14;
+    uint64_t high_product = (uint64_t)high * (uint64_t)(int64_t)input;
+
+    return (uint64_t)(low_shift + (int64_t)high_product);
+}
+
+void latx_xfyun_inv_transform(const int16_t *input, int32_t *output,
+                              const int16_t *table)
+{
+    int16_t neg[40];
+    uint64_t a[41] = {0};
+    uint64_t b[41] = {0};
+
+    for (int i = 0; i < 40; i++) {
+        neg[i] = (int16_t)(-(uint32_t)xfyun_hot_inv_interp(
+            table, (uint16_t)input[i]));
+    }
+    a[0] = b[0] = a[2] = b[2] = UINT64_C(0x400000000);
+    a[1] = (uint64_t)((int64_t)neg[0] << 20);
+    b[1] = (uint64_t)((int64_t)neg[1] << 20);
+
+    for (int k = 1; k <= 19; k++) {
+        int16_t ka = neg[2 * k];
+        int16_t kb = neg[2 * k + 1];
+
+        for (int i = 2 * k + 2; i >= 2; i--) {
+            uint64_t da = k <= 9 ? xfyun_hot_inv_scale_low(a[i - 1], ka) :
+                                   xfyun_hot_inv_scale_high(a[i - 1], ka);
+            uint64_t db = k <= 9 ? xfyun_hot_inv_scale_low(b[i - 1], kb) :
+                                   xfyun_hot_inv_scale_high(b[i - 1], kb);
+
+            a[i] += a[i - 2] + da;
+            b[i] += b[i - 2] + db;
+        }
+        a[1] += k <= 9 ? xfyun_hot_inv_scale_low(a[0], ka) :
+                         xfyun_hot_inv_scale_high(a[0], ka);
+        b[1] += k <= 9 ? xfyun_hot_inv_scale_low(b[0], kb) :
+                         xfyun_hot_inv_scale_high(b[0], kb);
+    }
+
+    for (int i = 20; i >= 1; i--) {
+        a[i] += a[i - 1];
+        b[i] -= b[i - 1];
+    }
+    for (int i = 0; i < 20; i++) {
+        uint64_t first = b[i + 1] - a[i + 1] + 0x80000;
+        uint64_t second = (0 - b[20 - i]) - a[20 - i] + 0x80000;
+
+        output[i] = (int32_t)((int64_t)first >> 20);
+        output[20 + i] = (int32_t)((int64_t)second >> 20);
+    }
+}
+
+static uint64_t xfyun_hot_bytes_hash(const uint8_t *bytes, size_t size)
+{
+    uint64_t hash = UINT64_C(0xcbf29ce484222325);
+
+    for (size_t i = 0; i < size; i++) {
+        hash ^= bytes[i];
+        hash *= UINT64_C(0x100000001b3);
+    }
+    return hash;
+}
+
+static IR1_INST *xfyun_hot_find_ret_insn(TranslationBlock *tb,
+                                         target_ulong begin,
+                                         target_ulong end)
+{
+    for (int i = 0; i < 2; i++) {
+        TranslationBlock *candidate = tb->s_data->next_tb[i];
+
+        if (candidate && candidate->pc >= begin && candidate->pc < end &&
+            candidate->icount == 1 &&
+            candidate->s_data->last_ir1_type == IR1_TYPE_RET) {
+            IR1_INST *insn = tb_ir1_inst(candidate, 0);
+
+            if (ir1_opcode(insn) == dt_X86_INS_RET) {
+                return insn;
+            }
+        }
+    }
+    return NULL;
+}
+
+static bool xfyun_hot_native_fir_entry(TranslationBlock *tb,
+                                       target_ulong begin,
+                                       target_ulong end)
+{
+    const target_ulong size = end - begin;
+    IR1_INST *ret_insn;
+    IR1_INST synthetic_ret;
+    IR2_OPND coeff, input, start, count, function, return_addr, rsp;
+    uint64_t hash;
+
+    if (tb->pc != begin || size != XFYUN_HOT_FIR_TU_ELF_END -
+                                    XFYUN_HOT_FIR_TU_ELF_BEGIN) {
+        return false;
+    }
+    hash = xfyun_hot_bytes_hash((const uint8_t *)(uintptr_t)begin, size);
+    if (hash != UINT64_C(0x3bf740c3292da02e)) {
+        if (getenv("LATX_TU_SCAN")) {
+            fprintf(stderr, "TU_SCAN_XFYUN_FIR_REJECT hash=0x%016" PRIx64
+                    " pc=0x" TARGET_FMT_lx "\n", hash, tb->pc);
+        }
+        return false;
+    }
+    ret_insn = xfyun_hot_find_ret_insn(tb, begin, end);
+    if (!ret_insn) {
+        uint8_t ret_byte = 0xc3;
+        char info[IR1_INST_SIZE] = {0};
+
+        ir1_disasm(&synthetic_ret, &ret_byte, end - 1, 0, info);
+        if (ir1_opcode(&synthetic_ret) != dt_X86_INS_RET) {
+            return false;
+        }
+        ret_insn = &synthetic_ret;
+    }
+
+    for (int i = 0; i < tb->icount; i++) {
+        IR1_INST *insn = tb_ir1_inst(tb, i);
+        tcg_ctx->gen_insn_data[i][0] = ir1_addr(insn);
+        tcg_ctx->gen_insn_data[i][1] = 0;
+        tr_init_for_each_ir1_in_tb(insn, tb->icount, i);
+    }
+
+    tr_save_gpr_to_env(0xff);
+    tr_save_x64_8_registers_to_env(0xff, 0);
+
+    coeff = ra_alloc_gpr(edi_index);
+    input = ra_alloc_gpr(esi_index);
+    start = ra_alloc_gpr(edx_index);
+    count = ra_alloc_gpr(ecx_index);
+    la_mov64(a0_ir2_opnd, coeff);
+    la_mov64(a1_ir2_opnd, input);
+    la_bstrpick_d(a2_ir2_opnd, start, 31, 0);
+    la_bstrpick_d(a3_ir2_opnd, count, 31, 0);
+
+    function = ra_alloc_itemp();
+    aot_load_host_addr(function, (ADDR)latx_xfyun_fir_add,
+                       LOAD_HELPER_XFYUN_FIR_ADD, 0);
+    la_jirl(ra_ir2_opnd, function, 0);
+    ra_free_temp(function);
+
+    tr_load_x64_8_registers_from_env(0xff, 0);
+    tr_load_gpr_from_env(0xff);
+    xfyun_hot_native_zero_result_flags();
+
+    rsp = ra_alloc_gpr(esp_index);
+    return_addr = ra_alloc_dbt_arg2();
+    la_ld_d(return_addr, rsp, 0);
+    la_dbar(0);
+    la_addi_d(rsp, rsp, 8);
+    if (!jrra_translate_ret(tb, return_addr, ret_insn)) {
+        tr_generate_exit_tb(ret_insn, 0);
+    }
+    ra_free_all();
+    if (getenv("LATX_TU_SCAN")) {
+        fprintf(stderr, "TU_SCAN_XFYUN_NATIVE_FIR pc=0x" TARGET_FMT_lx
+                "\n", tb->pc);
+    }
+    return true;
+}
+
+static bool xfyun_hot_native_inv_entry(TranslationBlock *tb,
+                                       target_ulong begin,
+                                       target_ulong end)
+{
+    const target_ulong size = end - begin;
+    IR1_INST synthetic_ret;
+    IR2_OPND input, output, table_slot, function, return_addr, rsp;
+    uint64_t hash;
+
+    if (tb->pc != begin || size != XFYUN_HOT_INV_TU_ELF_END -
+                                    XFYUN_HOT_INV_TU_ELF_BEGIN) {
+        return false;
+    }
+    hash = xfyun_hot_bytes_hash((const uint8_t *)(uintptr_t)begin, size);
+    if (hash != UINT64_C(0x3fa6d98b97e5e08e)) {
+        if (getenv("LATX_TU_SCAN")) {
+            fprintf(stderr, "TU_SCAN_XFYUN_INV_REJECT hash=0x%016" PRIx64
+                    " pc=0x" TARGET_FMT_lx "\n", hash, tb->pc);
+        }
+        return false;
+    }
+
+    for (int i = 0; i < tb->icount; i++) {
+        IR1_INST *insn = tb_ir1_inst(tb, i);
+        tcg_ctx->gen_insn_data[i][0] = ir1_addr(insn);
+        tcg_ctx->gen_insn_data[i][1] = 0;
+        tr_init_for_each_ir1_in_tb(insn, tb->icount, i);
+    }
+
+    tr_save_gpr_to_env(0xff);
+    tr_save_x64_8_registers_to_env(0xff, 0);
+
+    input = ra_alloc_gpr(edi_index);
+    output = ra_alloc_gpr(esi_index);
+    la_mov64(a0_ir2_opnd, input);
+    la_mov64(a1_ir2_opnd, output);
+    table_slot = ra_alloc_itemp();
+    li_d(table_slot, begin + (0x607fd8 - XFYUN_HOT_INV_TU_ELF_BEGIN));
+    la_ld_d(a2_ir2_opnd, table_slot, 0);
+    ra_free_temp(table_slot);
+
+    function = ra_alloc_itemp();
+    aot_load_host_addr(function, (ADDR)latx_xfyun_inv_transform,
+                       LOAD_HELPER_XFYUN_INV_TRANSFORM, 0);
+    la_jirl(ra_ir2_opnd, function, 0);
+    ra_free_temp(function);
+
+    tr_load_x64_8_registers_from_env(0xff, 0);
+    tr_load_gpr_from_env(0xff);
+    xfyun_hot_native_zero_result_flags();
+
+    rsp = ra_alloc_gpr(esp_index);
+    return_addr = ra_alloc_dbt_arg2();
+    la_ld_d(return_addr, rsp, 0);
+    la_dbar(0);
+    la_addi_d(rsp, rsp, 8);
+
+    {
+        uint8_t ret_byte = 0xc3;
+        char info[IR1_INST_SIZE] = {0};
+
+        ir1_disasm(&synthetic_ret, &ret_byte, end - 1, 0, info);
+        if (ir1_opcode(&synthetic_ret) != dt_X86_INS_RET ||
+            !jrra_translate_ret(tb, return_addr, &synthetic_ret)) {
+            tr_generate_exit_tb(&synthetic_ret, 0);
+        }
+    }
+    ra_free_all();
+    if (getenv("LATX_TU_SCAN")) {
+        fprintf(stderr, "TU_SCAN_XFYUN_NATIVE_INV pc=0x" TARGET_FMT_lx
+                "\n", tb->pc);
+    }
+    return true;
+}
+
+/* These accesses dominate the two measured libmsc.so TUs.  Keep each x86
+ * instruction marker in the caller so a fault still restores its own PC. */
+static bool xfyun_hot_native_byte_access(IR1_INST *ir1)
+{
+    TranslationBlock *tb = lsenv->tr_data->curr_tb;
+    target_ulong begin, end;
+    IR1_OPND *dst, *src;
+    IR2_OPND rdi, rsi, rax, rcx;
+
+    if (!tb || !CODEIS64 || option_enable_lbt || !latx_tu_enabled() ||
+        option_mem_test || tb_use_smc_opt(tb) || option_imm_reg ||
+        (tb->flags & HF_TF_MASK) || latx_trace_mem || latx_break_insn ||
+        !xfyun_hot_tu_bounds(tb->pc, &begin, &end) ||
+        ir1_opnd_num(ir1) != 2 || ir1_is_prefix_lock(ir1)) {
+        return false;
+    }
+
+    dst = ir1_get_opnd(ir1, 0);
+    src = ir1_get_opnd(ir1, 1);
+    rdi = ra_alloc_gpr(edi_index);
+
+    if (end - begin == XFYUN_HOT_TU_ELF_END - XFYUN_HOT_TU_ELF_BEGIN &&
+        tb->pc == begin + 8 && ir1_addr(ir1) == begin + 8 &&
+        ir1_opcode(ir1) == dt_X86_INS_MOV &&
+        ir1_opnd_is_mem(dst) && ir1_opnd_size(dst) == 8 &&
+        dst->mem.base == dt_X86_REG_RDI &&
+        dst->mem.index == dt_X86_REG_INVALID && !dst->mem.disp &&
+        !ir1_opnd_has_seg(dst) && ir1_opnd_is_imm(src) &&
+        ir1_opnd_uimm(src) == 0) {
+        la_st_b(zero_ir2_opnd, rdi, 0);
+    } else if (end - begin ==
+               XFYUN_HOT_COPY_TU_ELF_END - XFYUN_HOT_COPY_TU_ELF_BEGIN &&
+               tb->pc == begin + 0x10 && ir1_addr(ir1) == begin + 0x10 &&
+               ir1_opcode(ir1) == dt_X86_INS_MOVZX &&
+               ir1_opnd_is_gpr(dst) && dst->reg == dt_X86_REG_ECX &&
+               ir1_opnd_size(dst) == 32 && ir1_opnd_is_mem(src) &&
+               ir1_opnd_size(src) == 8 &&
+               src->mem.base == dt_X86_REG_RSI &&
+               src->mem.index == dt_X86_REG_RAX &&
+               src->mem.scale == 1 && !src->mem.disp &&
+               !ir1_opnd_has_seg(src)) {
+        rsi = ra_alloc_gpr(esi_index);
+        rax = ra_alloc_gpr(eax_index);
+        rcx = ra_alloc_gpr(ecx_index);
+        la_ldx_bu(rcx, rsi, rax);
+    } else if (end - begin ==
+               XFYUN_HOT_COPY_TU_ELF_END - XFYUN_HOT_COPY_TU_ELF_BEGIN &&
+               tb->pc == begin + 0x10 && ir1_addr(ir1) == begin + 0x14 &&
+               ir1_opcode(ir1) == dt_X86_INS_MOV &&
+               ir1_opnd_is_mem(dst) && ir1_opnd_size(dst) == 8 &&
+               dst->mem.base == dt_X86_REG_RDI &&
+               dst->mem.index == dt_X86_REG_RAX &&
+               dst->mem.scale == 1 && !dst->mem.disp &&
+               !ir1_opnd_has_seg(dst) && ir1_opnd_is_gpr(src) &&
+               src->reg == dt_X86_REG_CL && ir1_opnd_size(src) == 8) {
+        rax = ra_alloc_gpr(eax_index);
+        rcx = ra_alloc_gpr(ecx_index);
+        la_stx_b(rcx, rdi, rax);
+    } else {
+        return false;
+    }
+
+    /* The copy store consumes this load's result.  Its full barrier orders
+     * that store before the next load, including overlapping copies.  The
+     * complete copy loop emits this barrier after advancing its index. */
+    if (!(in_pre_translate &&
+          ((ir1_addr(ir1) == begin + 0x10 &&
+            end - begin == XFYUN_HOT_COPY_TU_ELF_END -
+                           XFYUN_HOT_COPY_TU_ELF_BEGIN &&
+            xfyun_hot_native_loop_shape(tb, true)) ||
+           (ir1_addr(ir1) == begin + 8 &&
+            end - begin == XFYUN_HOT_TU_ELF_END -
+                           XFYUN_HOT_TU_ELF_BEGIN &&
+            xfyun_hot_native_loop_shape(tb, false))))) {
+        la_dbar(0);
+    }
+    ra_free_all();
+    if (getenv("LATX_TU_SCAN")) {
+        fprintf(stderr, "TU_SCAN_XFYUN_NATIVE_BYTE pc=0x" TARGET_FMT_lx
+                " ir1=0x" TARGET_FMT_lx "\n", tb->pc, ir1_addr(ir1));
+    }
+    return true;
+}
+
+static bool xfyun_hot_native_loop_shape(TranslationBlock *tb, bool copy)
+{
+    static const uint8_t clear_bytes[] = {
+        0xc6, 0x07, 0x00, 0x48, 0x83, 0xc7, 0x01,
+        0x48, 0x83, 0xee, 0x01, 0x75, 0xf3
+    };
+    static const uint8_t copy_bytes[] = {
+        0x0f, 0xb6, 0x0c, 0x06, 0x88, 0x0c, 0x07,
+        0x48, 0x83, 0xc0, 0x01, 0x48, 0x39, 0xd0, 0x75, 0xf0
+    };
+    static const int clear_offsets[] = { 8, 11, 15, 19 };
+    static const IR1_OPCODE clear_opcodes[] = {
+        dt_X86_INS_MOV, dt_X86_INS_ADD, dt_X86_INS_SUB, dt_X86_INS_JNE
+    };
+    static const int copy_offsets[] = { 0x10, 0x14, 0x17, 0x1b, 0x1e };
+    static const IR1_OPCODE copy_opcodes[] = {
+        dt_X86_INS_MOVZX, dt_X86_INS_MOV, dt_X86_INS_ADD,
+        dt_X86_INS_CMP, dt_X86_INS_JNE
+    };
+    const int *offsets = copy ? copy_offsets : clear_offsets;
+    const IR1_OPCODE *opcodes = copy ? copy_opcodes : clear_opcodes;
+    int count = copy ? ARRAY_SIZE(copy_offsets) : ARRAY_SIZE(clear_offsets);
+    target_ulong begin, end;
+    IR1_INST *add, *compare, *jcc;
+    IR1_OPND *dst, *src;
+
+    if (!tb || !CODEIS64 || option_enable_lbt || !latx_tu_enabled() ||
+        option_mem_test || option_imm_reg || option_monitor_shared_mem ||
+        tb_use_smc_opt(tb) || (tb->flags & HF_TF_MASK) ||
+        latx_trace_mem || latx_break_insn ||
+        !xfyun_hot_tu_bounds(tb->pc, &begin, &end) ||
+        tb->pc != begin + (copy ? 0x10 : 8) || tb->icount != count ||
+        memcmp((const void *)(uintptr_t)tb->pc,
+               copy ? copy_bytes : clear_bytes,
+               copy ? sizeof(copy_bytes) : sizeof(clear_bytes)) != 0 ||
+        end - begin != (copy ? XFYUN_HOT_COPY_TU_ELF_END -
+                             XFYUN_HOT_COPY_TU_ELF_BEGIN :
+                             XFYUN_HOT_TU_ELF_END - XFYUN_HOT_TU_ELF_BEGIN) ||
+        !tb->s_data->next_tb[TU_TB_INDEX_NEXT] ||
+        tb->s_data->next_tb[TU_TB_INDEX_NEXT]->pc !=
+            begin + (copy ? 0x20 : 0x15) ||
+        !tb->s_data->next_tb[TU_TB_INDEX_TARGET] ||
+        tb->s_data->next_tb[TU_TB_INDEX_TARGET]->pc != tb->pc) {
+        return false;
+    }
+    for (int i = 0; i < count; i++) {
+        IR1_INST *insn = tb_ir1_inst(tb, i);
+        if (ir1_addr(insn) != begin + offsets[i] ||
+            ir1_opcode(insn) != opcodes[i] || ir1_is_prefix_lock(insn)) {
+            return false;
+        }
+#ifdef CONFIG_LATX_INSTS_PATTERN
+        if (insn->instptn.opc != INSTPTN_OPC_NONE &&
+            !(i == count - 1 && insn->instptn.opc == INSTPTN_OPC_NOP) &&
+            !(i == count - 2 && insn->instptn.opc ==
+              (copy ? INSTPTN_OPC_CMP_JCC : INSTPTN_OPC_SUB_JCC))) {
+            return false;
+        }
+#endif
+    }
+    add = tb_ir1_inst(tb, copy ? 2 : 1);
+    compare = tb_ir1_inst(tb, copy ? 3 : 2);
+    jcc = tb_ir1_inst(tb, count - 1);
+    dst = ir1_get_opnd(add, 0);
+    src = ir1_get_opnd(add, 1);
+    if (ir1_opnd_num(add) != 2 || !ir1_opnd_is_gpr(dst) ||
+        dst->reg != (copy ? dt_X86_REG_RAX : dt_X86_REG_RDI) ||
+        ir1_opnd_size(dst) != 64 || !ir1_opnd_is_imm(src) ||
+        ir1_opnd_simm(src) != 1 ||
+        ir1_target_addr(jcc) != tb->pc ||
+        ir1_opnd_num(compare) != 2) {
+        return false;
+    }
+    dst = ir1_get_opnd(compare, 0);
+    src = ir1_get_opnd(compare, 1);
+    return ir1_opnd_is_gpr(dst) && ir1_opnd_size(dst) == 64 &&
+        dst->reg == (copy ? dt_X86_REG_RAX : dt_X86_REG_RSI) &&
+        (copy ? ir1_opnd_is_gpr(src) && src->reg == dt_X86_REG_RDX &&
+                ir1_opnd_size(src) == 64 :
+                ir1_opnd_is_imm(src) && ir1_opnd_simm(src) == 1) &&
+        (copy || ir1_opcode(compare) == dt_X86_INS_SUB);
+}
+
+static bool xfyun_hot_native_function_shape(TranslationBlock *entry,
+                                            bool copy)
+{
+    static const uint8_t clear_function[] = {
+        0x48, 0x85, 0xf6, 0x74, 0x10, 0x0f, 0x1f, 0x00,
+        0xc6, 0x07, 0x00, 0x48, 0x83, 0xc7, 0x01,
+        0x48, 0x83, 0xee, 0x01, 0x75, 0xf3, 0xf3, 0xc3
+    };
+    static const uint8_t copy_function[] = {
+        0x48, 0x85, 0xd2, 0x74, 0x1b, 0x31, 0xc0,
+        0x66, 0x0f, 0x1f, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x0f, 0xb6, 0x0c, 0x06, 0x88, 0x0c, 0x07,
+        0x48, 0x83, 0xc0, 0x01, 0x48, 0x39, 0xd0, 0x75, 0xf0,
+        0xf3, 0xc3
+    };
+    target_ulong begin, end;
+    TranslationBlock *middle, *loop, *ret;
+    IR1_INST *test, *jcc;
+    IR1_OPND *dst, *src;
+
+    if (!in_pre_translate || !entry || !CODEIS64 || option_enable_lbt ||
+        !latx_tu_enabled() || option_mem_test || option_imm_reg ||
+        option_monitor_shared_mem || tb_use_smc_opt(entry) ||
+        (entry->flags & HF_TF_MASK) || latx_trace_mem || latx_break_insn ||
+        !xfyun_hot_tu_bounds(entry->pc, &begin, &end) ||
+        entry->pc != begin || entry->icount != 2 ||
+        end - begin != (copy ? sizeof(copy_function) :
+                              sizeof(clear_function)) ||
+        memcmp((const void *)(uintptr_t)begin,
+               copy ? copy_function : clear_function, end - begin)) {
+        return false;
+    }
+    middle = entry->s_data->next_tb[TU_TB_INDEX_NEXT];
+    ret = entry->s_data->next_tb[TU_TB_INDEX_TARGET];
+    loop = middle ? middle->s_data->next_tb[TU_TB_INDEX_NEXT] : NULL;
+    if (!middle || !loop || !ret ||
+        middle->pc != begin + 5 ||
+        loop->pc != begin + (copy ? 0x10 : 8) ||
+        ret->pc != begin + (copy ? 0x20 : 0x15) ||
+        loop->s_data->next_tb[TU_TB_INDEX_NEXT] != ret ||
+        loop->s_data->next_tb[TU_TB_INDEX_TARGET] != loop ||
+        ret->s_data->last_ir1_type != IR1_TYPE_RET ||
+        ret->icount != 1 ||
+        ir1_opcode(tb_ir1_inst(ret, 0)) != dt_X86_INS_RET ||
+        ir1_get_opnd_size(tb_ir1_inst(ret, 0)) != 64 ||
+        !xfyun_hot_native_loop_shape(loop, copy)) {
+        return false;
+    }
+    test = tb_ir1_inst(entry, 0);
+    jcc = tb_ir1_inst(entry, 1);
+    if (ir1_addr(test) != begin || ir1_opcode(test) != dt_X86_INS_TEST ||
+        ir1_opnd_num(test) != 2 || ir1_is_prefix_lock(test) ||
+        ir1_addr(jcc) != begin + 3 || ir1_opcode(jcc) != dt_X86_INS_JE ||
+        ir1_target_addr(jcc) != ret->pc) {
+        return false;
+    }
+    dst = ir1_get_opnd(test, 0);
+    src = ir1_get_opnd(test, 1);
+    return ir1_opnd_is_gpr(dst) && ir1_opnd_is_gpr(src) &&
+        dst->reg == (copy ? dt_X86_REG_RDX : dt_X86_REG_RSI) &&
+        src->reg == dst->reg && ir1_opnd_size(dst) == 64 &&
+        ir1_opnd_size(src) == 64;
+}
+
+static bool xfyun_hot_native_entry(TranslationBlock *tb)
+{
+    target_ulong begin, end;
+    bool copy;
+    IR1_INST *test, *jcc;
+    IR2_OPND length, target, next, unlink, fallback_ret, skip_flags;
+
+    if (!xfyun_hot_tu_bounds(tb->pc, &begin, &end) || tb->pc != begin) {
+        return false;
+    }
+    if (end - begin == XFYUN_HOT_FIR_TU_ELF_END -
+                       XFYUN_HOT_FIR_TU_ELF_BEGIN) {
+        return xfyun_hot_native_fir_entry(tb, begin, end);
+    }
+    if (end - begin == XFYUN_HOT_INV_TU_ELF_END -
+                       XFYUN_HOT_INV_TU_ELF_BEGIN) {
+        return xfyun_hot_native_inv_entry(tb, begin, end);
+    }
+    copy = end - begin == XFYUN_HOT_COPY_TU_ELF_END -
+                           XFYUN_HOT_COPY_TU_ELF_BEGIN;
+    if (!xfyun_hot_native_function_shape(tb, copy)) {
+        return false;
+    }
+
+    test = tb_ir1_inst(tb, 0);
+    jcc = tb_ir1_inst(tb, 1);
+    length = ra_alloc_gpr(copy ? edx_index : esi_index);
+    target = ra_alloc_label();
+    fallback_ret = ra_alloc_label();
+    skip_flags = ra_alloc_label();
+    for (int i = 0; i < 2; i++) {
+        IR1_INST *insn = tb_ir1_inst(tb, i);
+        tcg_ctx->gen_insn_data[i][0] = ir1_addr(insn);
+        tcg_ctx->gen_insn_data[i][1] = 0;
+        tr_init_for_each_ir1_in_tb(insn, 2, i);
+        if (i == 0) {
+            /* Only the zero-length path returns with TEST flags. */
+            la_bne(length, zero_ir2_opnd, skip_flags);
+            generate_eflag_calculation(length, length, length, test, true);
+            la_label(skip_flags);
+        } else {
+            la_label(target);
+            tb->tu_jmp[TU_TB_INDEX_TARGET] = target._label_id;
+            la_beq(length, zero_ir2_opnd, fallback_ret);
+            tu_jcc_nop_gen(tb);
+        }
+    }
+    next = ra_alloc_label();
+    la_label(next);
+    la_b(imm_zero_ir2_opnd);
+    la_nop();
+    tb->tu_jmp[TU_TB_INDEX_NEXT] = next._label_id;
+
+    unlink = ra_alloc_label();
+    la_label(unlink);
+    tb->tu_unlink.stub_offset = unlink._label_id;
+    tb->tu_unlink.rel_num = 2;
+    set_use_tu_jmp(tb);
+    /* An unlinked nonzero successor can expose TEST flags to another TB. */
+    generate_eflag_calculation(length, length, length, test, true);
+    la_beq(length, zero_ir2_opnd, fallback_ret);
+    tr_generate_exit_tb(jcc, 0);
+    la_label(fallback_ret);
+    tr_generate_exit_tb(jcc, 1);
+    ra_free_all();
+    if (getenv("LATX_TU_SCAN")) {
+        fprintf(stderr, "TU_SCAN_XFYUN_NATIVE_ENTRY pc=0x" TARGET_FMT_lx
+                "\n", tb->pc);
+    }
+    return true;
+}
+
+static bool xfyun_hot_native_middle_or_ret(TranslationBlock *tb)
+{
+    static const uint8_t clear_function[] = {
+        0x48, 0x85, 0xf6, 0x74, 0x10, 0x0f, 0x1f, 0x00,
+        0xc6, 0x07, 0x00, 0x48, 0x83, 0xc7, 0x01,
+        0x48, 0x83, 0xee, 0x01, 0x75, 0xf3, 0xf3, 0xc3
+    };
+    static const uint8_t copy_function[] = {
+        0x48, 0x85, 0xd2, 0x74, 0x1b, 0x31, 0xc0,
+        0x66, 0x0f, 0x1f, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x0f, 0xb6, 0x0c, 0x06, 0x88, 0x0c, 0x07,
+        0x48, 0x83, 0xc0, 0x01, 0x48, 0x39, 0xd0, 0x75, 0xf0,
+        0xf3, 0xc3
+    };
+    target_ulong begin, end;
+    bool copy, ret;
+    int expected_count;
+
+    if (!in_pre_translate || !tb || !CODEIS64 || option_enable_lbt ||
+        !latx_tu_enabled() || option_mem_test || option_imm_reg ||
+        option_monitor_shared_mem || tb_use_smc_opt(tb) ||
+        (tb->flags & HF_TF_MASK) || latx_trace_mem || latx_break_insn ||
+        !xfyun_hot_tu_bounds(tb->pc, &begin, &end)) {
+        return false;
+    }
+    copy = end - begin == XFYUN_HOT_COPY_TU_ELF_END -
+                           XFYUN_HOT_COPY_TU_ELF_BEGIN;
+    ret = tb->pc == begin + (copy ? 0x20 : 0x15);
+    if (!ret && tb->pc != begin + 5) {
+        return false;
+    }
+    expected_count = ret ? 1 : copy ? 2 : 1;
+    if (tb->icount != expected_count ||
+        end - begin != (copy ? sizeof(copy_function) :
+                              sizeof(clear_function)) ||
+        memcmp((const void *)(uintptr_t)begin,
+               copy ? copy_function : clear_function, end - begin) ||
+        (ret && (tb->s_data->last_ir1_type != IR1_TYPE_RET ||
+                 ir1_opcode(tb_ir1_inst(tb, 0)) != dt_X86_INS_RET ||
+                 ir1_get_opnd_size(tb_ir1_inst(tb, 0)) != 64)) ||
+        (!ret && (tb->s_data->last_ir1_type != IR1_TYPE_NORMAL ||
+                  !tb->s_data->next_tb[TU_TB_INDEX_NEXT] ||
+                  tb->s_data->next_tb[TU_TB_INDEX_NEXT]->pc !=
+                  begin + (copy ? 0x10 : 8) ||
+                  ir1_opcode(tb_ir1_inst(tb, 0)) !=
+                  (copy ? dt_X86_INS_XOR : dt_X86_INS_NOP) ||
+                  (copy && ir1_opcode(tb_ir1_inst(tb, 1)) !=
+                   dt_X86_INS_NOP)))) {
+        return false;
+    }
+
+    for (int i = 0; i < tb->icount; i++) {
+        IR1_INST *insn = tb_ir1_inst(tb, i);
+        tcg_ctx->gen_insn_data[i][0] = ir1_addr(insn);
+        tcg_ctx->gen_insn_data[i][1] = 0;
+        tr_init_for_each_ir1_in_tb(insn, tb->icount, i);
+        if (!ret && copy && i == 0) {
+            IR2_OPND rax = ra_alloc_gpr(eax_index);
+            la_mov64(rax, zero_ir2_opnd);
+            /* CMP at the loop exit replaces the XOR flags. */
+        } else if (!ret && !copy) {
+            la_nop();
+        }
+    }
+    if (ret) {
+        IR1_INST *insn = tb_ir1_inst(tb, 0);
+        IR2_OPND rsp = ra_alloc_gpr(esp_index);
+        IR2_OPND return_addr = ra_alloc_dbt_arg2();
+
+        la_ld_d(return_addr, rsp, 0);
+        la_dbar(0);
+        la_addi_d(rsp, rsp, 8);
+        if (!jrra_translate_ret(tb, return_addr, insn)) {
+            tr_generate_exit_tb(insn, 0);
+        }
+    }
+    ra_free_all();
+    if (getenv("LATX_TU_SCAN")) {
+        fprintf(stderr, "TU_SCAN_XFYUN_NATIVE_%s pc=0x" TARGET_FMT_lx
+                "\n", ret ? "RET" : "MIDDLE", tb->pc);
+    }
+    return true;
+}
+
+static void xfyun_hot_native_zero_result_flags(void)
+{
+    IR2_OPND flags = ra_alloc_eflags();
+    IR2_OPND low = ra_alloc_itemp();
+
+    /* CMP of equal operands and SUB 1-1 both leave a zero result.  Keep
+     * non-arithmetic flag bits, including the reserved bit at position 1. */
+    la_andi(low, flags, 0x2a);
+    la_ori(low, low, PF_BIT | ZF_BIT);
+    la_bstrins_d(flags, low, 7, 0);
+    la_bstrins_d(flags, zero_ir2_opnd, OF_BIT_INDEX, OF_BIT_INDEX);
+    ra_free_temp(low);
+}
+
+static bool xfyun_hot_native_loop(TranslationBlock *tb)
+{
+    target_ulong begin, end;
+    bool copy;
+    IR2_OPND rdi, rsi, rax, rdx, loop, one, reset, next, unlink, fallback_ret;
+    IR1_INST *compare, *jcc;
+
+    if (!xfyun_hot_tu_bounds(tb->pc, &begin, &end)) {
+        return false;
+    }
+    copy = end - begin == XFYUN_HOT_COPY_TU_ELF_END -
+                           XFYUN_HOT_COPY_TU_ELF_BEGIN;
+    if (!xfyun_hot_native_loop_shape(tb, copy)) {
+        return false;
+    }
+
+    rdi = ra_alloc_gpr(edi_index);
+    rsi = ra_alloc_gpr(esi_index);
+    rax = ra_alloc_gpr(eax_index);
+    rdx = ra_alloc_gpr(edx_index);
+    loop = ra_alloc_label();
+    reset = ra_alloc_label();
+    fallback_ret = ra_alloc_label();
+
+    if (!copy) {
+        IR2_OPND align = ra_alloc_itemp();
+        IR2_OPND eight = ra_alloc_itemp();
+        IR2_OPND sixty_four = ra_alloc_itemp();
+        IR2_OPND sixteen = ra_alloc_itemp();
+        IR2_OPND page_batch = ra_alloc_itemp();
+        IR2_OPND page_vector = ra_alloc_itemp();
+        IR2_OPND zero_vec = ra_alloc_ftemp();
+        IR2_OPND byte_loop = ra_alloc_label();
+        IR2_OPND vector_loop = ra_alloc_label();
+        IR2_OPND vector_tail = ra_alloc_label();
+        IR2_OPND byte_tail = ra_alloc_label();
+        IR2_OPND done = ra_alloc_label();
+
+        /* Keep one guest-PC marker per original instruction for recovery,
+         * while replacing the byte loop with aligned scalar stores. */
+        for (int i = 0; i < tb->icount; i++) {
+            IR1_INST *insn = tb_ir1_inst(tb, i);
+            tcg_ctx->gen_insn_data[i][0] = ir1_addr(insn);
+            tcg_ctx->gen_insn_data[i][1] = 0;
+            tr_init_for_each_ir1_in_tb(insn, tb->icount, i);
+        }
+        li_d(eight, 8);
+        li_d(sixty_four, 64);
+        li_d(sixteen, 16);
+        li_d(page_batch, 4032);
+        li_d(page_vector, 4080);
+        la_vxor_v(zero_vec, zero_vec, zero_vec);
+
+        /* Peel to a 16-byte boundary.  This also handles short and
+         * unaligned calls without touching bytes outside the requested
+         * range. */
+        la_label(loop);
+        la_beq(rsi, zero_ir2_opnd, done);
+        la_andi(align, rdi, 15);
+        la_beq(align, zero_ir2_opnd, vector_loop);
+        la_label(byte_loop);
+        la_st_b(zero_ir2_opnd, rdi, 0);
+        la_addi_d(rdi, rdi, 1);
+        la_addi_d(rsi, rsi, -1);
+        la_beq(rsi, zero_ir2_opnd, done);
+        la_andi(align, rdi, 15);
+        la_bne(align, zero_ir2_opnd, byte_loop);
+
+        /* Four 128-bit stores per iteration keep the hot clear loop in LSX
+         * while never crossing a guest page.  A 16-byte-aligned address can
+         * still have only 48 bytes left in its page, so check the 64-byte
+         * unroll boundary once.  If the whole remainder fits, later
+         * iterations cannot cross a page either. */
+        la_label(vector_loop);
+        la_bltu(rsi, sixty_four, vector_tail);
+        la_andi(align, rdi, 4095);
+        li_d(page_batch, 4096);
+        la_sub_d(page_batch, page_batch, align);
+        la_bltu(page_batch, rsi, vector_tail);
+        la_vst(zero_vec, rdi, 0);
+        la_vst(zero_vec, rdi, 16);
+        la_vst(zero_vec, rdi, 32);
+        la_vst(zero_vec, rdi, 48);
+        la_addi_d(rdi, rdi, 64);
+        la_addi_d(rsi, rsi, -64);
+        la_label(reset);
+        tb->tu_jmp[TU_TB_INDEX_TARGET] = reset._label_id;
+        la_bne(rsi, zero_ir2_opnd, vector_loop);
+        tu_jcc_nop_gen(tb);
+
+        la_label(vector_tail);
+        la_bltu(rsi, sixteen, byte_tail);
+        la_andi(align, rdi, 4095);
+        la_bgeu(align, page_vector, byte_tail);
+        la_vst(zero_vec, rdi, 0);
+        la_addi_d(rdi, rdi, 16);
+        la_addi_d(rsi, rsi, -16);
+        la_bne(rsi, zero_ir2_opnd, vector_tail);
+
+        la_label(byte_tail);
+        la_beq(rsi, zero_ir2_opnd, done);
+        la_st_b(zero_ir2_opnd, rdi, 0);
+        la_addi_d(rdi, rdi, 1);
+        la_addi_d(rsi, rsi, -1);
+        la_bne(rsi, zero_ir2_opnd, byte_tail);
+        la_label(done);
+        la_dbar(0);
+        ra_free_temp(align);
+        ra_free_temp(eight);
+        ra_free_temp(sixty_four);
+        ra_free_temp(sixteen);
+        ra_free_temp(page_batch);
+        ra_free_temp(page_vector);
+        ra_free_temp(zero_vec);
+    } else {
+        IR2_OPND rcx = ra_alloc_gpr(ecx_index);
+        IR2_OPND vec = ra_alloc_ftemp();
+        IR2_OPND limit = ra_alloc_itemp();
+        IR2_OPND wide_limit = ra_alloc_itemp();
+        IR2_OPND distance = ra_alloc_itemp();
+        IR2_OPND eight = ra_alloc_itemp();
+        IR2_OPND sixteen = ra_alloc_itemp();
+        IR2_OPND page_batch = ra_alloc_itemp();
+        IR2_OPND page_vector = ra_alloc_itemp();
+        IR2_OPND dst_before = ra_alloc_label();
+        IR2_OPND overlap_path = ra_alloc_label();
+        IR2_OPND overlap_loop = ra_alloc_label();
+        IR2_OPND vector_path = ra_alloc_label();
+        IR2_OPND scalar_path = ra_alloc_label();
+        IR2_OPND vector16_loop = ra_alloc_label();
+        IR2_OPND wide_loop = ra_alloc_label();
+        IR2_OPND scalar_loop = ra_alloc_label();
+        IR2_OPND byte_select = ra_alloc_label();
+        IR2_OPND byte_loop = ra_alloc_label();
+        IR2_OPND done = ra_alloc_label();
+        IR2_OPND restore = ra_alloc_label();
+
+        for (int i = 0; i < tb->icount; i++) {
+            IR1_INST *insn = tb_ir1_inst(tb, i);
+            tcg_ctx->gen_insn_data[i][0] = ir1_addr(insn);
+            tcg_ctx->gen_insn_data[i][1] = 0;
+            tr_init_for_each_ir1_in_tb(insn, tb->icount, i);
+        }
+        li_d(eight, 8);
+        li_d(sixteen, 16);
+        li_d(page_batch, 4032);
+        li_d(page_vector, 4080);
+
+        /* Overlap must retain the original forward byte-at-a-time order.
+         * Non-overlapping copies can use wide accesses without a barrier. */
+        la_bltu(rdi, rsi, dst_before);
+        la_sub_d(distance, rdi, rsi);
+        la_bltu(distance, rdx, overlap_path);
+        la_b(scalar_path);
+        la_label(dst_before);
+        la_sub_d(distance, rsi, rdi);
+        la_bltu(distance, rdx, overlap_path);
+        la_b(scalar_path);
+
+        /* Eight-byte aligned copies use scalar doubleword accesses. */
+        la_label(scalar_path);
+        la_bltu(rdx, eight, byte_select);
+        la_andi(distance, rdi, 7);
+        la_bne(distance, zero_ir2_opnd, byte_select);
+        la_andi(distance, rsi, 7);
+        la_bne(distance, zero_ir2_opnd, byte_select);
+        la_andi(distance, rdi, 15);
+        la_bne(distance, zero_ir2_opnd, scalar_loop);
+        la_andi(distance, rsi, 15);
+        la_bne(distance, zero_ir2_opnd, scalar_loop);
+        la_b(vector_path);
+
+        la_label(scalar_loop);
+        la_andi(limit, rdx, -8);
+        la_ld_d(rcx, rsi, 0);
+        la_st_d(rcx, rdi, 0);
+        la_addi_d(rdi, rdi, 8);
+        la_addi_d(rsi, rsi, 8);
+        la_addi_d(rax, rax, 8);
+        la_bne(rax, limit, scalar_loop);
+        /* The scalar path has already copied all complete doublewords.
+         * Its remainder is at most seven bytes; do not fall through into
+         * the 16-byte vector path with a different rounded limit. */
+        la_b(byte_select);
+
+        /* Sixteen-byte aligned copies use four LSX accesses per iteration.
+         * A 64-byte block is used only when both complete ranges remain
+         * in-page; this keeps page checks out of the wide loop. */
+        la_label(vector_path);
+        la_andi(limit, rdx, -16);
+        la_andi(wide_limit, rdx, -64);
+        la_beq(wide_limit, zero_ir2_opnd, vector16_loop);
+        li_d(page_batch, 4096);
+        la_andi(distance, rdi, 4095);
+        la_sub_d(page_batch, page_batch, distance);
+        la_bltu(page_batch, rdx, vector16_loop);
+        li_d(page_batch, 4096);
+        la_andi(distance, rsi, 4095);
+        la_sub_d(page_batch, page_batch, distance);
+        la_bltu(page_batch, rdx, vector16_loop);
+        la_label(wide_loop);
+        la_vld(vec, rsi, 0);
+        la_vst(vec, rdi, 0);
+        la_vld(vec, rsi, 16);
+        la_vst(vec, rdi, 16);
+        la_vld(vec, rsi, 32);
+        la_vst(vec, rdi, 32);
+        la_vld(vec, rsi, 48);
+        la_vst(vec, rdi, 48);
+        la_addi_d(rdi, rdi, 64);
+        la_addi_d(rsi, rsi, 64);
+        la_addi_d(rax, rax, 64);
+        tb->tu_jmp[TU_TB_INDEX_TARGET] = wide_loop._label_id;
+        la_bne(rax, wide_limit, wide_loop);
+        tu_jcc_nop_gen(tb);
+
+        la_label(vector16_loop);
+        la_beq(rax, limit, byte_select);
+        /* The 64-byte loop checked its full block.  The remaining 16-byte
+         * loop may start near a page end, so keep each vector access within
+         * both guest pages before issuing it. */
+        la_andi(distance, rdi, 4095);
+        la_bltu(page_vector, distance, byte_select);
+        la_andi(distance, rsi, 4095);
+        la_bltu(page_vector, distance, byte_select);
+        la_vld(vec, rsi, 0);
+        la_vst(vec, rdi, 0);
+        la_addi_d(rdi, rdi, 16);
+        la_addi_d(rsi, rsi, 16);
+        la_addi_d(rax, rax, 16);
+        la_bne(rax, limit, vector16_loop);
+
+        /* The remaining bytes of a non-overlapping copy need no barrier. */
+        la_label(byte_select);
+        la_beq(rax, rdx, done);
+        la_label(byte_loop);
+        la_ld_bu(rcx, rsi, 0);
+        la_st_b(rcx, rdi, 0);
+        la_addi_d(rdi, rdi, 1);
+        la_addi_d(rsi, rsi, 1);
+        la_addi_d(rax, rax, 1);
+        la_bne(rax, rdx, byte_loop);
+
+        /* For overlapping forward copies, preserve the x86 load/store order:
+         * the next load must not pass the preceding byte store. */
+        la_label(overlap_path);
+        la_beq(rax, rdx, done);
+        la_label(overlap_loop);
+        la_ld_bu(rcx, rsi, 0);
+        la_st_b(rcx, rdi, 0);
+        la_dbar(0);
+        la_addi_d(rdi, rdi, 1);
+        la_addi_d(rsi, rsi, 1);
+        la_addi_d(rax, rax, 1);
+        la_bne(rax, rdx, overlap_loop);
+
+        la_label(done);
+        la_beq(rax, zero_ir2_opnd, restore);
+        la_ld_bu(rcx, rsi, -1);
+        la_label(restore);
+        la_sub_d(rdi, rdi, rax);
+        la_sub_d(rsi, rsi, rax);
+        ra_free_temp(limit);
+        ra_free_temp(wide_limit);
+        ra_free_temp(distance);
+        ra_free_temp(eight);
+        ra_free_temp(sixteen);
+        ra_free_temp(page_batch);
+        ra_free_temp(page_vector);
+        ra_free_temp(vec);
+    }
+    compare = tb_ir1_inst(tb, copy ? 3 : 2);
+    jcc = tb_ir1_inst_last(tb);
+    /* The direct back edge never writes flags; this exit has a zero result. */
+    xfyun_hot_native_zero_result_flags();
+    next = ra_alloc_label();
+    la_label(next);
+    la_b(imm_zero_ir2_opnd);
+    la_nop();
+    tb->tu_jmp[TU_TB_INDEX_NEXT] = next._label_id;
+
+    unlink = ra_alloc_label();
+    la_label(unlink);
+    tb->tu_unlink.stub_offset = unlink._label_id;
+    tb->tu_unlink.rel_num = 2;
+    set_use_tu_jmp(tb);
+    /* Keep the x86 store ordering when an unlinked TU exits mid-loop. */
+    if (!copy) {
+        la_dbar(0);
+    } else {
+        /* The optimized copy loop walks RDI/RSI.  An unlinked exit must
+         * expose the original ABI-visible pointers to the fallback TB. */
+        la_sub_d(rdi, rdi, rax);
+        la_sub_d(rsi, rsi, rax);
+    }
+    if (copy) {
+        generate_eflag_calculation(rax, rax, rdx, compare, true);
+    } else {
+        one = ra_alloc_itemp();
+        li_d(one, 1);
+        generate_eflag_calculation(rsi, one, one, compare, true);
+        ra_free_temp(one);
+    }
+    la_bne(copy ? rax : rsi, copy ? rdx : zero_ir2_opnd, fallback_ret);
+    tr_generate_exit_tb(jcc, 0);
+    la_label(fallback_ret);
+    tr_generate_exit_tb(jcc, 1);
+    ra_free_all();
+    if (getenv("LATX_TU_SCAN")) {
+        fprintf(stderr, "TU_SCAN_XFYUN_NATIVE_LOOP pc=0x" TARGET_FMT_lx
+                " ir1=%d\n", tb->pc, tb->icount);
+    }
+    return true;
+}
+#endif
+
 #ifdef CONFIG_LATX_MONITOR_SHARED_MEM
 static unsigned long tb_checksum(const uint8_t * start, size_t len)
 {
@@ -2287,6 +3292,12 @@ int tr_ir2_generate(struct TranslationBlock *tb)
 #ifdef CONFIG_LATX_MONITOR_SHARED_MEM
     if (option_monitor_shared_mem && tb->checksum) {
         tr_check_x86ins_change(tb);
+    }
+#endif
+#ifdef CONFIG_LATX_TU
+    if (xfyun_hot_native_entry(tb) || xfyun_hot_native_loop(tb) ||
+        xfyun_hot_native_middle_or_ret(tb)) {
+        return 1;
     }
 #endif
 #ifdef CONFIG_LATX_IMM_REG
@@ -2397,7 +3408,12 @@ int tr_ir2_generate(struct TranslationBlock *tb)
             }
         }
 
-        bool translation_success = ir1_translate(pir1);
+        bool translation_success;
+#ifdef CONFIG_LATX_TU
+        translation_success = xfyun_hot_native_byte_access(pir1);
+        if (!translation_success)
+#endif
+            translation_success = ir1_translate(pir1);
         if (!translation_success) {
 #ifdef CONFIG_LATX_TU
             tb->s_data->tu_tb_mode = BAD_TB;
@@ -4151,6 +5167,133 @@ void convert_fpregs_64_to_x80(void)
     for (i = 0; i < 8; i++) {
         FPReg *p = &(env->fpregs[i]);
         p->d = float64_to_floatx80((float64)p->d.low, &s);
+    }
+}
+
+/* Private host-stack frame; preserve temporaries as well as guest mappings. */
+typedef struct LatxFcvtFrame {
+    uint64_t gpr[32];
+    uint64_t fpr[32][4];
+    uint64_t fcsr;
+    uint64_t fcc[8];
+} LatxFcvtFrame;
+
+void latx_fcvt_soft(void *opaque, unsigned int operation,
+                    unsigned int dest, unsigned int src, unsigned int high)
+{
+    LatxFcvtFrame *frame = opaque;
+    CPUX86State *env = (CPUX86State *)lsenv->cpu_state;
+    float_status status = env->fp_status;
+    static const int rounding[] = {
+        float_round_nearest_even, float_round_to_zero,
+        float_round_up, float_round_down,
+    };
+    floatx80 extended;
+    unsigned int flags, exceptions = 0;
+
+    set_float_rounding_mode(rounding[(frame->fcsr >> 8) & 3], &status);
+    set_float_exception_flags(0, &status);
+    if (operation == 0) {
+        extended.low = frame->fpr[src][0];
+        extended.high = frame->fpr[high][0];
+        frame->fpr[dest][0] = floatx80_to_float64(extended, &status);
+    } else {
+        extended = float64_to_floatx80(frame->fpr[src][0], &status);
+        frame->fpr[dest][0] = operation == 1 ? extended.low : extended.high;
+    }
+    flags = get_float_exception_flags(&status);
+    if (flags & float_flag_inexact) { exceptions |= 1; }
+    if (flags & float_flag_underflow) { exceptions |= 2; }
+    if (flags & float_flag_overflow) { exceptions |= 4; }
+    if (flags & float_flag_divbyzero) { exceptions |= 8; }
+    if (flags & float_flag_invalid) { exceptions |= 16; }
+    frame->fcsr = (frame->fcsr & ~(UINT64_C(31) << 24)) |
+                  ((uint64_t)exceptions << 24) |
+                  ((uint64_t)exceptions << 16);
+}
+
+static void latx_emit_fcvt_soft(unsigned int operation, IR2_OPND dest,
+                                IR2_OPND src, IR2_OPND high)
+{
+    const int frame_size = (sizeof(LatxFcvtFrame) + 15) & ~15;
+    IR2_OPND scratch = a0_ir2_opnd;
+
+    la_addi_d(sp_ir2_opnd, sp_ir2_opnd, -frame_size);
+    for (int i = 1; i < 32; i++) {
+        if (i != 3) {
+            la_st_d(ir2_opnd_new(IR2_OPND_GPR, i), sp_ir2_opnd, i * 8);
+        }
+    }
+    for (int i = 0; i < 32; i++) {
+        IR2_OPND reg = ir2_opnd_new(IR2_OPND_FPR, i);
+        if (option_enable_lasx) {
+            la_xvst(reg, sp_ir2_opnd, 256 + i * 32);
+        } else {
+            la_vst(reg, sp_ir2_opnd, 256 + i * 32);
+        }
+    }
+    la_movfcsr2gr(scratch, fcsr_ir2_opnd);
+    la_st_d(scratch, sp_ir2_opnd, offsetof(LatxFcvtFrame, fcsr));
+    for (int i = 0; i < 8; i++) {
+        la_movcf2gr(scratch, ir2_opnd_new(IR2_OPND_CC, i));
+        la_st_d(scratch, sp_ir2_opnd, offsetof(LatxFcvtFrame, fcc) + i * 8);
+    }
+    la_mov64(a0_ir2_opnd, sp_ir2_opnd);
+    li_d(a1_ir2_opnd, operation);
+    li_d(a2_ir2_opnd, ir2_opnd_base_reg_num(&dest));
+    li_d(ir2_opnd_new(IR2_OPND_GPR, 7), ir2_opnd_base_reg_num(&src));
+    li_d(ir2_opnd_new(IR2_OPND_GPR, 8), ir2_opnd_base_reg_num(&high));
+    TranslationBlock *tb __attribute__((unused)) =
+        (TranslationBlock *)lsenv->tr_data->curr_tb;
+    IR2_OPND function = ir2_opnd_new(IR2_OPND_GPR, 12);
+    aot_load_host_addr(function, (ADDR)latx_fcvt_soft, LOAD_HELPER_FCVT_SOFT, 0);
+    la_jirl(ra_ir2_opnd, function, 0);
+    for (int i = 0; i < 8; i++) {
+        la_ld_d(scratch, sp_ir2_opnd, offsetof(LatxFcvtFrame, fcc) + i * 8);
+        la_movgr2cf(ir2_opnd_new(IR2_OPND_CC, i), scratch);
+    }
+    la_ld_d(scratch, sp_ir2_opnd, offsetof(LatxFcvtFrame, fcsr));
+    la_movgr2fcsr(fcsr_ir2_opnd, scratch);
+    for (int i = 0; i < 32; i++) {
+        IR2_OPND reg = ir2_opnd_new(IR2_OPND_FPR, i);
+        if (option_enable_lasx) {
+            la_xvld(reg, sp_ir2_opnd, 256 + i * 32);
+        } else {
+            la_vld(reg, sp_ir2_opnd, 256 + i * 32);
+        }
+    }
+    for (int i = 1; i < 32; i++) {
+        if (i != 3) {
+            la_ld_d(ir2_opnd_new(IR2_OPND_GPR, i), sp_ir2_opnd, i * 8);
+        }
+    }
+    la_addi_d(sp_ir2_opnd, sp_ir2_opnd, frame_size);
+}
+
+void latx_fcvt_d_ld(IR2_OPND dest, IR2_OPND low, IR2_OPND high)
+{
+    if (option_enable_lbt) {
+        la_fcvt_d_ld(dest, low, high);
+    } else {
+        latx_emit_fcvt_soft(0, dest, low, high);
+    }
+}
+
+void latx_fcvt_ld_d(IR2_OPND dest, IR2_OPND src)
+{
+    if (option_enable_lbt) {
+        la_fcvt_ld_d(dest, src);
+    } else {
+        latx_emit_fcvt_soft(1, dest, src, src);
+    }
+}
+
+void latx_fcvt_ud_d(IR2_OPND dest, IR2_OPND src)
+{
+    if (option_enable_lbt) {
+        la_fcvt_ud_d(dest, src);
+    } else {
+        latx_emit_fcvt_soft(2, dest, src, src);
     }
 }
 

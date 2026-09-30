@@ -22,10 +22,183 @@
 #include "reg-alloc.h"
 #include "latx-options.h"
 #include "aot_page.h"
+#include "segment.h"
 
 static bool tu_scan_enabled(void)
 {
     return getenv("LATX_TU_SCAN") != NULL;
+}
+
+bool xfyun_hot_tu_bounds(target_ulong pc, target_ulong *begin,
+                         target_ulong *end)
+{
+    seg_info *seg;
+    target_ulong base;
+    const char *name;
+    const char *override;
+
+    if (!getenv("LATX_XFYUN_HOT_TU")) {
+        return false;
+    }
+    seg = segment_tree_lookup(pc);
+    if (!seg || !seg->file_name || seg->lib_size != XFYUN_HOT_LIB_SIZE ||
+        seg->seg_begin < seg->file_offset) {
+        return false;
+    }
+    name = strrchr(seg->file_name, '/');
+    if (strcmp(name ? name + 1 : seg->file_name, "libmsc.so")) {
+        return false;
+    }
+    base = seg->seg_begin - seg->file_offset;
+    override = getenv("LATX_XFYUN_HOT_BASE");
+    if (override && strtoull(override, NULL, 0) != base) {
+        return false;
+    }
+    if (pc < base) {
+        return false;
+    }
+
+    /* Keep each measured function as a separate TU.  A broad interval would
+     * silently pull unrelated code into the hot TU. */
+    target_ulong offset = pc - base;
+    if (offset >= XFYUN_HOT_TU_ELF_BEGIN &&
+            offset < XFYUN_HOT_TU_ELF_END) {
+        *begin = base + XFYUN_HOT_TU_ELF_BEGIN;
+        *end = base + XFYUN_HOT_TU_ELF_END;
+        return true;
+    }
+    if (offset >= XFYUN_HOT_COPY_TU_ELF_BEGIN &&
+            offset < XFYUN_HOT_COPY_TU_ELF_END) {
+        *begin = base + XFYUN_HOT_COPY_TU_ELF_BEGIN;
+        *end = base + XFYUN_HOT_COPY_TU_ELF_END;
+        return true;
+    }
+    if (offset >= XFYUN_HOT_FIR_TU_ELF_BEGIN &&
+            offset < XFYUN_HOT_FIR_TU_ELF_END) {
+        *begin = base + XFYUN_HOT_FIR_TU_ELF_BEGIN;
+        *end = base + XFYUN_HOT_FIR_TU_ELF_END;
+        return true;
+    }
+    if (offset >= XFYUN_HOT_INV_TU_ELF_BEGIN &&
+            offset < XFYUN_HOT_INV_TU_ELF_END) {
+        *begin = base + XFYUN_HOT_INV_TU_ELF_BEGIN;
+        *end = base + XFYUN_HOT_INV_TU_ELF_END;
+        return true;
+    }
+    return false;
+}
+
+static bool xfyun_hot_branch_shape(TranslationBlock *tb,
+                                   target_ulong begin, target_ulong end)
+{
+    TranslationBlock *next_tb = tb->s_data->next_tb[TU_TB_INDEX_NEXT];
+    TranslationBlock *target_tb = tb->s_data->next_tb[TU_TB_INDEX_TARGET];
+    target_ulong offset = tb->pc - begin;
+
+    if (!next_tb || !target_tb) {
+        return false;
+    }
+    if (end - begin == XFYUN_HOT_TU_ELF_END - XFYUN_HOT_TU_ELF_BEGIN) {
+        return offset == 0 && next_tb->pc == begin + 5 &&
+               target_tb->pc == begin + 0x15;
+    }
+    if (end - begin == XFYUN_HOT_COPY_TU_ELF_END -
+            XFYUN_HOT_COPY_TU_ELF_BEGIN) {
+        if (offset == 0) {
+            return next_tb->pc == begin + 5 &&
+                   target_tb->pc == begin + 0x20;
+        }
+        return offset == 0x10 && next_tb->pc == begin + 0x20 &&
+               target_tb->pc == begin + 0x10;
+    }
+    return false;
+}
+
+/*
+ * This is deliberately opt-in and limited to the measured XFYun function.
+ * In the no-LBT path a Jcc can compare the translated operands directly;
+ * software EFLAGS are only needed when either internal successor reads them.
+ */
+bool xfyun_hot_no_lbt_tu_branch(TranslationBlock *tb)
+{
+    target_ulong begin;
+    target_ulong end;
+    TranslationBlock *next_tb;
+    TranslationBlock *target_tb;
+
+    if (!tb || !xfyun_hot_tu_bounds(tb->pc, &begin, &end)) {
+        return false;
+    }
+    if (tu_scan_enabled() && tb && tb->pc >= begin && tb->pc < end) {
+        next_tb = tb->s_data->next_tb[TU_TB_INDEX_NEXT];
+        target_tb = tb->s_data->next_tb[TU_TB_INDEX_TARGET];
+        fprintf(stderr, "TU_SCAN_XFYUN_HOT_BRANCH_CHECK pc=0x" TARGET_FMT_lx
+                " lbt=%d tu=%d next_use=%u target_use=%u\n", tb->pc,
+                option_enable_lbt, latx_tu_enabled(),
+                next_tb ? next_tb->eflag_use : 0,
+                target_tb ? target_tb->eflag_use : 0);
+    }
+    if (option_enable_lbt || !latx_tu_enabled() ||
+            tb->pc < begin || tb->pc >= end) {
+        return false;
+    }
+
+    if (!xfyun_hot_branch_shape(tb, begin, end)) {
+        return false;
+    }
+
+    next_tb = tb->s_data->next_tb[TU_TB_INDEX_NEXT];
+    target_tb = tb->s_data->next_tb[TU_TB_INDEX_TARGET];
+    if (!next_tb || !target_tb ||
+            next_tb->pc < begin || next_tb->pc >= end ||
+            target_tb->pc < begin || target_tb->pc >= end) {
+        return false;
+    }
+
+    /* Only the copy loop's back edge overwrites CMP flags before any read.
+     * The fallthrough RET exposes the final CMP flags to the caller. */
+    if (end - begin != XFYUN_HOT_COPY_TU_ELF_END -
+            XFYUN_HOT_COPY_TU_ELF_BEGIN || tb->pc != begin + 0x10 ||
+            target_tb->eflag_use) {
+        return false;
+    }
+    if (tu_scan_enabled()) {
+        fprintf(stderr, "TU_SCAN_XFYUN_HOT_EFLAGS pc=0x" TARGET_FMT_lx
+                " next=0x" TARGET_FMT_lx " target=0x" TARGET_FMT_lx
+                "\n", tb->pc, next_tb->pc, target_tb->pc);
+    }
+    return true;
+}
+
+bool xfyun_hot_no_lbt_sub_jcc(TranslationBlock *tb, IR1_INST *sub,
+                              IR1_INST *jcc)
+{
+    target_ulong begin, end;
+    IR1_OPND *dst, *src;
+
+    if (option_enable_lbt || !latx_tu_enabled() || !tb ||
+        !sub || !jcc || (tb->flags & HF_TF_MASK)) {
+        return false;
+    }
+    if (!xfyun_hot_tu_bounds(tb->pc, &begin, &end) ||
+        tb->pc != begin + 8 ||
+        ir1_opcode(sub) != dt_X86_INS_SUB ||
+        ir1_addr(sub) != tb->pc + 7 ||
+        ir1_opcode(jcc) != dt_X86_INS_JNE ||
+        ir1_addr(jcc) != tb->pc + 11 ||
+        ir1_target_addr(jcc) != tb->pc ||
+        ir1_opnd_num(sub) != 2 || ir1_is_prefix_lock(sub)) {
+        return false;
+    }
+    dst = ir1_get_opnd(sub, 0);
+    src = ir1_get_opnd(sub, 1);
+    return ir1_opnd_is_gpr(dst) && dst->reg == dt_X86_REG_RSI &&
+           ir1_opnd_size(dst) == 64 && ir1_opnd_is_imm(src) &&
+           ir1_opnd_simm(src) == 1 &&
+           tb->s_data->next_tb[TU_TB_INDEX_NEXT] &&
+           tb->s_data->next_tb[TU_TB_INDEX_NEXT]->pc == tb->pc + 13 &&
+           tb->s_data->next_tb[TU_TB_INDEX_TARGET] &&
+           tb->s_data->next_tb[TU_TB_INDEX_TARGET]->pc == tb->pc;
 }
 
 void get_last_info(TranslationBlock *tb, IR1_INST* pir1)

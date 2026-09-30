@@ -14,6 +14,7 @@
 #include "reg-alloc.h"
 #include "translate.h"
 #include "insts-pattern.h"
+#include "tu.h"
 
 #ifdef CONFIG_LATX_INSTS_PATTERN
 
@@ -23,6 +24,16 @@
 } while (0)
 #define SCAN_IDX(buf, i)        (buf[i])
 #define SCAN_IR1(tb, buf, i)    (tb_ir1_inst(tb, SCAN_IDX(buf, i)))
+
+static inline bool hot_sub_jcc(TranslationBlock *tb, IR1_INST *sub,
+                               IR1_INST *jcc)
+{
+#ifdef CONFIG_LATX_TU
+    return xfyun_hot_no_lbt_sub_jcc(tb, sub, jcc);
+#else
+    return false;
+#endif
+}
 
 // static inline void pattern_invalid(IR1_INST *scan_buf[PTN_BUF_SIZE], int num)
 // {
@@ -447,7 +458,9 @@ bool insts_pattern_scan_jcc_end(TranslationBlock *tb, IR1_INST *pir1, int pir1_i
         if ((tb->flags & HF_TF_MASK) ||
             pir1_index + 1 != SCAN_IDX(scan, 0) ||
             (ir1_opcode(pir1) != WRAP(CMP) &&
-             ir1_opcode(pir1) != WRAP(TEST)) ||
+             ir1_opcode(pir1) != WRAP(TEST) &&
+             !(ir1_opcode(pir1) == WRAP(SUB) &&
+               hot_sub_jcc(tb, pir1, SCAN_IR1(tb, scan, 0)))) ||
             ir1_is_prefix_lock(pir1) || ir1_opnd_num(pir1) != 2 ||
             !ir1_opnd_is_gpr(ir1_get_opnd(pir1, 0)) ||
             (!ir1_opnd_is_gpr(ir1_get_opnd(pir1, 1)) &&
@@ -574,7 +587,9 @@ bool insts_pattern_scan_jcc_end(TranslationBlock *tb, IR1_INST *pir1, int pir1_i
         case WRAP(JLE):
         case WRAP(JG):
             if (pir1_index + 1 == SCAN_IDX(scan, 0)) {
-                instptn_check_sub_jcc_0();
+                if (!hot_sub_jcc(tb, pir1, ir1_jcc)) {
+                    instptn_check_sub_jcc_0();
+                }
                 pir1->instptn.opc  = INSTPTN_OPC_SUB_JCC;
                 pir1->instptn.next = ir1_jcc;
                 ir1_jcc->instptn.opc  = INSTPTN_OPC_NOP;

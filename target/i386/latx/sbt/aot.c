@@ -63,6 +63,7 @@ static bool aot_scan_enabled(void)
 {
     return getenv("LATX_AOT_SCAN") != NULL;
 }
+
 const char *aot_process_profile = "browser";
 
 void aot_set_process_profile(int argc, char **argv)
@@ -367,6 +368,7 @@ static inline int create_aot_tb(aot_tb *curr_aot_tb, TranslationBlock *tb,
         curr_aot_tb->tu_jmp[1] = tb->tu_jmp[1];
         curr_aot_tb->tu_unlink.ins = tb->tu_unlink.ins;
         curr_aot_tb->tu_unlink.stub_offset = tb->tu_unlink.stub_offset;
+        curr_aot_tb->tu_unlink.rel_num = tb->tu_unlink.rel_num;
     } else {
         curr_aot_tb->jmp_indirect = tb->jmp_indirect;
         curr_aot_tb->jmp_target_arg[0] = tb->jmp_target_arg[0];
@@ -1248,6 +1250,9 @@ static void* relkind_to_fixup_addr[] = {
     [LOAD_HELPER_UPDATE_FP_STATUS] = update_fp_status,
     [LOAD_HELPER_CONVERT_FPREGS_64_TO_X80] = convert_fpregs_64_to_x80,
     [LOAD_HELPER_CONVERT_FPREGS_X80_TO_64] = convert_fpregs_x80_to_64,
+    [LOAD_HELPER_FCVT_SOFT] = latx_fcvt_soft,
+    [LOAD_HELPER_XFYUN_FIR_ADD] = latx_xfyun_fir_add,
+    [LOAD_HELPER_XFYUN_INV_TRANSFORM] = latx_xfyun_inv_transform,
     [LOAD_HELPER_CPUID] = helper_cpuid,
     [LOAD_HELPER_RAISE_INT] = helper_raise_int,
     [LOAD_HELPER_RAISE_ILLOP] = helper_raise_illop,

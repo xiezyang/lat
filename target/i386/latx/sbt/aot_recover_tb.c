@@ -76,6 +76,7 @@ inline static TranslationBlock *creat_tb(aot_tb *p_aot_tb, abi_ulong start,
         tb->tu_jmp[1] = p_aot_tb->tu_jmp[1];
         tb->tu_unlink.stub_offset = p_aot_tb->tu_unlink.stub_offset;
         tb->tu_unlink.ins = p_aot_tb->tu_unlink.ins;
+        tb->tu_unlink.rel_num = p_aot_tb->tu_unlink.rel_num;
     } else {
         tb->jmp_indirect = p_aot_tb->jmp_indirect;
         tb->jmp_reset_offset[0] = p_aot_tb->jmp_reset_offset[0];
@@ -121,7 +122,7 @@ static inline void aot_tbmini_set_pointer(uintptr_t tbm, uint64_t tb_addr,
 #endif
 
 static void recover_tb_range(target_ulong page, struct aot_tb *p_aot_tbs,
-        int num, abi_long start, abi_long end) 
+        int num, abi_long start, abi_long end)
 {
     CPUArchState* env = (CPUArchState*)(lsenv->cpu_state);
     target_ulong base = env->segs[R_CS].base;
@@ -198,16 +199,22 @@ static void recover_tb_range(target_ulong page, struct aot_tb *p_aot_tbs,
         while ((i < num) && (p_aot_tbs[i].is_first_tb == 0)) {
             i++;
         }
+        if (i >= num) {
+            break;
+        }
         int j;
         for (j = i; j < num; j++) {
             if ((p_aot_tbs[i].tu_id != p_aot_tbs[j].tu_id) || 
 			((j != i) && p_aot_tbs[j].is_first_tb)) {
                 break;
             }
-            tb_in_order[j - i] = creat_tb(&p_aot_tbs[j], start, base, NULL);
-	    if (unlikely(!tb_in_order[j - i])) {
-		return;
-	    }
+        }
+
+        for (int k = i; k < j; k++) {
+            tb_in_order[k - i] = creat_tb(&p_aot_tbs[k], start, base, NULL);
+            if (unlikely(!tb_in_order[k - i])) {
+                return;
+            }
         }
 #if defined(CONFIG_LATX_TBMINI_ENABLE)
         int tb_num_in_tu = j - i;
@@ -394,7 +401,8 @@ inline int load_page(target_ulong pc, uint32_t cflags, seg_info *info)
         fprintf(stderr, "AOT_SCAN_RECOVER pc=0x" TARGET_FMT_lx " tbs=%d\n",
                 pc, tb_num_in_page);
     }
-    recover_tb_range(p1, p_aot_tbs, tb_num_in_page, info->seg_begin, info->seg_end);
+    recover_tb_range(p1, p_aot_tbs, tb_num_in_page,
+            info->seg_begin, info->seg_end);
     return 1;
 }
 

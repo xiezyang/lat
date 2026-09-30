@@ -101,6 +101,38 @@ static inline ADDRX get_page(ADDRX pc)
     return pc & TARGET_PAGE_MASK;
 }
 
+/*
+ * XFYun hotspot selected from the runtime SELF_TB_COUNTER run on
+ * 2026-09-28.  The range is the hottest function,
+ * SYMD722BC975D414E591194A8D5CCE6BABB, in libmsc.so.
+ * Keep this opt-in so ordinary AOT generation remains unchanged.
+ */
+static inline bool ts_tu_scan_enabled(void)
+{
+    return getenv("LATX_TU_SCAN") != NULL;
+}
+
+static inline bool xfyun_hot_tu_pc(target_ulong pc)
+{
+    target_ulong begin, end;
+
+    return xfyun_hot_tu_bounds(pc, &begin, &end) &&
+        pc >= begin && pc < end;
+}
+
+static inline bool ts_tu_same_region(target_ulong from, target_ulong to)
+{
+    target_ulong from_begin, from_end, to_begin, to_end;
+    bool from_hot = xfyun_hot_tu_bounds(from, &from_begin, &from_end);
+    bool to_hot = xfyun_hot_tu_bounds(to, &to_begin, &to_end);
+
+    if (from_hot || to_hot) {
+        return from_hot && to_hot && from_begin == to_begin &&
+            from_end == to_end;
+    }
+    return get_page(from) == get_page(to);
+}
+
 void get_dynamic_message(TranslationBlock **tb_list, int tb_num,
         seg_info **seg_info_vector, int *seg_info_num)
 {
@@ -497,9 +529,8 @@ static inline void get_next_tb(TranslationBlock *curr_tb, CPUState *cpu,
     curr_tb->s_data->next_tb[TU_TB_INDEX_NEXT] = NULL;
     curr_tb->tu_jmp[TU_TB_INDEX_NEXT] = TB_JMP_RESET_OFFSET_INVALID;
     int tb_id = get_tb_id(next_tb_pc, cflags);
-    ADDRX curr_page = get_page(curr_tb->pc);
     TranslationBlock *next_tb;
-    if (get_page(next_tb_pc) != curr_page) {
+    if (!ts_tu_same_region(curr_tb->pc, next_tb_pc)) {
         return;
     }
     if (tb_id >= 0) {
@@ -541,9 +572,8 @@ static inline void get_target_tb(TranslationBlock *curr_tb, CPUState *cpu,
     ADDRX target_tb_pc = curr_tb->s_data->target_pc;
     lsassert(target_tb_pc);
     int tb_id = get_tb_id(target_tb_pc, cflags);
-    ADDRX curr_page = get_page(curr_tb->pc);
     TranslationBlock *target_tb;
-    if (get_page(target_tb_pc) != curr_page) {
+    if (!ts_tu_same_region(curr_tb->pc, target_tb_pc)) {
         return;
     }
     if (tb_id >= 0) {
@@ -580,17 +610,73 @@ static inline void get_target_tb(TranslationBlock *curr_tb, CPUState *cpu,
 static int untr_tb_id;
 
 static inline void get_ts_queue(CPUState *cpu, target_ulong cs_base,
-        uint32_t flags, int cflags, int max_insns, target_ulong curr_page)
+        uint32_t flags, int cflags, int max_insns, target_ulong tu_start_pc)
 {
     TranslationBlock** tb_list = tu_data->tb_list;
     uint32_t *tb_num_in_tu = &tu_data->tb_num;
     target_ulong curr_tb_pc, curr_tb_cflags;
     TranslationBlock *tb;
     uint32_t tb_id = 0;
+
+    /* Collect every profiled TB in the selected function before linking its
+     * internal edges, so the function is represented by one TU. */
+    if (xfyun_hot_tu_pc(tu_start_pc)) {
+        while (untr_tb_id <= curr_seg->last_tb_id &&
+                *tb_num_in_tu < MAX_TB_IN_TS) {
+            curr_tb_pc = curr_tb_message_vector[untr_tb_id].pc;
+            curr_tb_cflags = curr_tb_message_vector[untr_tb_id].cflags;
+            if (!ts_tu_same_region(tu_start_pc, curr_tb_pc) ||
+                    curr_tb_cflags != cflags) {
+                break;
+            }
+            tb = curr_tb_message_vector[untr_tb_id].tb;
+            if (!tb) {
+                tb = tb_create(cpu, curr_tb_pc, cs_base, flags,
+                        curr_tb_cflags, max_insns,
+                        curr_tb_message_vector[untr_tb_id].bool_flags,
+                        *tb_num_in_tu ? TU_TB_START_NORMAL : TU_TB_START_ENTRY);
+            }
+            if (tb) {
+                tu_push_back(tb);
+            }
+            untr_tb_id++;
+        }
+
+        for (tb_id = 0; tb_id < *tb_num_in_tu; tb_id++) {
+            tb = tb_list[tb_id];
+            switch (tb->s_data->last_ir1_type) {
+            case IR1_TYPE_BRANCH:
+                if (get_tb_id(tb->s_data->target_pc, cflags) >= 0) {
+                    get_target_tb(tb, cpu, cs_base, flags, cflags, max_insns);
+                }
+                if (get_tb_id(tb->s_data->next_pc, cflags) >= 0) {
+                    get_next_tb(tb, cpu, cs_base, flags, cflags, max_insns);
+                }
+                break;
+            case IR1_TYPE_CALLIN:
+            case IR1_TYPE_NORMAL:
+            case IR1_TYPE_SYSCALL:
+            case IR1_TYPE_CALL:
+                get_next_tb(tb, cpu, cs_base, flags, cflags, max_insns);
+                break;
+            case IR1_TYPE_JUMP:
+                get_target_tb(tb, cpu, cs_base, flags, cflags, max_insns);
+                break;
+            case IR1_TYPE_JUMPIN:
+            case IR1_TYPE_RET:
+                break;
+            default:
+                lsassert(0);
+            }
+        }
+        return;
+    }
+
     while (untr_tb_id <= curr_seg->last_tb_id && *tb_num_in_tu < MAX_TB_IN_TS) {
         curr_tb_pc = curr_tb_message_vector[untr_tb_id].pc;
         curr_tb_cflags = curr_tb_message_vector[untr_tb_id].cflags;
-        if (get_page(curr_tb_pc) != curr_page || curr_tb_cflags != cflags) {
+        if (!ts_tu_same_region(tu_start_pc, curr_tb_pc) ||
+                curr_tb_cflags != cflags) {
             break;
         }
 	if(curr_tb_message_vector[untr_tb_id].tb) {
@@ -706,11 +792,11 @@ static void ts_tb_explore(CPUState *cpu, target_ulong cs_base,
     if (untr_tb_id > curr_seg->last_tb_id) {
 	return;
     }
-    target_ulong curr_page = get_page(curr_tb_message_vector[untr_tb_id].pc);
+    target_ulong tu_start_pc = curr_tb_message_vector[untr_tb_id].pc;
     cflags = curr_tb_message_vector[untr_tb_id].cflags;
     cpu->tcg_cflags = cflags;
 
-    get_ts_queue(cpu, cs_base, flags, cflags, max_insns, curr_page);
+    get_ts_queue(cpu, cs_base, flags, cflags, max_insns, tu_start_pc);
     if (*tb_num_in_tu == 0) {
         return;
     }
@@ -727,7 +813,13 @@ static void ts_tb_explore(CPUState *cpu, target_ulong cs_base,
     for (int i = 0; i < *tb_num_in_tu; i++) {
         tb_list[i]->s_data->tu_id = tb_list[0]->pc;
         assert((tb_list[i]->cflags & CF_PARALLEL) == (cflags & CF_PARALLEL));
-        assert(get_page(tb_list[i]->pc) == get_page(tb_list[0]->pc));
+        assert(ts_tu_same_region(tb_list[0]->pc, tb_list[i]->pc));
+    }
+
+    if (ts_tu_scan_enabled() && xfyun_hot_tu_pc(tb_list[0]->pc)) {
+        fprintf(stderr, "TU_SCAN_XFYUN_HOT_TU begin=0x" TARGET_FMT_lx
+                " tb_num=%u ir1_num=%u\n", tb_list[0]->pc,
+                *tb_num_in_tu, *ir1_num_in_tu);
     }
 }
 
@@ -771,6 +863,22 @@ static inline void gen_tu(CPUState *cpu,
         return;
     }
     translate_tu(tu_data->tb_num, tu_data->tb_list);
+    if (ts_tu_scan_enabled() && xfyun_hot_tu_pc(tu_data->tb_list[0]->pc)) {
+        fprintf(stderr, "TU_SCAN_XFYUN_HOT_TU_CODE begin=0x" TARGET_FMT_lx
+                " tb_num=%u code_size=%u\n", tu_data->tb_list[0]->pc,
+                tu_data->tb_num, tu_data->tb_list[0]->s_data->tu_size);
+        for (unsigned int i = 0; i < tu_data->tb_num; i++) {
+            TranslationBlock *tb = tu_data->tb_list[i];
+            TranslationBlock *next = tb->s_data->next_tb[TU_TB_INDEX_NEXT];
+            TranslationBlock *target = tb->s_data->next_tb[TU_TB_INDEX_TARGET];
+            fprintf(stderr, "TU_SCAN_XFYUN_EDGE pc=0x" TARGET_FMT_lx
+                    " next=0x" TARGET_FMT_lx " target=0x" TARGET_FMT_lx
+                    " link=%d next_jmp=%d target_jmp=%d size=%zu\n",
+                    tb->pc, next ? next->pc : 0, target ? target->pc : 0,
+                    use_tu_jmp(tb), tb->tu_jmp[TU_TB_INDEX_NEXT],
+                    tb->tu_jmp[TU_TB_INDEX_TARGET], tb->tc.size);
+        }
+    }
     save_tu_to_ts();
 }
 
@@ -842,4 +950,3 @@ uint64 translate_lib(seg_info **seg_info_vector, int begin_id,
     in_pre_translate = 0;
     return tb_num_in_ts;
 }
-

@@ -15,6 +15,17 @@
 #include "reg-map.h"
 #include "ir1.h"
 
+/* Measured offsets in the executable PT_LOAD of xfyun's libmsc.so. */
+#define XFYUN_HOT_TU_ELF_BEGIN ((target_ulong)0x1c8810ULL)
+#define XFYUN_HOT_TU_ELF_END   ((target_ulong)0x1c8827ULL)
+#define XFYUN_HOT_COPY_TU_ELF_BEGIN ((target_ulong)0x1c8830ULL)
+#define XFYUN_HOT_COPY_TU_ELF_END   ((target_ulong)0x1c8852ULL)
+#define XFYUN_HOT_FIR_TU_ELF_BEGIN  ((target_ulong)0x1be6d0ULL)
+#define XFYUN_HOT_FIR_TU_ELF_END    ((target_ulong)0x1beb34ULL)
+#define XFYUN_HOT_INV_TU_ELF_BEGIN  ((target_ulong)0x1bee10ULL)
+#define XFYUN_HOT_INV_TU_ELF_END    ((target_ulong)0x1bf15dULL)
+#define XFYUN_HOT_LIB_SIZE 4297464ULL
+
 void get_last_info(TranslationBlock *tb, IR1_INST *pir1);
 
 #ifdef CONFIG_LATX_TU
@@ -118,5 +129,10 @@ void print_tu_tb(TranslationBlock *tb);
 
 bool judge_tu_eflag_gen(void *tb_in_tu);
 void tu_jcc_nop_gen(TranslationBlock *tb);
+bool xfyun_hot_no_lbt_tu_branch(TranslationBlock *tb);
+bool xfyun_hot_no_lbt_sub_jcc(TranslationBlock *tb, IR1_INST *sub,
+                              IR1_INST *jcc);
+bool xfyun_hot_tu_bounds(target_ulong pc, target_ulong *begin,
+                         target_ulong *end);
 #endif
 #endif
