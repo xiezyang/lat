@@ -34,8 +34,10 @@ static bool xfyun_hot_lib_base(target_ulong pc, target_ulong *base)
     seg_info *seg;
     const char *name;
     const char *override;
+    const char *hot_enabled;
 
-    if (!getenv("LATX_XFYUN_HOT_TU")) {
+    hot_enabled = getenv("LATX_XFYUN_HOT_TU");
+    if (hot_enabled && !strcmp(hot_enabled, "0")) {
         return false;
     }
     seg = segment_tree_lookup(pc);
@@ -141,7 +143,7 @@ static bool xfyun_hot_branch_shape(TranslationBlock *tb,
 }
 
 /*
- * This is deliberately opt-in and limited to the measured XFYun function.
+ * This is enabled by default and limited to the measured XFYun functions.
  * In the no-LBT path a Jcc can compare the translated operands directly;
  * software EFLAGS are only needed when either internal successor reads them.
  */

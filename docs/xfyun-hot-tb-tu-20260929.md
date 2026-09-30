@@ -839,3 +839,18 @@ The latest median was 2.108 s, the previous median was 2.144 s, and the
 fastest latest sample was 2.078 s. The median difference is about 1.65% lower.
 All runs returned zero and produced WAV SHA-256
 `e0f9aeaf8619a87fa510ba8891138aa0bc19e1dd1d2d10c72b9c428cdb21348a`.
+
+## Default hotspot enablement and zero-environment check (2026-09-30)
+
+The XFYun hotspot selection is now enabled by default. Setting
+`LATX_XFYUN_HOT_TU=0` disables it only for diagnostics; every other value,
+including an unset variable, enables the measured hotspot paths. The customer
+launcher no longer sets `LBT_X86`, `LATX_AOT`, `LATX_TU`, or
+`LATX_XFYUN_HOT_TU`.
+
+On board 200, a fresh package directory was prepared with all four optimization
+variables unset. The three warm-up runs took 31.58 seconds in total. The
+following timed run took 2.213 seconds, returned zero, and produced the
+reference WAV hash above. The run generated and reused 11 path-specific AOT
+files automatically. The tested binary SHA-256 was
+`795b2d840049bf4149b830b29197679a143068bc95b68a6ec620e6d4261043cb`.
