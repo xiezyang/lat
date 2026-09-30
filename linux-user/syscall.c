@@ -12645,7 +12645,8 @@ static bool latx_stat_is_proc_self_task(const struct stat *st)
 {
     struct stat task_st;
 
-    return stat("/proc/self/task", &task_st) == 0 &&
+    return S_ISDIR(st->st_mode) &&
+           stat("/proc/self/task", &task_st) == 0 &&
            st->st_dev == task_st.st_dev && st->st_ino == task_st.st_ino;
 }
 
@@ -12653,7 +12654,9 @@ static bool latx_statx_is_proc_self_task(const struct target_statx *stx)
 {
     struct stat task_st;
 
-    return stat("/proc/self/task", &task_st) == 0 &&
+    return (!(stx->stx_mask & STATX_TYPE) ||
+            (stx->stx_mode & S_IFMT) == S_IFDIR) &&
+           stat("/proc/self/task", &task_st) == 0 &&
            stx->stx_dev_major == major(task_st.st_dev) &&
            stx->stx_dev_minor == minor(task_st.st_dev) &&
            stx->stx_ino == task_st.st_ino;
