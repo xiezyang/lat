@@ -771,3 +771,71 @@ SHA-256
 The stable implementation remains: 64-byte LSX batches, 16-byte vector tail,
 scalar doubleword fallback outside the vector path, byte fallback for short or
 in-page tails, and ordered forward byte copying for overlap.
+
+## Native ivModDiffCoefFix support (2026-09-30)
+
+`libmsc.so+0x1e0d70` (`ivModDiffCoefFix`) was selected as the next full
+native-function candidate. The function is 90 bytes, has no calls, and executes
+about 60,344 times per XFYun run. Its three input ranges and fixed-point
+formula were checked exhaustively at every 16-bit gain for 13 boundary values,
+plus 1,000,000 random value/gain pairs. The optimized path matched the dynamic
+library function for every case.
+
+Two implementations were tested. Calling a C helper through the AOT relocation
+mechanism was slower than the existing TU because saving and restoring guest
+state dominated the tiny function: 1 million calls took about 117 ms in the
+old path and 138 ms with the helper. The final version instead expands the
+complete function directly into LoongArch instructions in the TU, with no
+helper call or guest-register save/restore. After removing the temporary
+separate-TU regression, it runs 3 million calls in about 268 ms versus 350 ms
+for the previous path, about 23% faster in the isolated benchmark.
+
+An initial implementation also made this function a separate TU. That increased
+instructions and slowed complete XFYun, so it was rejected. The final form
+keeps the function in its original page-level TU and only replaces the entry
+with the complete native body. With complete AOT caches, the whole-XFYun effect
+is below run-to-run noise: hardware counters showed about 1% fewer instructions,
+while cycle changes were smaller and inconsistent in direction. This is
+consistent with the function's 0.903% total IR2 weighting. All complete runs
+produced the reference WAV hash
+`e0f9aeaf8619a87fa510ba8891138aa0bc19e1dd1d2d10c72b9c428cdb21348a`.
+
+The final inline implementation is built into the branch commit for
+`ivModDiffCoefFix`. A temporary `/tmp` exhaustion during later comparisons
+made AOT publication fail and produced misleading 8.8 s results; after
+cleaning `/tmp`, the persistent AOT path was restored and the measurements
+above were repeated.
+
+## Latest full-XFYun result after ivModDiffCoefFix (2026-09-30)
+
+After cleaning `/tmp` and regenerating a complete persistent AOT cache under
+`/root`, the latest branch binary was compared with the previous all-hot
+binary using alternating complete XFYun runs. Both used the newer `libmsc.so`,
+`LBT_X86=0`, default-enabled AOT, `LATX_TU=1`, `LATX_XFYUN_HOT_TU=1`, no TU
+scan, and no SDK diagnostic logging. The persistent cache for the new binary
+is:
+
+`/root/xzy/xfyun-entire-native-board200-20260929/aot-latest-2daa79e-20260930/home`
+
+The latest binary is:
+
+`/root/xzy/xfyun-entire-native-board200-20260929/bin/latx-latest-2daa79e-20260930`
+
+SHA-256:
+`e0faa336e4f08d3a0430fe48ff852dace1ee964e28b24ae82445c85d30dc7753`
+
+Six alternating warm-cache runs gave:
+
+| Pair | Latest (s) | Previous all-hot (s) |
+| ---: | ---: | ---: |
+| 1 | 2.077998 | 2.240151 |
+| 2 | 2.118041 | 2.248069 |
+| 3 | 2.231041 | 2.159965 |
+| 4 | 2.098480 | 2.127159 |
+| 5 | 2.247695 | 2.095362 |
+| 6 | 2.093387 | 2.108583 |
+
+The latest median was 2.108 s, the previous median was 2.144 s, and the
+fastest latest sample was 2.078 s. The median difference is about 1.65% lower.
+All runs returned zero and produced WAV SHA-256
+`e0f9aeaf8619a87fa510ba8891138aa0bc19e1dd1d2d10c72b9c428cdb21348a`.

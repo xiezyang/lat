@@ -24,6 +24,8 @@
 #define XFYUN_HOT_FIR_TU_ELF_END    ((target_ulong)0x1beb34ULL)
 #define XFYUN_HOT_INV_TU_ELF_BEGIN  ((target_ulong)0x1bee10ULL)
 #define XFYUN_HOT_INV_TU_ELF_END    ((target_ulong)0x1bf15dULL)
+#define XFYUN_HOT_MOD_DIFF_TU_ELF_BEGIN ((target_ulong)0x1e0d70ULL)
+#define XFYUN_HOT_MOD_DIFF_TU_ELF_END   ((target_ulong)0x1e0dcaULL)
 #define XFYUN_HOT_LIB_SIZE 4297464ULL
 
 void get_last_info(TranslationBlock *tb, IR1_INST *pir1);
@@ -134,5 +136,7 @@ bool xfyun_hot_no_lbt_sub_jcc(TranslationBlock *tb, IR1_INST *sub,
                               IR1_INST *jcc);
 bool xfyun_hot_tu_bounds(target_ulong pc, target_ulong *begin,
                          target_ulong *end);
+bool xfyun_hot_mod_diff_bounds(target_ulong pc, target_ulong *begin,
+                               target_ulong *end);
 #endif
 #endif

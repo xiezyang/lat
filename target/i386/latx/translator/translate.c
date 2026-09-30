@@ -2487,6 +2487,120 @@ static bool xfyun_hot_native_inv_entry(TranslationBlock *tb,
     return true;
 }
 
+static bool xfyun_hot_native_mod_diff_entry(TranslationBlock *tb,
+                                            target_ulong begin,
+                                            target_ulong end)
+{
+    const target_ulong size = end - begin;
+    IR1_INST synthetic_ret;
+    IR2_OPND gain, value, gain32, x, tmp, cond, result;
+    IR2_OPND default_label, mid_label, final_label;
+    IR2_OPND return_addr, rsp;
+    uint64_t hash;
+
+    if (tb->pc != begin || size != XFYUN_HOT_MOD_DIFF_TU_ELF_END -
+                                    XFYUN_HOT_MOD_DIFF_TU_ELF_BEGIN) {
+        return false;
+    }
+    hash = xfyun_hot_bytes_hash((const uint8_t *)(uintptr_t)begin, size);
+    if (hash != UINT64_C(0x22878071575c8228)) {
+        if (getenv("LATX_TU_SCAN")) {
+            fprintf(stderr, "TU_SCAN_XFYUN_MOD_DIFF_REJECT hash=0x%016" PRIx64
+                    " pc=0x" TARGET_FMT_lx "\n", hash, tb->pc);
+        }
+        return false;
+    }
+
+    for (int i = 0; i < tb->icount; i++) {
+        IR1_INST *insn = tb_ir1_inst(tb, i);
+        tcg_ctx->gen_insn_data[i][0] = ir1_addr(insn);
+        tcg_ctx->gen_insn_data[i][1] = 0;
+        tr_init_for_each_ir1_in_tb(insn, tb->icount, i);
+    }
+
+    gain = ra_alloc_gpr(edi_index);
+    value = ra_alloc_gpr(esi_index);
+    gain32 = ra_alloc_itemp();
+    x = ra_alloc_itemp();
+    tmp = ra_alloc_itemp();
+    cond = ra_alloc_itemp();
+    result = ra_alloc_itemp();
+    default_label = ra_alloc_label();
+    mid_label = ra_alloc_label();
+    final_label = ra_alloc_label();
+
+    la_slli_d(gain32, gain, 48);
+    la_srai_d(gain32, gain32, 48);
+    la_slli_d(x, value, 48);
+    la_srai_d(x, x, 48);
+
+    la_slt(cond, zero_ir2_opnd, x);
+    la_beq(cond, zero_ir2_opnd, default_label);
+    li_d(tmp, 0x7a3b);
+    la_slt(cond, tmp, x);
+    la_bne(cond, zero_ir2_opnd, default_label);
+    li_d(tmp, 0x65db);
+    la_slt(cond, tmp, x);
+    la_beq(cond, zero_ir2_opnd, mid_label);
+
+    li_d(tmp, 0x65dc);
+    la_sub_w(x, x, tmp);
+    la_slli_w(x, x, 15);
+    li_d(tmp, INT32_C(0x06488dc5));
+    la_mul_d(result, x, tmp);
+    la_srai_d(result, result, 32);
+    la_srai_w(result, result, 7);
+    la_ext_w_h(result, result);
+    li_d(tmp, 0x2666);
+    la_mul_w(result, result, tmp);
+    la_srai_w(result, result, 15);
+    li_d(tmp, 0x599a);
+    la_add_w(result, result, tmp);
+    la_ext_w_h(result, result);
+    la_b(final_label);
+
+    la_label(mid_label);
+    li_d(result, 0x599a);
+    la_b(final_label);
+
+    la_label(default_label);
+    li_d(result, INT16_MIN);
+
+    la_label(final_label);
+    la_mul_w(ra_alloc_gpr(eax_index), result, gain32);
+    la_srai_w(ra_alloc_gpr(eax_index), ra_alloc_gpr(eax_index), 15);
+    la_bstrpick_d(ra_alloc_gpr(eax_index), ra_alloc_gpr(eax_index), 31, 0);
+
+    ra_free_temp(gain32);
+    ra_free_temp(x);
+    ra_free_temp(tmp);
+    ra_free_temp(cond);
+    ra_free_temp(result);
+
+    rsp = ra_alloc_gpr(esp_index);
+    return_addr = ra_alloc_dbt_arg2();
+    la_ld_d(return_addr, rsp, 0);
+    la_dbar(0);
+    la_addi_d(rsp, rsp, 8);
+
+    {
+        uint8_t ret_byte = 0xc3;
+        char info[IR1_INST_SIZE] = {0};
+
+        ir1_disasm(&synthetic_ret, &ret_byte, end - 1, 0, info);
+        if (ir1_opcode(&synthetic_ret) != dt_X86_INS_RET ||
+            !jrra_translate_ret(tb, return_addr, &synthetic_ret)) {
+            tr_generate_exit_tb(&synthetic_ret, 0);
+        }
+    }
+    ra_free_all();
+    if (getenv("LATX_TU_SCAN")) {
+        fprintf(stderr, "TU_SCAN_XFYUN_NATIVE_MOD_DIFF pc=0x"
+                TARGET_FMT_lx "\n", tb->pc);
+    }
+    return true;
+}
+
 /* These accesses dominate the two measured libmsc.so TUs.  Keep each x86
  * instruction marker in the caller so a fault still restores its own PC. */
 static bool xfyun_hot_native_byte_access(IR1_INST *ir1)
@@ -2725,6 +2839,10 @@ static bool xfyun_hot_native_entry(TranslationBlock *tb)
     IR1_INST *test, *jcc;
     IR2_OPND length, target, next, unlink, fallback_ret, skip_flags;
 
+    if (xfyun_hot_mod_diff_bounds(tb->pc, &begin, &end) &&
+        tb->pc == begin) {
+        return xfyun_hot_native_mod_diff_entry(tb, begin, end);
+    }
     if (!xfyun_hot_tu_bounds(tb->pc, &begin, &end) || tb->pc != begin) {
         return false;
     }

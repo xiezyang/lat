@@ -29,11 +29,9 @@ static bool tu_scan_enabled(void)
     return getenv("LATX_TU_SCAN") != NULL;
 }
 
-bool xfyun_hot_tu_bounds(target_ulong pc, target_ulong *begin,
-                         target_ulong *end)
+static bool xfyun_hot_lib_base(target_ulong pc, target_ulong *base)
 {
     seg_info *seg;
-    target_ulong base;
     const char *name;
     const char *override;
 
@@ -49,12 +47,23 @@ bool xfyun_hot_tu_bounds(target_ulong pc, target_ulong *begin,
     if (strcmp(name ? name + 1 : seg->file_name, "libmsc.so")) {
         return false;
     }
-    base = seg->seg_begin - seg->file_offset;
+    *base = seg->seg_begin - seg->file_offset;
     override = getenv("LATX_XFYUN_HOT_BASE");
-    if (override && strtoull(override, NULL, 0) != base) {
+    if (override && strtoull(override, NULL, 0) != *base) {
         return false;
     }
-    if (pc < base) {
+    if (pc < *base) {
+        return false;
+    }
+    return true;
+}
+
+bool xfyun_hot_tu_bounds(target_ulong pc, target_ulong *begin,
+                         target_ulong *end)
+{
+    target_ulong base;
+
+    if (!xfyun_hot_lib_base(pc, &base)) {
         return false;
     }
 
@@ -86,6 +95,23 @@ bool xfyun_hot_tu_bounds(target_ulong pc, target_ulong *begin,
         return true;
     }
     return false;
+}
+
+bool xfyun_hot_mod_diff_bounds(target_ulong pc, target_ulong *begin,
+                               target_ulong *end)
+{
+    target_ulong base;
+
+    if (!xfyun_hot_lib_base(pc, &base)) {
+        return false;
+    }
+    if (pc - base < XFYUN_HOT_MOD_DIFF_TU_ELF_BEGIN ||
+        pc - base >= XFYUN_HOT_MOD_DIFF_TU_ELF_END) {
+        return false;
+    }
+    *begin = base + XFYUN_HOT_MOD_DIFF_TU_ELF_BEGIN;
+    *end = base + XFYUN_HOT_MOD_DIFF_TU_ELF_END;
+    return true;
 }
 
 static bool xfyun_hot_branch_shape(TranslationBlock *tb,
