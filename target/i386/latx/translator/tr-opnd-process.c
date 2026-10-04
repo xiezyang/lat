@@ -1422,6 +1422,31 @@ void materialize_deferred_ymmh_zero(IR2_OPND opnd)
     }
 }
 
+BorrowedXmm borrow_guest_xmm(int index)
+{
+    BorrowedXmm borrowed;
+    borrowed.saved = ra_alloc_ftemp();
+    borrowed.reg = ra_alloc_xmm(index);
+    /* A helper may save and later restore all 256 physical bits. */
+    materialize_deferred_ymmh_zero(borrowed.reg);
+    if (option_enable_lasx) {
+        la_xvor_v(borrowed.saved, borrowed.reg, borrowed.reg);
+    } else {
+        la_vor_v(borrowed.saved, borrowed.reg, borrowed.reg);
+    }
+    return borrowed;
+}
+
+void restore_guest_xmm(BorrowedXmm borrowed)
+{
+    if (option_enable_lasx) {
+        la_xvor_v(borrowed.reg, borrowed.saved, borrowed.saved);
+    } else {
+        la_vor_v(borrowed.reg, borrowed.saved, borrowed.saved);
+    }
+    ra_free_temp(borrowed.saved);
+}
+
 void mark_high128_xreg_zeroed(IR2_OPND opnd)
 {
     int index;

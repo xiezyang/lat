@@ -1610,6 +1610,12 @@ void set_high128_xreg_to_zero(IR2_OPND opnd);
 void set_all_high128_xregs_to_zero(void);
 void mark_high128_xreg_zeroed(IR2_OPND opnd);
 void materialize_deferred_ymmh_zero(IR2_OPND opnd);
+typedef struct BorrowedXmm {
+    IR2_OPND saved;
+    IR2_OPND reg;
+} BorrowedXmm;
+BorrowedXmm borrow_guest_xmm(int index);
+void restore_guest_xmm(BorrowedXmm borrowed);
 void materialize_deferred_ymmh_zeros_now(void);
 void materialize_deferred_ymmh_zeros_for_exit(void);
 void disable_deferred_ymmh_zero_for_tb(void);

@@ -2446,7 +2446,11 @@ int tr_ir2_generate(struct TranslationBlock *tb)
          * at the end of TB translate cache.
          */
         tcg_ctx->gen_insn_data[i][0] = pir1->info->address;
-        tcg_ctx->gen_insn_data[i][1] = 0;
+        /* Preserve logical upper zeros if this instruction faults before
+         * the deferred clears at the normal TB exit have executed.  The
+         * low 16 bits remain the condition-code operation. */
+        tcg_ctx->gen_insn_data[i][1] =
+            (target_ulong)lsenv->tr_data->ymmh_zero_pending << 16;
 
 #ifdef CONFIG_LATX_IMM_REG
         imm_cache->curr_ir1_index = i;

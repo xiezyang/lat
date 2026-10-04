@@ -5780,13 +5780,12 @@ bool translate_vpcmpestrm(IR1_INST *pir1)
         tr_gen_call_to_helper_pcmpxstrx((ADDR)helper_pcmpestrm_xmm, d, s, imm,
                 LOAD_HELPER_PCMPESTRM_XMM);
     } else {
-        IR2_OPND temp = ra_alloc_ftemp();
-        IR2_OPND src = ra_alloc_xmm((d + 1) % 7 + 1);
-        la_xvor_v(temp, src, src);
+        BorrowedXmm borrowed = borrow_guest_xmm((d + 1) % 7 + 1);
+        IR2_OPND src = borrowed.reg;
         load_freg128_from_ir1_mem(src, opnd1);
          tr_gen_call_to_helper_pcmpxstrx((ADDR)helper_pcmpestrm_xmm, d,
                  (d + 1) % 7 + 1, imm, LOAD_HELPER_PCMPESTRM_XMM);
-        la_xvor_v(src, temp, temp);
+        restore_guest_xmm(borrowed);
     }
     set_high128_xreg_to_zero(ra_alloc_xmm(0));
     /* TODO:fix eflags and mem opnd */
@@ -5809,13 +5808,12 @@ bool translate_vpcmpistrm(IR1_INST *pir1)
         tr_gen_call_to_helper_pcmpxstrx((ADDR)helper_pcmpistrm_xmm, d, s, imm,
                 LOAD_HELPER_PCMPISTRM_XMM);
     } else {
-        IR2_OPND temp = ra_alloc_ftemp();
-        IR2_OPND src = ra_alloc_xmm((d + 1) % 7 + 1);
-        la_xvor_v(temp, src, src);
+        BorrowedXmm borrowed = borrow_guest_xmm((d + 1) % 7 + 1);
+        IR2_OPND src = borrowed.reg;
         load_freg128_from_ir1_mem(src, opnd1);
          tr_gen_call_to_helper_pcmpxstrx((ADDR)helper_pcmpistrm_xmm, d,
                  (d + 1) % 7 + 1, imm, LOAD_HELPER_PCMPISTRM_XMM);
-        la_xvor_v(src, temp, temp);
+        restore_guest_xmm(borrowed);
     }
     set_high128_xreg_to_zero(ra_alloc_xmm(0));
     /* TODO:fix eflags and mem opnd */
@@ -6001,13 +5999,8 @@ bool translate_vaesdec(IR1_INST *pir1)
             }
             s2++;
         }
-        IR2_OPND temp = ra_alloc_ftemp();
-        IR2_OPND src = ra_alloc_xmm(s2);
-        /* Save the logical guest value before borrowing its register for the
-         * key.  A pending clear must not erase the loaded key at helper entry
-         * or leave stale upper bits in the value restored after the helper. */
-        materialize_deferred_ymmh_zero(src);
-        la_xvor_v(temp, src, src);
+        BorrowedXmm borrowed = borrow_guest_xmm(s2);
+        IR2_OPND src = borrowed.reg;
         if (ir1_opnd_size(opnd2) == 128) {
             load_freg128_from_ir1_mem(src, opnd2);
         } else {
@@ -6015,7 +6008,7 @@ bool translate_vaesdec(IR1_INST *pir1)
         }
         tr_gen_call_to_helper_aes((ADDR)helper_func, d, s1, s2,
                 helper_kind);
-        la_xvor_v(src, temp, temp);
+        restore_guest_xmm(borrowed);
     }
     if (!ir1_opnd_is_ymm(opnd0)) {
         set_high128_xreg_to_zero(ra_alloc_xmm(d));
@@ -6062,20 +6055,15 @@ bool translate_vaesdeclast(IR1_INST *pir1)
             }
             s2++;
         }
-        IR2_OPND temp = ra_alloc_ftemp();
-        IR2_OPND src = ra_alloc_xmm(s2);
-        /* Save the logical guest value before borrowing its register for the
-         * key.  A pending clear must not erase the loaded key at helper entry
-         * or leave stale upper bits in the value restored after the helper. */
-        materialize_deferred_ymmh_zero(src);
-        la_xvor_v(temp, src, src);
+        BorrowedXmm borrowed = borrow_guest_xmm(s2);
+        IR2_OPND src = borrowed.reg;
         if (ir1_opnd_size(opnd2) == 128) {
             load_freg128_from_ir1_mem(src, opnd2);
         } else {
             load_freg256_from_ir1_mem(src, opnd2);
         }
         tr_gen_call_to_helper_aes((ADDR)helper_func, d, s1, s2, helper_kind);
-        la_xvor_v(src, temp, temp);
+        restore_guest_xmm(borrowed);
     }
     if (!ir1_opnd_is_ymm(opnd0)) {
         set_high128_xreg_to_zero(ra_alloc_xmm(d));
@@ -6123,13 +6111,8 @@ bool translate_vaesenc(IR1_INST *pir1)
             }
             s2++;
         }
-        IR2_OPND temp = ra_alloc_ftemp();
-        IR2_OPND src = ra_alloc_xmm(s2);
-        /* Save the logical guest value before borrowing its register for the
-         * key.  A pending clear must not erase the loaded key at helper entry
-         * or leave stale upper bits in the value restored after the helper. */
-        materialize_deferred_ymmh_zero(src);
-        la_xvor_v(temp, src, src);
+        BorrowedXmm borrowed = borrow_guest_xmm(s2);
+        IR2_OPND src = borrowed.reg;
         if (ir1_opnd_size(opnd2) == 128) {
             load_freg128_from_ir1_mem(src, opnd2);
         } else {
@@ -6137,7 +6120,7 @@ bool translate_vaesenc(IR1_INST *pir1)
         }
         tr_gen_call_to_helper_aes((ADDR)helper_func, d, s1, s2,
                 helper_kind);
-        la_xvor_v(src, temp, temp);
+        restore_guest_xmm(borrowed);
     }
     if (!ir1_opnd_is_ymm(opnd0)) {
         set_high128_xreg_to_zero(ra_alloc_xmm(d));
@@ -6185,13 +6168,8 @@ bool translate_vaesenclast(IR1_INST *pir1)
             }
             s2++;
         }
-        IR2_OPND temp = ra_alloc_ftemp();
-        IR2_OPND src = ra_alloc_xmm(s2);
-        /* Save the logical guest value before borrowing its register for the
-         * key.  A pending clear must not erase the loaded key at helper entry
-         * or leave stale upper bits in the value restored after the helper. */
-        materialize_deferred_ymmh_zero(src);
-        la_xvor_v(temp, src, src);
+        BorrowedXmm borrowed = borrow_guest_xmm(s2);
+        IR2_OPND src = borrowed.reg;
         if (ir1_opnd_size(opnd2) == 128) {
             load_freg128_from_ir1_mem(src, opnd2);
         } else {
@@ -6199,7 +6177,7 @@ bool translate_vaesenclast(IR1_INST *pir1)
         }
         tr_gen_call_to_helper_aes((ADDR)helper_func, d, s1, s2,
                 helper_kind);
-        la_xvor_v(src, temp, temp);
+        restore_guest_xmm(borrowed);
     }
     if (!ir1_opnd_is_ymm(opnd0)) {
         set_high128_xreg_to_zero(ra_alloc_xmm(d));
@@ -6226,13 +6204,12 @@ bool translate_vaesimc(IR1_INST *pir1)
         tr_gen_call_to_helper_pcmpxstrx((ADDR)helper_aesimc_xmm, d, s, 0,
                 LOAD_HELPER_AESIMC_XMM);
     } else {
-        IR2_OPND temp = ra_alloc_ftemp();
-        IR2_OPND src = ra_alloc_xmm((d + 1) % 7 + 1);
-        la_xvor_v(temp, src, src);
+        BorrowedXmm borrowed = borrow_guest_xmm((d + 1) % 7 + 1);
+        IR2_OPND src = borrowed.reg;
         load_freg128_from_ir1_mem(src, opnd1);
         tr_gen_call_to_helper_pcmpxstrx((ADDR)helper_aesimc_xmm, d,
                 (d + 1) % 7 + 1, 0, LOAD_HELPER_AESIMC_XMM);
-        la_xvor_v(src, temp, temp);
+        restore_guest_xmm(borrowed);
     }
     set_high128_xreg_to_zero(ra_alloc_xmm(d));
     /* TODO: IMM 0 do not need to save */
@@ -6259,13 +6236,12 @@ bool translate_vaeskeygenassist(IR1_INST *pir1)
         tr_gen_call_to_helper_pcmpxstrx((ADDR)helper_aeskeygenassist_xmm, d, s, imm,
                 LOAD_HELPER_AESKEYGENASSIST_XMM);
     } else {
-        IR2_OPND temp = ra_alloc_ftemp();
-        IR2_OPND src = ra_alloc_xmm((d + 1) % 7 + 1);
-        la_xvor_v(temp, src, src);
+        BorrowedXmm borrowed = borrow_guest_xmm((d + 1) % 7 + 1);
+        IR2_OPND src = borrowed.reg;
         load_freg128_from_ir1_mem(src, opnd1);
         tr_gen_call_to_helper_pcmpxstrx((ADDR)helper_aeskeygenassist_xmm, d,
                 (d + 1) % 7 + 1, imm, LOAD_HELPER_AESKEYGENASSIST_XMM);
-        la_xvor_v(src, temp, temp);
+        restore_guest_xmm(borrowed);
     }
     set_high128_xreg_to_zero(ra_alloc_xmm(d));
     /* TODO: need to check */
@@ -6338,6 +6314,14 @@ bool translate_vpsrlvq(IR1_INST * pir1) {
     return true;
 }
 
+static void materialize_deferred_ymmh_zero_for_gather_dest(IR1_OPND *opnd)
+{
+    if (ir1_opnd_is_ymm(opnd)) {
+        materialize_deferred_ymmh_zero(
+            ra_alloc_xmm(ir1_opnd_base_reg_num(opnd)));
+    }
+}
+
 bool translate_vpgatherdd(IR1_INST *pir1)
 {
     if (!option_enable_lasx) {
@@ -6350,6 +6334,8 @@ bool translate_vpgatherdd(IR1_INST *pir1)
     lsassert((ir1_opnd_is_xmm(opnd0) && ir1_opnd_is_xmm(opnd2)) ||
         (ir1_opnd_is_ymm(opnd0) && ir1_opnd_is_ymm(opnd2)));
     lsassert(ir1_opnd_is_mem(opnd1) && ir1_opnd_has_index(opnd1));
+    /* Gather merges masked-off lanes from its destination. */
+    materialize_deferred_ymmh_zero_for_gather_dest(opnd0);
     IR2_OPND dest = ra_alloc_xmm(ir1_opnd_base_reg_num(opnd0));
     IR2_OPND mask = ra_alloc_xmm(ir1_opnd_base_reg_num(opnd2));
     IR2_OPND index_op = ra_alloc_xmm(ir1_opnd_vsib_index_reg_num(opnd1));
@@ -6514,6 +6500,8 @@ bool translate_vpgatherdq(IR1_INST *pir1)
     lsassert((ir1_opnd_is_xmm(opnd0) && ir1_opnd_is_xmm(opnd2)) ||
         (ir1_opnd_is_ymm(opnd0) && ir1_opnd_is_ymm(opnd2)));
     lsassert(ir1_opnd_is_mem(opnd1) && ir1_opnd_has_index(opnd1));
+    /* Gather merges masked-off lanes from its destination. */
+    materialize_deferred_ymmh_zero_for_gather_dest(opnd0);
     IR2_OPND dest = ra_alloc_xmm(ir1_opnd_base_reg_num(opnd0));
     IR2_OPND mask = ra_alloc_xmm(ir1_opnd_base_reg_num(opnd2));
     IR2_OPND index_op = ra_alloc_xmm(ir1_opnd_vsib_index_reg_num(opnd1));
@@ -6581,6 +6569,8 @@ bool translate_vpgatherqq(IR1_INST *pir1)
     lsassert((ir1_opnd_is_xmm(opnd0) && ir1_opnd_is_xmm(opnd2)) ||
         (ir1_opnd_is_ymm(opnd0) && ir1_opnd_is_ymm(opnd2)));
     lsassert(ir1_opnd_is_mem(opnd1) && ir1_opnd_has_index(opnd1));
+    /* Gather merges masked-off lanes from its destination. */
+    materialize_deferred_ymmh_zero_for_gather_dest(opnd0);
     IR2_OPND dest = ra_alloc_xmm(ir1_opnd_base_reg_num(opnd0));
     IR2_OPND mask = ra_alloc_xmm(ir1_opnd_base_reg_num(opnd2));
     IR2_OPND index_op = ra_alloc_xmm(ir1_opnd_vsib_index_reg_num(opnd1));
