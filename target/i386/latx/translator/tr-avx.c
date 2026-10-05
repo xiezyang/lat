@@ -4630,13 +4630,13 @@ bool translate_vpalignr(IR1_INST * pir1) {
 
         /* fast path */
         if (imm >= 32) {
-            la_vxor_v(dest, dest, dest);
+            la_xvxor_v(dest, dest, dest);
         } else if (imm >= 16 && imm < 32) {
             la_xvbsrl_v(dest, src1, imm - 16);
         } else {
             /* slow path */
             if (imm == 0) {
-                la_vori_b(dest, src2, 0);
+                la_xvori_b(dest, src2, 0);
             } else {
                 IR2_OPND temp_src2 = ra_alloc_ftemp();
                 la_xvbsrl_v(temp_src2, src2, imm);
