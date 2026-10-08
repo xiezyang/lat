@@ -3100,7 +3100,12 @@ bool translate_vfnmaddxxxpd(IR1_INST * pir1) {
     IR2_OPND src3_temp = ra_alloc_ftemp();
 
     /* check if result is NaN */
-    la_xvfcmp_cond_d(mask, temp, temp, 0x8);
+    /* Unused upper lanes must not raise floating-point exceptions. */
+    if (ir1_opnd_is_xmm(opnd0)) {
+        la_vfcmp_cond_d(mask, temp, temp, 0x8);
+    } else {
+        la_xvfcmp_cond_d(mask, temp, temp, 0x8);
+    }
     la_xvand_v(src1_temp, mask, dest);
     la_xvand_v(src2_temp, mask, src1);
     la_xvand_v(src3_temp, mask, src2);
@@ -3168,7 +3173,12 @@ bool translate_vfnmaddxxxps(IR1_INST * pir1) {
     IR2_OPND src3_temp = ra_alloc_ftemp();
 
     /* check if result is NaN */
-    la_xvfcmp_cond_s(mask, temp, temp, 0x8);
+    /* Unused upper lanes must not raise floating-point exceptions. */
+    if (ir1_opnd_is_xmm(opnd0)) {
+        la_vfcmp_cond_s(mask, temp, temp, 0x8);
+    } else {
+        la_xvfcmp_cond_s(mask, temp, temp, 0x8);
+    }
     la_xvand_v(src1_temp, mask, dest);
     la_xvand_v(src2_temp, mask, src1);
     la_xvand_v(src3_temp, mask, src2);
@@ -3329,7 +3339,12 @@ bool translate_vfnmsubxxxpd(IR1_INST * pir1) {
     IR2_OPND src3_temp = ra_alloc_ftemp();
 
     /* check if result is NaN */
-    la_xvfcmp_cond_d(mask, temp, temp, 0x8);
+    /* Unused upper lanes must not raise floating-point exceptions. */
+    if (ir1_opnd_is_xmm(opnd0)) {
+        la_vfcmp_cond_d(mask, temp, temp, 0x8);
+    } else {
+        la_xvfcmp_cond_d(mask, temp, temp, 0x8);
+    }
     la_xvand_v(src1_temp, mask, dest);
     la_xvand_v(src2_temp, mask, src1);
     la_xvand_v(src3_temp, mask, src2);
@@ -3394,7 +3409,12 @@ bool translate_vfnmsubxxxps(IR1_INST * pir1) {
     IR2_OPND src3_temp = ra_alloc_ftemp();
 
     /* check if result is NaN */
-    la_xvfcmp_cond_s(mask, temp, temp, 0x8);
+    /* Unused upper lanes must not raise floating-point exceptions. */
+    if (ir1_opnd_is_xmm(opnd0)) {
+        la_vfcmp_cond_s(mask, temp, temp, 0x8);
+    } else {
+        la_xvfcmp_cond_s(mask, temp, temp, 0x8);
+    }
     la_xvand_v(src1_temp, mask, dest);
     la_xvand_v(src2_temp, mask, src1);
     la_xvand_v(src3_temp, mask, src2);
