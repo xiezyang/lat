@@ -23,6 +23,12 @@ if 'x86_64-linux-user' in target_dirs
   }]
 
   test(
+    'test-redundant-xvldi',
+    find_program('python3'),
+    args: files('../../../latx/test-redundant-xvldi.py'),
+    suite: 'latx-integration',
+  )
+  test(
     'test-mxcsr-fcsr-model',
     find_program('python3'),
     args: files('../../../latx/test-mxcsr-fcsr.py'),
