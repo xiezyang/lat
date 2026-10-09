@@ -21,4 +21,10 @@ if 'x86_64-linux-user' in target_dirs
     ],
     'timeout': 300,
   }]
+  test(
+    'test-redundant-xvldi',
+    find_program('python3'),
+    args: files('../../../latx/test-redundant-xvldi.py'),
+    suite: 'latx-integration',
+  )
 endif
