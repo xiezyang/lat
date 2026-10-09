@@ -78,20 +78,18 @@ bool translate_vmovaps(IR1_INST * pir1) {
         la_xvori_b(ra_alloc_xmm(ir1_opnd_base_reg_num(dest)),
             ra_alloc_xmm(ir1_opnd_base_reg_num(src)), 0);
     } else if (ir1_opnd_is_xmm(dest) && ir1_opnd_is_mem(src)) {
-        IR2_OPND temp = ra_alloc_ftemp();
+        IR2_OPND dest_reg = ra_alloc_xmm(ir1_opnd_base_reg_num(dest));
 
-        load_freg128_from_ir1_mem(temp, src);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(ra_alloc_xmm(ir1_opnd_base_reg_num(dest)), temp, 0);
+        load_freg128_from_ir1_mem(dest_reg, src);
+        set_high128_xreg_to_zero(dest_reg);
     } else if (ir1_opnd_is_mem(dest) && ir1_opnd_is_xmm(src)) {
         store_freg128_to_ir1_mem(ra_alloc_xmm(ir1_opnd_base_reg_num(src)),
             dest);
     } else if (ir1_opnd_is_xmm(dest) && ir1_opnd_is_xmm(src)) {
-        IR2_OPND temp = ra_alloc_ftemp();
+        IR2_OPND dest_reg = ra_alloc_xmm(ir1_opnd_base_reg_num(dest));
 
-        la_vori_b(temp, ra_alloc_xmm(ir1_opnd_base_reg_num(src)), 0);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(ra_alloc_xmm(ir1_opnd_base_reg_num(dest)), temp, 0);
+        la_vori_b(dest_reg, ra_alloc_xmm(ir1_opnd_base_reg_num(src)), 0);
+        set_high128_xreg_to_zero(dest_reg);
     } else {
 #ifdef CONFIG_LATX_TS
         return false;
@@ -209,11 +207,8 @@ bool translate_vmovshdup(IR1_INST * pir1) {
     } else {
         IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(pir1, 0));
         IR2_OPND src = load_freg128_from_ir1(ir1_get_opnd(pir1, 1));
-        IR2_OPND temp = ra_alloc_ftemp();
-
-        la_xvpackod_w(temp, src, src);
-        set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_vpackod_w(dest, src, src);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -459,13 +454,11 @@ bool translate_vmaskmovpx(IR1_INST * pir1) {
     }
     if (ir1_opnd_is_xmm(opnd0) || ir1_opnd_is_ymm(opnd0)) {
         IR2_OPND dest = load_freg256_from_ir1(opnd0);
-        temp = ra_alloc_ftemp();
-        la_xvandi_b(temp, temp, 0);
         tr_slt(mask, src1, 0);
-        la_xvbitsel_v(temp, temp, src2, mask);
-        if (ir1_opnd_is_xmm(opnd0))
-            set_high128_xreg_to_zero(temp);
-        la_xvori_b(dest, temp, 0);
+        la_xvand_v(dest, src2, mask);
+        if (ir1_opnd_is_xmm(opnd0)) {
+            set_high128_xreg_to_zero(dest);
+        }
     } else if (ir1_opnd_is_mem(opnd0)) {
         temp = load_freg256_from_ir1(opnd0);
         tr_slt(mask, src1, 0);

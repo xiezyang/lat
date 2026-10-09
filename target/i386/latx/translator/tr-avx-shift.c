@@ -21,7 +21,7 @@ bool translate_vpslldq(IR1_INST * pir1) {
     lsassert((ir1_opnd_is_xmm(opnd0) && ir1_opnd_is_xmm(opnd1)) ||
         (ir1_opnd_is_ymm(opnd0) && ir1_opnd_is_ymm(opnd1)));
     lsassert(ir1_opnd_is_imm(opnd2));
-    IR2_OPND dest = load_freg256_from_ir1(opnd0);
+    IR2_OPND dest = ra_alloc_xmm(ir1_opnd_base_reg_num(opnd0));
     IR2_OPND src = load_freg256_from_ir1(opnd1);
     uint8_t imm = ir1_opnd_uimm(opnd2);
     if (imm > 15) {
@@ -118,7 +118,7 @@ bool translate_vpsrldq(IR1_INST * pir1) {
     lsassert((ir1_opnd_is_xmm(opnd0) && ir1_opnd_is_xmm(opnd1)) ||
         (ir1_opnd_is_ymm(opnd0) && ir1_opnd_is_ymm(opnd1)));
     lsassert(ir1_opnd_is_imm(opnd2));
-    IR2_OPND dest = load_freg256_from_ir1(opnd0);
+    IR2_OPND dest = ra_alloc_xmm(ir1_opnd_base_reg_num(opnd0));
     IR2_OPND src = load_freg256_from_ir1(opnd1);
     uint8_t imm = ir1_opnd_uimm(opnd2);
     if (imm > 15) {
@@ -194,7 +194,10 @@ bool translate_vpsrlx(IR1_INST * pir1) {
 
         IR2_OPND count = ra_alloc_itemp();
         IR2_OPND max = ra_alloc_itemp();
-        la_addi_d(max, zero_ir2_opnd, max_count);
+        /* The low 64 bits of the count operand are one scalar shift count;
+         * a count equal to max_count still shifts, only a larger count
+         * yields zero.  Compare against max_count + 1 to keep "==" valid. */
+        la_addi_d(max, zero_ir2_opnd, max_count + 1);
         la_vpickve2gr_d(count, src2, 0);
         la_blt(count, max, label_shift);
         la_xvxor_v(dest, dest, dest);
