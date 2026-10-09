@@ -21,4 +21,23 @@ if 'x86_64-linux-user' in target_dirs
     ],
     'timeout': 300,
   }]
+
+  test(
+    'test-mxcsr-fcsr-model',
+    find_program('python3'),
+    args: files('../../../latx/test-mxcsr-fcsr.py'),
+    suite: 'latx-integration',
+  )
+  foreach exception_option : ['0', '1']
+    test(
+      'test-mxcsr-exceptions-' + exception_option,
+      find_program('../../test-avx-regressions.py'),
+      args: [emulators['latx-x86_64'],
+             files('../../../latx/mxcsr-exceptions.asm')],
+      env: ['LATX_ENABLE_FCSR_EXC=' + exception_option,
+            'LATX_AVX_PREBUILT='],
+      suite: 'latx-integration',
+      timeout: 120,
+    )
+  endforeach
 endif

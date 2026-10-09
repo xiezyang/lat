@@ -68,7 +68,7 @@ def run_case(emulator, source, work, prebuilt):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--prebuilt", type=Path,
-                        default=os.environ.get("LATX_AVX_PREBUILT"),
+                        default=os.environ.get("LATX_AVX_PREBUILT") or None,
                         help="guests compiled on x86 (or LATX_AVX_PREBUILT)")
     parser.add_argument("emulator", help="LAT executable, or native")
     parser.add_argument("sources", type=Path, nargs="+")
