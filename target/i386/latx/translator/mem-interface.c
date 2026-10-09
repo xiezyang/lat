@@ -227,6 +227,8 @@ static IR2_OPND convert_mem_helper(IR1_OPND *opnd1, IR2_OPND *arg_dest_op,
         offset += ir1_addr_next(pir1);
 
 #ifdef CONFIG_LATX_IMM_REG
+        int rip_cache_id = -1;
+
         if (dest_need_itmp) {
             if (!option_imm_reg || !option_imm_rip || cache_skip) {
                 dest_op = ra_alloc_itemp();
@@ -285,6 +287,7 @@ static IR2_OPND convert_mem_helper(IR1_OPND *opnd1, IR2_OPND *arg_dest_op,
                      * else
                      * dest_op uses native method, but reg use the one in cache
                      */
+                    rip_cache_id = res.cache_id;
                 }
             }
         }
@@ -301,6 +304,14 @@ static IR2_OPND convert_mem_helper(IR1_OPND *opnd1, IR2_OPND *arg_dest_op,
             load_offset = sextract64(offset, 0, 12);
             base_offset -= load_offset;
         }
+#ifdef CONFIG_LATX_IMM_REG
+        if (rip_cache_id >= 0) {
+            /* A cache miss created a bucket for offset, but the register
+             * will hold base_offset.  Later hits must measure their signed
+             * 12-bit displacement from the actual register value. */
+            imm_cache_update_by_offset(imm_cache, rip_cache_id, base_offset);
+        }
+#endif
         target_ulong call_offset __attribute__((unused)) =
                 aot_get_call_offset(base_offset);
         aot_load_guest_addr(dest_op, base_offset, LOAD_CALL_TARGET,

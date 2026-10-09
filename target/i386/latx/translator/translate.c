@@ -135,7 +135,9 @@ void tr_init(void *tb)
     }
 
     if (t->imm_cache == NULL) {
-        t->imm_cache = (IMM_CACHE *)mm_malloc(sizeof(IMM_CACHE));
+        /* Context-switch generation can clear the cache before the first TB
+         * initializes it.  An empty cache must have cache_count == 0. */
+        t->imm_cache = (IMM_CACHE *)mm_calloc(1, sizeof(IMM_CACHE));
         t->imm_cache->bucket = (IMM_CACHE_BUCKET *)mm_calloc(
             CACHE_MAX_CAPACITY, sizeof(IMM_CACHE_BUCKET));
     }

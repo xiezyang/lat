@@ -46,4 +46,15 @@ if 'x86_64-linux-user' in target_dirs
       timeout: 120,
     )
   endforeach
+  foreach cache_option : ['0000', '1100', '1101', '1110', '1111']
+    test(
+      'test-rip-relative-cache-' + cache_option,
+      find_program('../../test-avx-regressions.py'),
+      args: [emulators['latx-x86_64'],
+             files('../../rip-relative-cache.asm')],
+      env: ['LATX_IMM_REG=' + cache_option, 'LATX_AVX_PREBUILT='],
+      suite: 'latx-integration',
+      timeout: 120,
+    )
+  endforeach
 endif
