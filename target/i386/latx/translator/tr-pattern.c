@@ -432,18 +432,8 @@ static inline bool xcomisx_jcc(IR1_INST *ir1, bool is_double, bool qnan_exp)
 
     if (is_double) {
         la_fcmp = la_fcmp_cond_d;
-        if (qnan_exp) {
-            curr->info->id = WRAP(COMISD);
-        } else {
-            curr->info->id = WRAP(UCOMISD);
-        }
     } else {
         la_fcmp = la_fcmp_cond_s;
-        if (qnan_exp) {
-            curr->info->id = WRAP(COMISS);
-        } else {
-            curr->info->id = WRAP(UCOMISS);
-        }
     }
 
     IR2_OPND dest = load_freg128_from_ir1(ir1_get_opnd(ir1, 0));
@@ -2301,14 +2291,14 @@ static inline bool xcomisx_xx_jcc(IR1_INST *pir1, bool is_jcc, bool is_double, b
 
         /* taken */
         tr_generate_exit_tb(curr, 1);
-
     }
     return true;
 }
 
 static bool translate_comisd_xx_jcc(IR1_INST *pir1)
 {
-    if (ir1_opcode(pir1) == WRAP(COMISD)) {
+    if (ir1_opcode(pir1) == WRAP(COMISD) ||
+        ir1_opcode(pir1) == WRAP(VCOMISD)) {
         return xcomisx_xx_jcc(pir1, false, true, true);
     } else {
         lsassert(ir1_opcode(pir1) == WRAP(JA) ||
@@ -2327,7 +2317,8 @@ static bool translate_comisd_xx_jcc(IR1_INST *pir1)
 
 static bool translate_comiss_xx_jcc(IR1_INST *pir1)
 {
-    if (ir1_opcode(pir1) == WRAP(COMISS)) {
+    if (ir1_opcode(pir1) == WRAP(COMISS) ||
+        ir1_opcode(pir1) == WRAP(VCOMISS)) {
         return xcomisx_xx_jcc(pir1, false, false, true);
     } else {
         lsassert(ir1_opcode(pir1) == WRAP(JA) ||
@@ -2346,7 +2337,8 @@ static bool translate_comiss_xx_jcc(IR1_INST *pir1)
 
 static bool translate_ucomisd_xx_jcc(IR1_INST *pir1)
 {
-    if (ir1_opcode(pir1) == WRAP(UCOMISD)) {
+    if (ir1_opcode(pir1) == WRAP(UCOMISD) ||
+        ir1_opcode(pir1) == WRAP(VUCOMISD)) {
         return xcomisx_xx_jcc(pir1, false, true, false);
     } else {
         lsassert(ir1_opcode(pir1) == WRAP(JA) ||
@@ -2365,7 +2357,8 @@ static bool translate_ucomisd_xx_jcc(IR1_INST *pir1)
 
 static bool translate_ucomiss_xx_jcc(IR1_INST *pir1)
 {
-    if (ir1_opcode(pir1) == WRAP(UCOMISS)) {
+    if (ir1_opcode(pir1) == WRAP(UCOMISS) ||
+        ir1_opcode(pir1) == WRAP(VUCOMISS)) {
         return xcomisx_xx_jcc(pir1, false, false, false);
     } else {
         lsassert(ir1_opcode(pir1) == WRAP(JA) ||

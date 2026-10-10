@@ -604,6 +604,7 @@ bool insts_pattern_scan_jcc_end(TranslationBlock *tb, IR1_INST *pir1, int pir1_i
         }
 #ifdef CONFIG_LATX_XCOMISX_OPT
     case WRAP(COMISD):
+    case WRAP(VCOMISD):
         SCAN_CHECK(scan, 0);
         ir1_jcc = SCAN_IR1(tb, scan, 0);
         switch (ir1_opcode(ir1_jcc)) {
@@ -636,6 +637,7 @@ bool insts_pattern_scan_jcc_end(TranslationBlock *tb, IR1_INST *pir1, int pir1_i
             return false;
         }
     case WRAP(COMISS):
+    case WRAP(VCOMISS):
         SCAN_CHECK(scan, 0);
         ir1_jcc = SCAN_IR1(tb, scan, 0);
         switch (ir1_opcode(ir1_jcc)) {
@@ -668,6 +670,7 @@ bool insts_pattern_scan_jcc_end(TranslationBlock *tb, IR1_INST *pir1, int pir1_i
             return false;
         }
     case WRAP(UCOMISD):
+    case WRAP(VUCOMISD):
         SCAN_CHECK(scan, 0);
         ir1_jcc = SCAN_IR1(tb, scan, 0);
         switch (ir1_opcode(ir1_jcc)) {
@@ -700,6 +703,7 @@ bool insts_pattern_scan_jcc_end(TranslationBlock *tb, IR1_INST *pir1, int pir1_i
             return false;
         }
     case WRAP(UCOMISS):
+    case WRAP(VUCOMISS):
         SCAN_CHECK(scan, 0);
         ir1_jcc = SCAN_IR1(tb, scan, 0);
         switch (ir1_opcode(ir1_jcc)) {
