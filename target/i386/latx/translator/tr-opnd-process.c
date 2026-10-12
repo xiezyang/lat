@@ -1345,6 +1345,7 @@ void store_freg256_to_ir1_mem(IR2_OPND opnd2, IR1_OPND * opnd1) {
     int little_disp;
     lsassert(ir1_opnd_is_mem(opnd1));
     lsassert(ir2_opnd_is_freg( & opnd2));
+    flush_pending_ymmh_zero(opnd2);
     IR2_OPND mem_opnd = convert_mem(opnd1, & little_disp);
     gen_test_page_flag(mem_opnd, little_disp, PAGE_WRITE | PAGE_WRITE_ORG);
     la_xvst(opnd2, mem_opnd, little_disp);
@@ -1362,7 +1363,9 @@ void load_freg256_from_ir1_mem(IR2_OPND opnd2, IR1_OPND * opnd1) {
 
 IR2_OPND load_freg256_from_ir1(IR1_OPND * opnd1) {
     if (ir1_opnd_is_ymm(opnd1)) {
-        return ra_alloc_xmm(ir1_opnd_base_reg_num(opnd1));
+        IR2_OPND ret_opnd = ra_alloc_xmm(ir1_opnd_base_reg_num(opnd1));
+        flush_pending_ymmh_zero(ret_opnd);
+        return ret_opnd;
     } else if (ir1_opnd_is_mem(opnd1) || ir1_opnd_is_xmm(opnd1)) {
         IR2_OPND ret_opnd;
         if (ir1_opnd_size(opnd1) == 256) {
@@ -1376,12 +1379,124 @@ IR2_OPND load_freg256_from_ir1(IR1_OPND * opnd1) {
     g_assert_not_reached();
 }
 
-void set_high128_xreg_to_zero(IR2_OPND opnd2) {
-    lsassert(ir2_opnd_is_freg( & opnd2));
-    if (option_enable_lasx) {
-        la_xvinsgr2vr_d(opnd2, zero_ir2_opnd, 2);
-        la_xvinsgr2vr_d(opnd2, zero_ir2_opnd, 3);
+static int mapped_ymm_index(IR2_OPND opnd)
+{
+    int reg = ir2_opnd_base_reg_num(&opnd);
+
+    if (reg >= XMM0_MAPS && reg <= XMM15_MAPS) {
+        return reg - XMM0_MAPS;
     }
+    return -1;
+}
+
+/* Instruction emitters do not update the translation-time pending mask. */
+static void emit_high128_clear(IR2_OPND opnd)
+{
+    IR2_OPND zero = ra_alloc_ftemp();
+
+    la_vxor_v(zero, zero, zero);
+    la_xvpermi_q(opnd, zero, XVPERMI_Q_4_0(0, 2));
+    ra_free_temp(zero);
+}
+
+void flush_pending_ymmh_zero(IR2_OPND opnd)
+{
+    int index;
+    uint16_t mask;
+
+    if (!option_enable_lasx) {
+        return;
+    }
+    index = mapped_ymm_index(opnd);
+    if (index < 0) {
+        return;
+    }
+    mask = UINT16_C(1) << index;
+    if (lsenv->tr_data->ymmh_zero_pending & mask) {
+        emit_high128_clear(opnd);
+        lsenv->tr_data->ymmh_zero_pending &= ~mask;
+    }
+}
+
+BorrowedXmm borrow_guest_xmm(int index)
+{
+    BorrowedXmm borrowed;
+    borrowed.saved = ra_alloc_ftemp();
+    borrowed.reg = ra_alloc_xmm(index);
+    /* A helper may save and later restore all 256 physical bits. */
+    flush_pending_ymmh_zero(borrowed.reg);
+    if (option_enable_lasx) {
+        la_xvor_v(borrowed.saved, borrowed.reg, borrowed.reg);
+    } else {
+        la_vor_v(borrowed.saved, borrowed.reg, borrowed.reg);
+    }
+    return borrowed;
+}
+
+void restore_guest_xmm(BorrowedXmm borrowed)
+{
+    if (option_enable_lasx) {
+        la_xvor_v(borrowed.reg, borrowed.saved, borrowed.saved);
+    } else {
+        la_vor_v(borrowed.reg, borrowed.saved, borrowed.saved);
+    }
+    ra_free_temp(borrowed.saved);
+}
+
+void cancel_pending_ymmh_zero(IR2_OPND opnd)
+{
+    int index;
+
+    if (!option_enable_lasx) {
+        return;
+    }
+    index = mapped_ymm_index(opnd);
+    if (index >= 0) {
+        lsenv->tr_data->ymmh_zero_pending &=
+            ~(UINT16_C(1) << index);
+    }
+}
+
+void emit_ymmh_zeros(void)
+{
+    uint16_t pending = lsenv->tr_data->ymmh_zero_pending;
+
+    /* Keep pending state for independently generated conditional exits. */
+    if (!option_enable_lasx || !pending) {
+        return;
+    }
+
+    IR2_OPND zero = ra_alloc_ftemp();
+    la_vxor_v(zero, zero, zero);
+    for (int index = 0; index < CPU_NB_REGS; ++index) {
+        IR2_OPND opnd;
+
+        if (!(pending & (UINT16_C(1) << index))) {
+            continue;
+        }
+        ir2_opnd_build(&opnd, IR2_OPND_FPR, reg_xmm_map[index]);
+        la_xvpermi_q(opnd, zero, XVPERMI_Q_4_0(0, 2));
+    }
+    ra_free_temp(zero);
+}
+
+void set_high128_xreg_to_zero(IR2_OPND opnd)
+{
+    int index;
+
+    lsassert(ir2_opnd_is_freg(&opnd));
+    if (!option_enable_lasx) {
+        return;
+    }
+
+    index = mapped_ymm_index(opnd);
+    if (index >= 0) {
+        lsenv->tr_data->ymmh_zero_pending |= UINT16_C(1) << index;
+        return;
+    }
+
+    /* Floating-point temporaries can be consumed as 256-bit values now. */
+    emit_high128_clear(opnd);
 }
 
 static IR2_OPND get_ymm_high128_shadow_addr(int index)

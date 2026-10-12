@@ -3590,21 +3590,12 @@ bool translate_vpcmpestri(IR1_INST *pir1)
         tr_gen_call_to_helper_pcmpxstrx((ADDR)helper_pcmpestri_xmm, d, s, imm,
             LOAD_HELPER_PCMPESTRI_XMM);
     } else {
-        IR2_OPND temp = ra_alloc_ftemp();
-        IR2_OPND src = ra_alloc_xmm((d + 1) % 8);
-        if (option_enable_lasx) {
-            la_xvor_v(temp, src, src);
-        } else {
-            la_vor_v(temp, src, src);
-        }
+        BorrowedXmm borrowed = borrow_guest_xmm((d + 1) % 8);
+        IR2_OPND src = borrowed.reg;
         load_freg128_from_ir1_mem(src, opnd1);
         tr_gen_call_to_helper_pcmpxstrx((ADDR)helper_pcmpestri_xmm, d, (d + 1) % 8, imm,
                 LOAD_HELPER_PCMPESTRI_XMM);
-        if (option_enable_lasx) {
-            la_xvor_v(src, temp, temp);
-        } else {
-            la_vor_v(src, temp, temp);
-        }
+        restore_guest_xmm(borrowed);
     }
     /* TODO:fix eflags and mem opnd */
     return true;
@@ -3626,21 +3617,12 @@ bool translate_pcmpestrm(IR1_INST *pir1)
         tr_gen_call_to_helper_pcmpxstrx((ADDR)helper_pcmpestrm_xmm, d, s, imm,
                 LOAD_HELPER_PCMPESTRM_XMM);
     } else {
-        IR2_OPND temp = ra_alloc_ftemp();
-        IR2_OPND src = ra_alloc_xmm((d + 1) % 7 + 1);
-        if (option_enable_lasx) {
-            la_xvor_v(temp, src, src);
-        } else {
-            la_vor_v(temp, src, src);
-        }
+        BorrowedXmm borrowed = borrow_guest_xmm((d + 1) % 7 + 1);
+        IR2_OPND src = borrowed.reg;
         load_freg128_from_ir1_mem(src, opnd1);
          tr_gen_call_to_helper_pcmpxstrx((ADDR)helper_pcmpestrm_xmm, d,
                  (d + 1) % 7 + 1, imm, LOAD_HELPER_PCMPESTRM_XMM);
-        if (option_enable_lasx) {
-            la_xvor_v(src, temp, temp);
-        } else {
-            la_vor_v(src, temp, temp);
-        }
+        restore_guest_xmm(borrowed);
     }
     /* TODO:fix eflags and mem opnd */
     return true;
@@ -3662,21 +3644,12 @@ bool translate_vpcmpistri(IR1_INST *pir1)
         tr_gen_call_to_helper_pcmpxstrx((ADDR)helper_pcmpistri_xmm, d, s, imm,
                 LOAD_HELPER_PCMPISTRI_XMM);
     } else {
-        IR2_OPND temp = ra_alloc_ftemp();
-        IR2_OPND src = ra_alloc_xmm((d + 1) % 8);
-        if (option_enable_lasx) {
-            la_xvor_v(temp, src, src);
-        } else {
-            la_vor_v(temp, src, src);
-        }
+        BorrowedXmm borrowed = borrow_guest_xmm((d + 1) % 8);
+        IR2_OPND src = borrowed.reg;
         load_freg128_from_ir1_mem(src, opnd1);
         tr_gen_call_to_helper_pcmpxstrx((ADDR)helper_pcmpistri_xmm, d, (d + 1) % 8, imm,
                 LOAD_HELPER_PCMPISTRI_XMM);
-        if (option_enable_lasx) {
-            la_xvor_v(src, temp, temp);
-        } else {
-            la_vor_v(src, temp, temp);
-        }
+        restore_guest_xmm(borrowed);
     }
     /* TODO:fix eflags and mem opnd */
     return true;
@@ -3694,21 +3667,12 @@ bool translate_pcmpistrm(IR1_INST *pir1)
         tr_gen_call_to_helper_pcmpxstrx((ADDR)helper_pcmpistrm_xmm, d, s, imm,
                 LOAD_HELPER_PCMPISTRM_XMM);
     } else {
-        IR2_OPND temp = ra_alloc_ftemp();
-        IR2_OPND src = ra_alloc_xmm((d + 1) % 7 + 1);
-        if (option_enable_lasx) {
-            la_xvor_v(temp, src, src);
-        } else {
-            la_vor_v(temp, src, src);
-        }
+        BorrowedXmm borrowed = borrow_guest_xmm((d + 1) % 7 + 1);
+        IR2_OPND src = borrowed.reg;
         load_freg128_from_ir1_mem(src, opnd1);
         tr_gen_call_to_helper_pcmpxstrx((ADDR)helper_pcmpistrm_xmm, d,
                 (d + 1) % 7 + 1, imm, LOAD_HELPER_PCMPISTRM_XMM);
-        if (option_enable_lasx) {
-            la_xvor_v(src, temp, temp);
-        } else {
-            la_vor_v(src, temp, temp);
-        }
+        restore_guest_xmm(borrowed);
     }
     /* TODO:fix eflags and mem opnd */
     return true;
@@ -3782,23 +3746,14 @@ bool translate_aesdec(IR1_INST *pir1)
                 LOAD_HELPER_AESDEC_XMM);
     } else {
         int s1 = (d + 1) & 7;
-        IR2_OPND temp = ra_alloc_ftemp();
-        IR2_OPND src = ra_alloc_xmm(s1);
-        if (option_enable_lasx) {
-            la_xvor_v(temp, src, src);
-        } else {
-            la_vor_v(temp, src, src);
-        }
+        BorrowedXmm borrowed = borrow_guest_xmm(s1);
+        IR2_OPND src = borrowed.reg;
         assert(ir1_opnd_size(opnd1) == 128);
         load_freg128_from_ir1_mem(src, opnd1);
 
         tr_gen_call_to_helper_aes((ADDR)helper_aesdec_xmm, d, s1, 0,
                 LOAD_HELPER_AESDEC_XMM);
-        if (option_enable_lasx) {
-            la_xvor_v(src, temp, temp);
-        } else {
-            la_vor_v(src, temp, temp);
-        }
+        restore_guest_xmm(borrowed);
     }
     /* TODO: need to check */
     return true;
@@ -3819,23 +3774,14 @@ bool translate_aesdeclast(IR1_INST *pir1)
                 LOAD_HELPER_AESDECLAST_XMM);
     } else {
         int s1 = (d + 1) & 7;
-        IR2_OPND temp = ra_alloc_ftemp();
-        IR2_OPND src = ra_alloc_xmm(s1);
-        if (option_enable_lasx) {
-            la_xvor_v(temp, src, src);
-        } else {
-            la_vor_v(temp, src, src);
-        }
+        BorrowedXmm borrowed = borrow_guest_xmm(s1);
+        IR2_OPND src = borrowed.reg;
         assert(ir1_opnd_size(opnd1) == 128);
         load_freg128_from_ir1_mem(src, opnd1);
 
         tr_gen_call_to_helper_aes((ADDR)helper_aesdeclast_xmm, d, s1, 0,
                 LOAD_HELPER_AESDECLAST_XMM);
-        if (option_enable_lasx) {
-            la_xvor_v(src, temp, temp);
-        } else {
-            la_vor_v(src, temp, temp);
-        }
+        restore_guest_xmm(borrowed);
     }
     /* TODO: need to check */
     return true;
@@ -3856,23 +3802,14 @@ bool translate_aesenc(IR1_INST *pir1)
                 LOAD_HELPER_AESENC_XMM);
     } else {
         int s1 = (d + 1) & 7;
-        IR2_OPND temp = ra_alloc_ftemp();
-        IR2_OPND src = ra_alloc_xmm(s1);
-        if (option_enable_lasx) {
-            la_xvor_v(temp, src, src);
-        } else {
-            la_vor_v(temp, src, src);
-        }
+        BorrowedXmm borrowed = borrow_guest_xmm(s1);
+        IR2_OPND src = borrowed.reg;
         assert(ir1_opnd_size(opnd1) == 128);
         load_freg128_from_ir1_mem(src, opnd1);
 
         tr_gen_call_to_helper_aes((ADDR)helper_aesenc_xmm, d, s1, 0,
                 LOAD_HELPER_AESENC_XMM);
-        if (option_enable_lasx) {
-            la_xvor_v(src, temp, temp);
-        } else {
-            la_vor_v(src, temp, temp);
-        }
+        restore_guest_xmm(borrowed);
     }
     /* TODO: need to check */
     return true;
@@ -3893,23 +3830,14 @@ bool translate_aesenclast(IR1_INST *pir1)
                 LOAD_HELPER_AESENCLAST_XMM);
     } else {
         int s1 = (d + 1) & 7;
-        IR2_OPND temp = ra_alloc_ftemp();
-        IR2_OPND src = ra_alloc_xmm(s1);
-        if (option_enable_lasx) {
-            la_xvor_v(temp, src, src);
-        } else {
-            la_vor_v(temp, src, src);
-        }
+        BorrowedXmm borrowed = borrow_guest_xmm(s1);
+        IR2_OPND src = borrowed.reg;
         assert(ir1_opnd_size(opnd1) == 128);
         load_freg128_from_ir1_mem(src, opnd1);
 
         tr_gen_call_to_helper_aes((ADDR)helper_aesenclast_xmm, d, s1, 0,
                 LOAD_HELPER_AESENCLAST_XMM);
-        if (option_enable_lasx) {
-            la_xvor_v(src, temp, temp);
-        } else {
-            la_vor_v(src, temp, temp);
-        }
+        restore_guest_xmm(borrowed);
     }
     /* TODO: need to check */
     return true;
@@ -3929,21 +3857,12 @@ bool translate_aesimc(IR1_INST *pir1)
         tr_gen_call_to_helper_pcmpxstrx((ADDR)helper_aesimc_xmm, d, s, 0,
                 LOAD_HELPER_AESIMC_XMM);
     } else {
-        IR2_OPND temp = ra_alloc_ftemp();
-        IR2_OPND src = ra_alloc_xmm((d + 1) % 7 + 1);
-        if (option_enable_lasx) {
-            la_xvor_v(temp, src, src);
-        } else {
-            la_vor_v(temp, src, src);
-        }
+        BorrowedXmm borrowed = borrow_guest_xmm((d + 1) % 7 + 1);
+        IR2_OPND src = borrowed.reg;
         load_freg128_from_ir1_mem(src, opnd1);
         tr_gen_call_to_helper_pcmpxstrx((ADDR)helper_aesimc_xmm, d,
                 (d + 1) % 7 + 1, 0, LOAD_HELPER_AESIMC_XMM);
-        if (option_enable_lasx) {
-            la_xvor_v(src, temp, temp);
-        } else {
-            la_vor_v(src, temp, temp);
-        }
+        restore_guest_xmm(borrowed);
     }
     /* TODO: IMM 0 do not need to save */
     return true;
@@ -3965,21 +3884,12 @@ bool translate_aeskeygenassist(IR1_INST *pir1)
         tr_gen_call_to_helper_pcmpxstrx((ADDR)helper_aeskeygenassist_xmm, d, s, imm,
                 LOAD_HELPER_AESKEYGENASSIST_XMM);
     } else {
-        IR2_OPND temp = ra_alloc_ftemp();
-        IR2_OPND src = ra_alloc_xmm((d + 1) % 7 + 1);
-        if (option_enable_lasx) {
-            la_xvor_v(temp, src, src);
-        } else {
-            la_vor_v(temp, src, src);
-        }
+        BorrowedXmm borrowed = borrow_guest_xmm((d + 1) % 7 + 1);
+        IR2_OPND src = borrowed.reg;
         load_freg128_from_ir1_mem(src, opnd1);
         tr_gen_call_to_helper_pcmpxstrx((ADDR)helper_aeskeygenassist_xmm, d,
                 (d + 1) % 7 + 1, imm, LOAD_HELPER_AESKEYGENASSIST_XMM);
-        if (option_enable_lasx) {
-            la_xvor_v(src, temp, temp);
-        } else {
-            la_vor_v(src, temp, temp);
-        }
+        restore_guest_xmm(borrowed);
     }
     /* TODO: need to check */
     return true;

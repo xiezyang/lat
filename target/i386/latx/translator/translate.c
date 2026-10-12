@@ -107,6 +107,7 @@ void tr_init(void *tb)
               t->curr_tb);
     t->curr_tb = tb;
     t->curr_ir1_inst = NULL;
+    t->ymmh_zero_pending = 0;
 
     /* register allocation init */
     ra_free_all();
@@ -1869,6 +1870,47 @@ static bool (*translate_functions[])(IR1_INST *) = {
 
 bool ir1_translate(IR1_INST *ir1)
 {
+    bool instptn_skips_instruction = false;
+    bool instptn_ends_tb_early = false;
+
+#ifdef CONFIG_LATX_INSTS_PATTERN
+    instptn_skips_instruction = ir1->instptn.opc == INSTPTN_OPC_NOP ||
+                               ir1->instptn.opc == INSTPTN_OPC_NOP_DIV;
+    /* A folded branch is emitted by this instruction; its original Jcc
+     * is marked NOP and cannot be relied on to clear before a TU jump. */
+    instptn_ends_tb_early = ir1->instptn.opc != INSTPTN_OPC_NONE &&
+                            !instptn_skips_instruction &&
+                            ir1->instptn.next &&
+                            ir1->instptn.next->instptn.opc == INSTPTN_OPC_NOP &&
+                            ir1_is_tb_ending(ir1->instptn.next);
+#endif
+
+    /* Keep the clear in the TB body; TU/AOT may replace generated exits. */
+    if (ir1_is_tb_ending(ir1) || instptn_ends_tb_early) {
+        emit_ymmh_zeros();
+        lsenv->tr_data->ymmh_zero_pending = 0;
+    }
+
+    if (option_enable_lasx && !instptn_skips_instruction) {
+        int opnd_num = ir1_get_opnd_num(ir1);
+
+        /* Materialize only YMM registers that this instruction reads. */
+        for (int i = 1; i < opnd_num; ++i) {
+            IR1_OPND *opnd = ir1_get_opnd(ir1, i);
+
+            if (ir1_opnd_is_ymm(opnd)) {
+                flush_pending_ymmh_zero(
+                    ra_alloc_xmm(ir1_opnd_base_reg_num(opnd)));
+            } else if (ir1_opnd_is_mem(opnd) &&
+                       ir1_opnd_has_index(opnd) &&
+                       ir1_index_reg_is_ymm(opnd)) {
+                /* Gather reads YMM indices embedded in the memory address. */
+                flush_pending_ymmh_zero(
+                    ra_alloc_xmm(ir1_opnd_vsib_index_reg_num(opnd)));
+            }
+        }
+    }
+
 #ifdef CONFIG_LATX_INSTS_PATTERN
     if (try_translate_instptn(ir1)) {
         ra_free_all();
@@ -1958,6 +2000,17 @@ bool ir1_translate(IR1_INST *ir1)
     /*restore h128 bit of ymm after translating sse instructions*/
     if (option_lative && option_enable_lasx && temp._type != IR2_OPND_NONE) {
         restore_h128_of_ymm(ir1, temp);
+    }
+
+    /*
+     * Only a full-width destination overwrites a deferred clear.  YMM reads
+     * were materialized before translation; a narrowing instruction may now
+     * have created a new clear for an XMM destination aliasing that source.
+     */
+    if (option_enable_lasx && ir1_get_opnd_num(ir1) > 0 &&
+        ir1_opnd_is_ymm(ir1_get_opnd(ir1, 0))) {
+        cancel_pending_ymmh_zero(
+            ra_alloc_xmm(ir1_opnd_base_reg_num(ir1_get_opnd(ir1, 0))));
     }
 
 #ifdef CONFIG_LATX_DEBUG
@@ -2402,7 +2455,11 @@ int tr_ir2_generate(struct TranslationBlock *tb)
          * at the end of TB translate cache.
          */
         tcg_ctx->gen_insn_data[i][0] = pir1->info->address;
-        tcg_ctx->gen_insn_data[i][1] = 0;
+        /* Preserve logical upper zeros if this instruction faults before
+         * the deferred clears at the normal TB exit have executed.  The
+         * low 16 bits remain the condition-code operation. */
+        tcg_ctx->gen_insn_data[i][1] =
+            (target_ulong)lsenv->tr_data->ymmh_zero_pending << 16;
 
 #ifdef CONFIG_LATX_IMM_REG
         imm_cache->curr_ir1_index = i;
@@ -2806,6 +2863,7 @@ static void tr_generate_single_step_exit(IR2_OPND next_pc)
 {
     IR2_OPND helper_addr = ra_alloc_itemp();
 
+    emit_ymmh_zeros();
     la_store_addrx(next_pc, env_ir2_opnd, lsenv_offset_of_eip(lsenv));
     tr_save_registers_to_env(0xff, 0xff, option_save_xmm,
                              options_to_save());
@@ -2824,6 +2882,7 @@ void tr_generate_exit_tb_to_next(IR1_INST *ir1)
     IR2_OPND next_pc = ra_alloc_dbt_arg2();
     target_ulong call_offset = aot_get_call_offset(ir1_addr_next(ir1));
 
+    emit_ymmh_zeros();
     aot_load_guest_addr(next_pc, ir1_addr_next(ir1), LOAD_CALL_TARGET,
                         call_offset);
 
@@ -2852,6 +2911,7 @@ void tr_generate_exit_stub_tb(IR1_INST *branch, int succ_id, void *func, IR1_INS
 void tr_generate_exit_tb(IR1_INST *branch, int succ_id)
 #endif
 {
+    emit_ymmh_zeros();
     TRANSLATION_DATA *t_data = lsenv->tr_data;
     (void)t_data;
     TranslationBlock *tb = lsenv->tr_data->curr_tb;
@@ -3778,6 +3838,7 @@ void tr_save_xmm_to_env(uint8 xmm_to_save)
 #ifndef TARGET_X86_64
     for (int i = 0; i < 8; i++) {
         if (BITS_ARE_SET(xmm_to_save, 1 << i)) {
+            flush_pending_ymmh_zero(ra_alloc_xmm(i));
             if (option_enable_lasx) {
                 la_xvst(ra_alloc_xmm(i),
                                      env_ir2_opnd, lsenv_offset_of_xmm(lsenv, i));
@@ -3793,6 +3854,7 @@ void tr_save_xmm_to_env(uint8 xmm_to_save)
     la_addi_d(tmp_env_opnd, env_ir2_opnd, 0x7f0);
     for (int i = 0; i < 8; i++) {
         if (BITS_ARE_SET(xmm_to_save, 1 << i)) {
+            flush_pending_ymmh_zero(ra_alloc_xmm(i));
             if (option_enable_lasx) {
                 la_xvst(ra_alloc_xmm(i),
                                      tmp_env_opnd, lsenv_offset_of_xmm(lsenv, i) - 0x7f0);
@@ -3844,6 +3906,7 @@ void tr_save_xmm64_to_env(uint8 xmm_to_save)
     la_addi_d(tmp_env_opnd, env_ir2_opnd, 0x7f0);
     for (int i = 0; i < 8; i++) {
         if (BITS_ARE_SET(xmm_to_save, 1 << i)) {
+            flush_pending_ymmh_zero(ra_alloc_xmm(i + 8));
             if (option_enable_lasx) {
                 la_xvst(ra_alloc_xmm(i + 8), tmp_env_opnd,
                     lsenv_offset_of_xmm(lsenv, i + 8) - 0x7f0);

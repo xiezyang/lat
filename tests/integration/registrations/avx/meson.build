@@ -12,6 +12,18 @@ if 'x86_64-linux-user' in target_dirs
     'timeout': 180,
   }]
   latx_integration_tests += [{
+    'name': 'test-ymmh-fused-jcc',
+    'runner': find_program('../../test-avx-regressions.py'),
+    'args': [emulators['latx-x86_64'], files('../../ymmh-fused-jcc.asm')],
+    'timeout': 180,
+  }]
+  latx_integration_tests += [{
+    'name': 'test-vzeroall-pending',
+    'runner': find_program('../../test-avx-regressions.py'),
+    'args': [emulators['latx-x86_64'], files('../../vzeroall-pending.asm')],
+    'timeout': 120,
+  }]
+  latx_integration_tests += [{
     'name': 'test-avx-single-instruction',
     'runner': find_program('../../test-avx-regressions.py'),
     'args': [
