@@ -38,8 +38,8 @@ bool translate_vaddpd(IR1_INST * pir1) {
 
         src2 = load_freg128_from_ir1(opnd2);
         la_vfadd_d(temp, src1, src2);
-        set_high128_xreg_to_zero(temp);
         la_xvori_b(dest, temp, 0);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -87,8 +87,8 @@ bool translate_vaddsd(IR1_INST * pir1) {
 
     la_fadd_d(temp, src1, src2);
     la_vshuf4i_d(temp, src1, 0xc);
-    set_high128_xreg_to_zero(temp);
     la_xvori_b(dest, temp, 0);
+    set_high128_xreg_to_zero(dest);
     return true;
 }
 
@@ -140,8 +140,8 @@ bool translate_vsubpd(IR1_INST * pir1) {
 
         src2 = load_freg128_from_ir1(opnd2);
         la_vfsub_d(temp, src1, src2);
-        set_high128_xreg_to_zero(temp);
         la_xvori_b(dest, temp, 0);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -243,8 +243,8 @@ bool translate_vmulpd(IR1_INST * pir1) {
 
         src2 = load_freg128_from_ir1(opnd2);
         la_vfmul_d(temp, src1, src2);
-        set_high128_xreg_to_zero(temp);
         la_xvori_b(dest, temp, 0);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -291,8 +291,8 @@ bool translate_vmulsd(IR1_INST * pir1) {
 
     la_fmul_d(temp, src1, src2);
     la_vshuf4i_d(temp, src1, 0xc);
-    set_high128_xreg_to_zero(temp);
     la_xvori_b(dest, temp, 0);
+    set_high128_xreg_to_zero(dest);
     return true;
 }
 
@@ -344,8 +344,8 @@ bool translate_vdivpd(IR1_INST * pir1) {
 
         src2 = load_freg128_from_ir1(opnd2);
         la_vfdiv_d(temp, src1, src2);
-        set_high128_xreg_to_zero(temp);
         la_xvori_b(dest, temp, 0);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -391,8 +391,8 @@ bool translate_vdivsd(IR1_INST * pir1) {
     IR2_OPND temp = ra_alloc_ftemp();
     la_fdiv_d(temp, src1, src2);
     la_vshuf4i_d(temp, src1, 0xc);
-    set_high128_xreg_to_zero(temp);
     la_xvori_b(dest, temp, 0);
+    set_high128_xreg_to_zero(dest);
     return true;
 }
 
@@ -439,8 +439,8 @@ bool translate_vsqrtpd(IR1_INST * pir1) {
         IR2_OPND temp = ra_alloc_ftemp();
 
         la_vfsqrt_d(temp, src);
-        set_high128_xreg_to_zero(temp);
         la_xvori_b(dest, temp, 0);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -465,8 +465,8 @@ bool translate_vsqrtps(IR1_INST * pir1) {
         IR2_OPND temp = ra_alloc_ftemp();
 
         la_vfsqrt_s(temp, src);
-        set_high128_xreg_to_zero(temp);
         la_xvori_b(dest, temp, 0);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -625,8 +625,8 @@ bool translate_vhaddpd(IR1_INST * pir1) {
         la_vpickev_d(temp1, src2, src1);
         la_vpickod_d(temp2, src2, src1);
         la_vfadd_d(temp, temp1, temp2);
-        set_high128_xreg_to_zero(temp);
         la_xvori_b(dest, temp, 0);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -664,8 +664,8 @@ bool translate_vhaddps(IR1_INST * pir1) {
         la_vpickev_w(temp1, src2, src1);
         la_vpickod_w(temp2, src2, src1);
         la_vfadd_s(temp, temp1, temp2);
-        set_high128_xreg_to_zero(temp);
         la_xvori_b(dest, temp, 0);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -703,8 +703,8 @@ bool translate_vhsubpd(IR1_INST * pir1) {
         la_vpickev_d(temp1, src2, src1);
         la_vpickod_d(temp2, src2, src1);
         la_vfsub_d(temp, temp1, temp2);
-        set_high128_xreg_to_zero(temp);
         la_xvori_b(dest, temp, 0);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -742,8 +742,8 @@ bool translate_vhsubps(IR1_INST * pir1) {
         la_vpickev_w(temp1, src2, src1);
         la_vpickod_w(temp2, src2, src1);
         la_vfsub_s(temp, temp1, temp2);
-        set_high128_xreg_to_zero(temp);
         la_xvori_b(dest, temp, 0);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -771,8 +771,8 @@ bool translate_vandnpd(IR1_INST * pir1) {
         IR2_OPND temp = ra_alloc_ftemp();
 
         la_vandn_v(temp, src1, src2);
-        set_high128_xreg_to_zero(temp);
         la_xvori_b(dest, temp, 0);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -844,8 +844,8 @@ bool translate_vorps(IR1_INST * pir1) {
         IR2_OPND temp = ra_alloc_ftemp();
 
         la_vor_v(temp, src1, src2);
-        set_high128_xreg_to_zero(temp);
         la_xvori_b(dest, temp, 0);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -882,8 +882,8 @@ bool translate_vxorps(IR1_INST * pir1) {
         IR2_OPND temp = ra_alloc_ftemp();
 
         la_vxor_v(temp, src1, src2);
-        set_high128_xreg_to_zero(temp);
         la_xvori_b(dest, temp, 0);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1103,8 +1103,8 @@ bool translate_vblendvpd(IR1_INST * pir1) {
         IR2_OPND temp = ra_alloc_ftemp();
         la_vslti_d(temp, src3, 0);
         la_vbitsel_v(temp, src1, src2, temp);
-        set_high128_xreg_to_zero(temp);
         la_xvori_b(dest, temp, 0);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1663,8 +1663,8 @@ bool translate_vunpckhpd(IR1_INST * pir1) {
 
         la_vori_b(temp, src1, 0);
         la_vshuf4i_d(temp, src2, 0xd);
-        set_high128_xreg_to_zero(temp);
         la_xvori_b(dest, temp, 0);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1692,8 +1692,8 @@ bool translate_vunpckhps(IR1_INST * pir1) {
         IR2_OPND temp = ra_alloc_ftemp();
 
         la_vilvh_w(temp, src2, src1);
-        set_high128_xreg_to_zero(temp);
         la_xvori_b(dest, temp, 0);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1725,8 +1725,8 @@ bool translate_vunpcklpd(IR1_INST * pir1) {
 
         la_vori_b(temp, src1, 0);
         la_vshuf4i_d(temp, src2, 0x8);
-        set_high128_xreg_to_zero(temp);
         la_xvori_b(dest, temp, 0);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1754,8 +1754,8 @@ bool translate_vunpcklps(IR1_INST * pir1) {
         IR2_OPND temp = ra_alloc_ftemp();
 
         la_vilvl_w(temp, src2, src1);
-        set_high128_xreg_to_zero(temp);
         la_xvori_b(dest, temp, 0);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -1962,8 +1962,8 @@ bool translate_vpandn(IR1_INST * pir1) {
     }
     IR2_OPND temp = ra_alloc_ftemp();
     la_xvandn_v(temp, src1, src2);
-    set_high128_xreg_to_zero(temp);
     la_xvori_b(dest, temp, 0);
+    set_high128_xreg_to_zero(dest);
     return true;
 }
 
@@ -4769,6 +4769,8 @@ bool translate_vzeroall(IR1_INST * pir1) {
         IR2_OPND dest = ra_alloc_xmm(i);
         la_xvandi_b(dest, dest, 0x0);
     }
+    /* All guest YMM upper halves are already physically zero. */
+    lsenv->tr_data->ymmh_zero_pending = 0;
 
     return true;
 }
@@ -5202,8 +5204,8 @@ bool translate_vmpsadbw(IR1_INST *pir1)
     la_vhaddw_wu_hu(temp_dest, temp3, temp3);
     la_vsrlni_h_w(temp_dest, temp2, 0);
     if(ir1_opnd_is_xmm(opnd0)){
-        set_high128_xreg_to_zero(temp_dest);
         la_xvori_b(dest, temp_dest, 0);
+        set_high128_xreg_to_zero(dest);
         return true;
     }
     imm = imm>>3;
@@ -5817,13 +5819,12 @@ bool translate_vpcmpestrm(IR1_INST *pir1)
         tr_gen_call_to_helper_pcmpxstrx((ADDR)helper_pcmpestrm_xmm, d, s, imm,
                 LOAD_HELPER_PCMPESTRM_XMM);
     } else {
-        IR2_OPND temp = ra_alloc_ftemp();
-        IR2_OPND src = ra_alloc_xmm((d + 1) % 7 + 1);
-        la_xvor_v(temp, src, src);
+        BorrowedXmm borrowed = borrow_guest_xmm((d + 1) % 7 + 1);
+        IR2_OPND src = borrowed.reg;
         load_freg128_from_ir1_mem(src, opnd1);
          tr_gen_call_to_helper_pcmpxstrx((ADDR)helper_pcmpestrm_xmm, d,
                  (d + 1) % 7 + 1, imm, LOAD_HELPER_PCMPESTRM_XMM);
-        la_xvor_v(src, temp, temp);
+        restore_guest_xmm(borrowed);
     }
     set_high128_xreg_to_zero(ra_alloc_xmm(0));
     /* TODO:fix eflags and mem opnd */
@@ -5846,13 +5847,12 @@ bool translate_vpcmpistrm(IR1_INST *pir1)
         tr_gen_call_to_helper_pcmpxstrx((ADDR)helper_pcmpistrm_xmm, d, s, imm,
                 LOAD_HELPER_PCMPISTRM_XMM);
     } else {
-        IR2_OPND temp = ra_alloc_ftemp();
-        IR2_OPND src = ra_alloc_xmm((d + 1) % 7 + 1);
-        la_xvor_v(temp, src, src);
+        BorrowedXmm borrowed = borrow_guest_xmm((d + 1) % 7 + 1);
+        IR2_OPND src = borrowed.reg;
         load_freg128_from_ir1_mem(src, opnd1);
          tr_gen_call_to_helper_pcmpxstrx((ADDR)helper_pcmpistrm_xmm, d,
                  (d + 1) % 7 + 1, imm, LOAD_HELPER_PCMPISTRM_XMM);
-        la_xvor_v(src, temp, temp);
+        restore_guest_xmm(borrowed);
     }
     set_high128_xreg_to_zero(ra_alloc_xmm(0));
     /* TODO:fix eflags and mem opnd */
@@ -5956,8 +5956,8 @@ bool translate_vpclmulqdq(IR1_INST * pir1) {
         la_vxor_v(temp, temp, temp);
         la_vinsgr2vr_d(temp, res_lo, 0);
         la_vinsgr2vr_d(temp, res_hi, 1);
-        set_high128_xreg_to_zero(temp);
         la_xvori_b(dest, temp, 0);
+        set_high128_xreg_to_zero(dest);
         ra_free_temp_auto(src2);
         ra_free_temp(temp);
         ra_free_temp(ftemp);
@@ -6038,9 +6038,8 @@ bool translate_vaesdec(IR1_INST *pir1)
             }
             s2++;
         }
-        IR2_OPND temp = ra_alloc_ftemp();
-        IR2_OPND src = ra_alloc_xmm(s2);
-        la_xvor_v(temp, src, src);
+        BorrowedXmm borrowed = borrow_guest_xmm(s2);
+        IR2_OPND src = borrowed.reg;
         if (ir1_opnd_size(opnd2) == 128) {
             load_freg128_from_ir1_mem(src, opnd2);
         } else {
@@ -6048,7 +6047,7 @@ bool translate_vaesdec(IR1_INST *pir1)
         }
         tr_gen_call_to_helper_aes((ADDR)helper_func, d, s1, s2,
                 helper_kind);
-        la_xvor_v(src, temp, temp);
+        restore_guest_xmm(borrowed);
     }
     if (!ir1_opnd_is_ymm(opnd0)) {
         set_high128_xreg_to_zero(ra_alloc_xmm(d));
@@ -6095,16 +6094,15 @@ bool translate_vaesdeclast(IR1_INST *pir1)
             }
             s2++;
         }
-        IR2_OPND temp = ra_alloc_ftemp();
-        IR2_OPND src = ra_alloc_xmm(s2);
-        la_xvor_v(temp, src, src);
+        BorrowedXmm borrowed = borrow_guest_xmm(s2);
+        IR2_OPND src = borrowed.reg;
         if (ir1_opnd_size(opnd2) == 128) {
             load_freg128_from_ir1_mem(src, opnd2);
         } else {
             load_freg256_from_ir1_mem(src, opnd2);
         }
         tr_gen_call_to_helper_aes((ADDR)helper_func, d, s1, s2, helper_kind);
-        la_xvor_v(src, temp, temp);
+        restore_guest_xmm(borrowed);
     }
     if (!ir1_opnd_is_ymm(opnd0)) {
         set_high128_xreg_to_zero(ra_alloc_xmm(d));
@@ -6273,13 +6271,12 @@ bool translate_vaesimc(IR1_INST *pir1)
         tr_gen_call_to_helper_pcmpxstrx((ADDR)helper_aesimc_xmm, d, s, 0,
                 LOAD_HELPER_AESIMC_XMM);
     } else {
-        IR2_OPND temp = ra_alloc_ftemp();
-        IR2_OPND src = ra_alloc_xmm((d + 1) % 7 + 1);
-        la_xvor_v(temp, src, src);
+        BorrowedXmm borrowed = borrow_guest_xmm((d + 1) % 7 + 1);
+        IR2_OPND src = borrowed.reg;
         load_freg128_from_ir1_mem(src, opnd1);
         tr_gen_call_to_helper_pcmpxstrx((ADDR)helper_aesimc_xmm, d,
                 (d + 1) % 7 + 1, 0, LOAD_HELPER_AESIMC_XMM);
-        la_xvor_v(src, temp, temp);
+        restore_guest_xmm(borrowed);
     }
     set_high128_xreg_to_zero(ra_alloc_xmm(d));
     /* TODO: IMM 0 do not need to save */
@@ -6306,13 +6303,12 @@ bool translate_vaeskeygenassist(IR1_INST *pir1)
         tr_gen_call_to_helper_pcmpxstrx((ADDR)helper_aeskeygenassist_xmm, d, s, imm,
                 LOAD_HELPER_AESKEYGENASSIST_XMM);
     } else {
-        IR2_OPND temp = ra_alloc_ftemp();
-        IR2_OPND src = ra_alloc_xmm((d + 1) % 7 + 1);
-        la_xvor_v(temp, src, src);
+        BorrowedXmm borrowed = borrow_guest_xmm((d + 1) % 7 + 1);
+        IR2_OPND src = borrowed.reg;
         load_freg128_from_ir1_mem(src, opnd1);
         tr_gen_call_to_helper_pcmpxstrx((ADDR)helper_aeskeygenassist_xmm, d,
                 (d + 1) % 7 + 1, imm, LOAD_HELPER_AESKEYGENASSIST_XMM);
-        la_xvor_v(src, temp, temp);
+        restore_guest_xmm(borrowed);
     }
     set_high128_xreg_to_zero(ra_alloc_xmm(d));
     /* TODO: need to check */
@@ -6385,6 +6381,14 @@ bool translate_vpsrlvq(IR1_INST * pir1) {
     return true;
 }
 
+static void flush_gather_dest_ymmh_zero(IR1_OPND *opnd)
+{
+    if (ir1_opnd_is_ymm(opnd)) {
+        flush_pending_ymmh_zero(
+            ra_alloc_xmm(ir1_opnd_base_reg_num(opnd)));
+    }
+}
+
 bool translate_vpgatherdd(IR1_INST *pir1)
 {
     if (!option_enable_lasx) {
@@ -6397,6 +6401,8 @@ bool translate_vpgatherdd(IR1_INST *pir1)
     lsassert((ir1_opnd_is_xmm(opnd0) && ir1_opnd_is_xmm(opnd2)) ||
         (ir1_opnd_is_ymm(opnd0) && ir1_opnd_is_ymm(opnd2)));
     lsassert(ir1_opnd_is_mem(opnd1) && ir1_opnd_has_index(opnd1));
+    /* Gather merges masked-off lanes from its destination. */
+    flush_gather_dest_ymmh_zero(opnd0);
     IR2_OPND dest = ra_alloc_xmm(ir1_opnd_base_reg_num(opnd0));
     IR2_OPND mask = ra_alloc_xmm(ir1_opnd_base_reg_num(opnd2));
     IR2_OPND index_op = ra_alloc_xmm(ir1_opnd_vsib_index_reg_num(opnd1));
@@ -6561,6 +6567,8 @@ bool translate_vpgatherdq(IR1_INST *pir1)
     lsassert((ir1_opnd_is_xmm(opnd0) && ir1_opnd_is_xmm(opnd2)) ||
         (ir1_opnd_is_ymm(opnd0) && ir1_opnd_is_ymm(opnd2)));
     lsassert(ir1_opnd_is_mem(opnd1) && ir1_opnd_has_index(opnd1));
+    /* Gather merges masked-off lanes from its destination. */
+    flush_gather_dest_ymmh_zero(opnd0);
     IR2_OPND dest = ra_alloc_xmm(ir1_opnd_base_reg_num(opnd0));
     IR2_OPND mask = ra_alloc_xmm(ir1_opnd_base_reg_num(opnd2));
     IR2_OPND index_op = ra_alloc_xmm(ir1_opnd_vsib_index_reg_num(opnd1));
@@ -6628,6 +6636,8 @@ bool translate_vpgatherqq(IR1_INST *pir1)
     lsassert((ir1_opnd_is_xmm(opnd0) && ir1_opnd_is_xmm(opnd2)) ||
         (ir1_opnd_is_ymm(opnd0) && ir1_opnd_is_ymm(opnd2)));
     lsassert(ir1_opnd_is_mem(opnd1) && ir1_opnd_has_index(opnd1));
+    /* Gather merges masked-off lanes from its destination. */
+    flush_gather_dest_ymmh_zero(opnd0);
     IR2_OPND dest = ra_alloc_xmm(ir1_opnd_base_reg_num(opnd0));
     IR2_OPND mask = ra_alloc_xmm(ir1_opnd_base_reg_num(opnd2));
     IR2_OPND index_op = ra_alloc_xmm(ir1_opnd_vsib_index_reg_num(opnd1));

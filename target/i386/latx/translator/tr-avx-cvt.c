@@ -34,8 +34,8 @@ bool translate_vcvtps2pd(IR1_INST * pir1) {
         IR2_OPND temp = ra_alloc_ftemp();
 
         la_vfcvtl_d_s(temp, src);
-        set_high128_xreg_to_zero(temp);
         la_xvori_b(dest, temp, 0);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -61,8 +61,8 @@ bool translate_vcvtpd2ps(IR1_INST * pir1) {
 
         la_xvpermi_q(temp, src, XVPERMI_Q_4_0(1, 1));
         la_vfcvt_s_d(temp, temp, src);
-        set_high128_xreg_to_zero(temp);
         la_xvori_b(dest, temp, 0);
+        set_high128_xreg_to_zero(dest);
     } else {
         lsassert(0);
     }
@@ -89,8 +89,8 @@ bool translate_vcvtdq2ps(IR1_INST * pir1) {
         IR2_OPND temp = ra_alloc_ftemp();
 
         la_vffint_s_w(temp, src);
-        set_high128_xreg_to_zero(temp);
         la_xvori_b(dest, temp, 0);
+        set_high128_xreg_to_zero(dest);
     }
     return true;
 }
@@ -339,8 +339,8 @@ bool translate_vcvtps2dq(IR1_INST * pir1) {
         la_vinsgr2vr_w(temp, temp_int, 3);
 
         la_label(label_over);
-        set_high128_xreg_to_zero(temp);
         la_xvori_b(dest, temp, 0);
+        set_high128_xreg_to_zero(dest);
         ra_free_temp(temp_fcsr);
         ra_free_temp(temp_int);
         ra_free_temp(temp_operand_count);
@@ -374,8 +374,8 @@ bool translate_vcvtdq2pd(IR1_INST * pir1) {
         IR2_OPND temp = ra_alloc_ftemp();
 
         la_vffintl_d_w(temp, src);
-        set_high128_xreg_to_zero(temp);
         la_xvori_b(dest, temp, 0);
+        set_high128_xreg_to_zero(dest);
     }
     set_fpu_rounding_mode(fcsr_opnd);
     return true;
@@ -515,8 +515,8 @@ bool translate_vcvtpd2dq(IR1_INST * pir1) {
         la_vinsgr2vr_w(temp, temp_int, 3);
 
         la_label(label_over);
-        set_high128_xreg_to_zero(temp);
         la_xvori_b(dest, temp, 0);
+        set_high128_xreg_to_zero(dest);
         ra_free_temp(temp_fcsr);
         ra_free_temp(temp_int);
         ra_free_temp(ftemp_src_temp1);
@@ -588,8 +588,8 @@ bool translate_vcvtsd2ss(IR1_INST * pir1) {
     la_fcvt_s_d(temp, src2);
     la_vori_b(dest_temp, src1, 0);
     la_xvinsve0_w(dest_temp, temp, 0);
-    set_high128_xreg_to_zero(dest_temp);
     la_xvori_b(dest, dest_temp, 0);
+    set_high128_xreg_to_zero(dest);
     set_fpu_rounding_mode(fcsr_opnd);
     return true;
 }
@@ -617,8 +617,8 @@ bool translate_vcvtsi2sd(IR1_INST * pir1) {
         lsassert(0);
     }
     la_vshuf4i_d(temp, src1, 0xc);
-    set_high128_xreg_to_zero(temp);
     la_xvori_b(dest, temp, 0);
+    set_high128_xreg_to_zero(dest);
     return true;
 }
 
@@ -635,8 +635,8 @@ bool translate_vcvtss2sd(IR1_INST * pir1) {
     IR2_OPND temp = ra_alloc_ftemp();
     la_fcvt_d_s(temp, src2);
     la_vshuf4i_d(temp, src1, 0xc);
-    set_high128_xreg_to_zero(temp);
     la_xvori_b(dest, temp, 0);
+    set_high128_xreg_to_zero(dest);
     return true;
 }
 
@@ -781,8 +781,8 @@ bool translate_vcvttpd2dq(IR1_INST * pir1) {
         la_vinsgr2vr_w(temp, temp_int, 3);
 
         la_label(label_over);
-        set_high128_xreg_to_zero(temp);
         la_xvori_b(dest, temp, 0);
+        set_high128_xreg_to_zero(dest);
         ra_free_temp(temp_fcsr);
         ra_free_temp(temp_int);
         ra_free_temp(ftemp_src_temp1);
@@ -1083,8 +1083,8 @@ bool translate_vcvttps2dq(IR1_INST * pir1) {
         la_vinsgr2vr_w(temp, temp_int, 3);
 
         la_label(label_over);
-        set_high128_xreg_to_zero(temp);
         la_xvori_b(dest, temp, 0);
+        set_high128_xreg_to_zero(dest);
         ra_free_temp(temp_fcsr);
         ra_free_temp(temp_int);
         ra_free_temp(temp_operand_count);

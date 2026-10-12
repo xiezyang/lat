@@ -61,6 +61,11 @@ typedef struct TRANSLATION_DATA {
     /* Translation-time SSE RM cache for strict SoftFPU paths; reset per TB. */
     bool sse_rounding_prepared;
 
+    /*
+     * VEX.128 writes make the architectural YMM high half zero.  With LASX,
+     * defer that zeroing until the high half is observed or the TB exits.
+     */
+    uint16_t ymmh_zero_pending;
     /* TODO : support static translation */
     uint8 curr_ir1_skipped_eflags; /* these eflag calculation can be skipped */
                                    /* (because of flag pattern, etc) */
