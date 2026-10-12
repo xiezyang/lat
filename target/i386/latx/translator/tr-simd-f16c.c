@@ -37,13 +37,12 @@ bool translate_vcvtph2ps(IR1_INST *pir1)
         tr_gen_call_to_helper_pcmpxstrx(helper_func, d, s1, 0, rel_kind);
     } else {
         int s1 = (d + 1) & 7;
-        IR2_OPND temp = ra_alloc_ftemp();
-        IR2_OPND src = ra_alloc_xmm(s1);
-        la_xvor_v(temp, src, src);
+        BorrowedXmm borrowed = borrow_guest_xmm(s1);
+        IR2_OPND src = borrowed.reg;
         load_freg128_from_ir1_mem(src, opnd1);
 
         tr_gen_call_to_helper_pcmpxstrx(helper_func, d, s1, 0, rel_kind);
-        la_xvor_v(src, temp, temp);
+        restore_guest_xmm(borrowed);
     }
     if (ir1_opnd_is_xmm(opnd0)) {
         set_high128_xreg_to_zero(dest);
@@ -78,9 +77,8 @@ bool translate_vcvtps2ph(IR1_INST *pir1)
         tr_gen_call_to_helper_pcmpxstrx((ADDR)helper_func, d, s, imm, rel_kind);
     } else {
         int d = (s + 1) & 7;
-        IR2_OPND temp = ra_alloc_ftemp();
-        IR2_OPND dest = ra_alloc_xmm(d);
-        la_xvor_v(temp, dest, dest);
+        BorrowedXmm borrowed = borrow_guest_xmm(d);
+        IR2_OPND dest = borrowed.reg;
         tr_gen_call_to_helper_pcmpxstrx((ADDR)helper_func, d, s, imm, rel_kind);
 
         if (ir1_opnd_size(opnd0) == 128) {
@@ -90,7 +88,7 @@ bool translate_vcvtps2ph(IR1_INST *pir1)
             store_freg_to_ir1(dest, opnd0, false, false);
         }
 
-        la_xvor_v(dest, temp, temp);
+        restore_guest_xmm(borrowed);
     }
     return true;
 }

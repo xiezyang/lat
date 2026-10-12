@@ -1614,7 +1614,20 @@ IR2_OPND load_freg128_from_ir1(IR1_OPND *);
 void load_imm_to_ir1_opnd_gpr(IR1_OPND *opnd0, uint64_t imm);
 IR2_OPND load_freg256_from_ir1(IR1_OPND *opnd1);
 void clear_xmm_high64(IR2_OPND opnd);
+/* Request a logical upper zero: defer guest registers, clear temporaries now. */
 void set_high128_xreg_to_zero(IR2_OPND opnd);
+/* Cancel an obsolete pending clear after an overwrite; emit no instructions. */
+void cancel_pending_ymmh_zero(IR2_OPND opnd);
+/* Emit a pending register clear and consume its pending bit. */
+void flush_pending_ymmh_zero(IR2_OPND opnd);
+/* Emit pending clears without changing pending state (e.g. separate exits). */
+void emit_ymmh_zeros(void);
+typedef struct BorrowedXmm {
+    IR2_OPND saved;
+    IR2_OPND reg;
+} BorrowedXmm;
+BorrowedXmm borrow_guest_xmm(int index);
+void restore_guest_xmm(BorrowedXmm borrowed);
 IR2_OPND load_ymm_high128_shadow(int index);
 void store_ymm_high128_shadow(IR2_OPND src, int index);
 void clear_ymm_high128_shadow(int index);
