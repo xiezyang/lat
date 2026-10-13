@@ -2377,6 +2377,43 @@ static bool translate_ucomiss_xx_jcc(IR1_INST *pir1)
 #endif
 
 
+static bool translate_bsr_not_add(IR1_INST *pir1)
+{
+    IR2_OPND src = load_ireg_from_ir1(ir1_get_opnd(pir1, 1),
+                                    ZERO_EXTENSION, false);
+    IR2_OPND dest = ra_alloc_gpr(
+        ir1_opnd_base_reg_num(ir1_get_opnd(pir1, 0)));
+
+    /* BSR leaves its destination undefined for a zero source. */
+    la_clz_d(dest, src);
+    la_addi_d(dest, dest, -49);
+    la_bstrpick_d(dest, dest, 31, 0);
+    return true;
+}
+
+static bool translate_clamp_u8(IR1_INST *pir1)
+{
+    IR2_OPND limit = ra_alloc_gpr(
+        ir1_opnd_base_reg_num(ir1_get_opnd(pir1, 0)));
+    IR2_OPND value = ra_alloc_gpr(
+        ir1_opnd_base_reg_num(ir1_get_opnd(pir1 + 1, 1)));
+    IR2_OPND zero = ra_alloc_gpr(
+        ir1_opnd_base_reg_num(ir1_get_opnd(pir1 + 3, 0)));
+    IR2_OPND output = ra_alloc_gpr(
+        ir1_opnd_base_reg_num(ir1_get_opnd(pir1 + 8, 0)));
+
+    li_wu(limit, 255);
+    la_sub_w(limit, limit, value);
+    la_srli_w(limit, limit, 23);
+    la_sltui(zero, value, 1);
+    la_or(limit, limit, value);
+    la_or(limit, limit, zero);
+    /* Both guest ORs write 32 bits, even when MOVZX has another destination. */
+    la_bstrpick_d(limit, limit, 31, 0);
+    la_andi(output, limit, 255);
+    return true;
+}
+
 bool try_translate_instptn(IR1_INST *pir1)
 {
     instptn_check_false();
@@ -2457,6 +2494,10 @@ bool try_translate_instptn(IR1_INST *pir1)
         return translate_shr_jcc(pir1);
     case INSTPTN_OPC_AND_JCC:
         return translate_and_jcc(pir1);
+    case INSTPTN_OPC_BSR_NOT_ADD:
+        return translate_bsr_not_add(pir1);
+    case INSTPTN_OPC_CLAMP_U8:
+        return translate_clamp_u8(pir1);
     default:
         lsassert(0);
         break;

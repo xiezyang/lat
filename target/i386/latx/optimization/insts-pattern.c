@@ -412,6 +412,127 @@ void insts_pattern_scan_con(TranslationBlock *tb, IR1_INST *ir1, int index, scan
     }
 }
 
+void insts_pattern_bsr_not_add(TranslationBlock *tb)
+{
+    for (int i = 0; i + 2 < tb_ir1_num(tb); ++i) {
+        IR1_INST *bsr = tb_ir1_inst(tb, i);
+        IR1_INST *not = tb_ir1_inst(tb, i + 1);
+        IR1_INST *add = tb_ir1_inst(tb, i + 2);
+        IR1_OPND *dest;
+
+        if (ir1_opcode(bsr) != WRAP(BSR) ||
+            ir1_opcode(not) != WRAP(NOT) ||
+            ir1_opcode(add) != WRAP(ADD) ||
+            bsr->instptn.opc != INSTPTN_OPC_NONE ||
+            not->instptn.opc != INSTPTN_OPC_NONE ||
+            add->instptn.opc != INSTPTN_OPC_NONE ||
+            bsr->info->bytes[0] == 0xf3 ||
+            ir1_get_eflag_def(bsr) != 0 ||
+            ir1_get_eflag_def(add) != 0) {
+            continue;
+        }
+
+        dest = ir1_get_opnd(bsr, 0);
+        if (!ir1_opnd_is_gpr(dest) || ir1_opnd_size(dest) != 32 ||
+            !ir1_opnd_is_same_reg(dest, ir1_get_opnd(not, 0)) ||
+            !ir1_opnd_is_same_reg(dest, ir1_get_opnd(add, 0)) ||
+            !ir1_opnd_is_imm(ir1_get_opnd(add, 1)) ||
+            ir1_opnd_simm(ir1_get_opnd(add, 1)) != 15) {
+            continue;
+        }
+
+        bsr->instptn.opc = INSTPTN_OPC_BSR_NOT_ADD;
+        bsr->instptn.next = add;
+        not->instptn.opc = INSTPTN_OPC_NOP;
+        add->instptn.opc = INSTPTN_OPC_NOP;
+        i += 2;
+    }
+}
+
+void insts_pattern_clamp_u8(TranslationBlock *tb)
+{
+    int count = tb_ir1_num(tb);
+
+    for (int i = 0; i + 8 < count; ++i) {
+        IR1_INST *mov_limit = tb_ir1_inst(tb, i);
+        IR1_INST *sub = tb_ir1_inst(tb, i + 1);
+        IR1_INST *shr = tb_ir1_inst(tb, i + 2);
+        IR1_INST *xor = tb_ir1_inst(tb, i + 3);
+        IR1_INST *test = tb_ir1_inst(tb, i + 4);
+        IR1_INST *sete = tb_ir1_inst(tb, i + 5);
+        IR1_INST *or_value = tb_ir1_inst(tb, i + 6);
+        IR1_INST *or_zero = tb_ir1_inst(tb, i + 7);
+        IR1_INST *movzx = tb_ir1_inst(tb, i + 8);
+        IR1_OPND *limit;
+        IR1_OPND *value;
+        IR1_OPND *zero;
+
+        if (ir1_opcode(mov_limit) != WRAP(MOV) ||
+            ir1_opcode(sub) != WRAP(SUB) ||
+            ir1_opcode(shr) != WRAP(SHR) ||
+            ir1_opcode(xor) != WRAP(XOR) ||
+            ir1_opcode(test) != WRAP(TEST) ||
+            ir1_opcode(sete) != WRAP(SETE) ||
+            ir1_opcode(or_value) != WRAP(OR) ||
+            ir1_opcode(or_zero) != WRAP(OR) ||
+            ir1_opcode(movzx) != WRAP(MOVZX) ||
+            ir1_get_opnd_num(mov_limit) != 2 ||
+            ir1_get_opnd_num(sub) != 2 ||
+            ir1_get_opnd_num(shr) != 2 ||
+            ir1_get_opnd_num(xor) != 2 ||
+            ir1_get_opnd_num(test) != 2 ||
+            ir1_get_opnd_num(sete) != 1 ||
+            ir1_get_opnd_num(or_value) != 2 ||
+            ir1_get_opnd_num(or_zero) != 2 ||
+            ir1_get_opnd_num(movzx) != 2 ||
+            ir1_get_eflag_def(or_zero) != 0) {
+            continue;
+        }
+
+        limit = ir1_get_opnd(mov_limit, 0);
+        value = ir1_get_opnd(sub, 1);
+        zero = ir1_get_opnd(xor, 0);
+        if (!ir1_opnd_is_gpr(limit) || ir1_opnd_size(limit) != 32 ||
+            !ir1_opnd_is_imm(ir1_get_opnd(mov_limit, 1)) ||
+            ir1_opnd_uimm(ir1_get_opnd(mov_limit, 1)) != 255 ||
+            !ir1_opnd_is_same_reg(limit, ir1_get_opnd(sub, 0)) ||
+            !ir1_opnd_is_gpr(value) || ir1_opnd_size(value) != 32 ||
+            !ir1_opnd_is_same_reg(limit, ir1_get_opnd(shr, 0)) ||
+            !ir1_opnd_is_imm(ir1_get_opnd(shr, 1)) ||
+            ir1_opnd_uimm(ir1_get_opnd(shr, 1)) != 23 ||
+            !ir1_opnd_is_gpr(zero) || ir1_opnd_size(zero) != 32 ||
+            ir1_opnd_base_reg_num(limit) == ir1_opnd_base_reg_num(value) ||
+            ir1_opnd_base_reg_num(limit) == ir1_opnd_base_reg_num(zero) ||
+            ir1_opnd_base_reg_num(value) == ir1_opnd_base_reg_num(zero) ||
+            !ir1_opnd_is_same_reg(zero, ir1_get_opnd(xor, 1)) ||
+            !ir1_opnd_is_same_reg_without_width(value,
+                                                ir1_get_opnd(test, 0)) ||
+            !ir1_opnd_is_same_reg_without_width(value,
+                                                ir1_get_opnd(test, 1)) ||
+            ir1_opnd_size(ir1_get_opnd(test, 0)) != 64 ||
+            !ir1_opnd_is_same_reg_without_width(zero,
+                                                ir1_get_opnd(sete, 0)) ||
+            ir1_opnd_size(ir1_get_opnd(sete, 0)) != 8 ||
+            !ir1_opnd_is_same_reg(limit, ir1_get_opnd(or_value, 0)) ||
+            !ir1_opnd_is_same_reg(value, ir1_get_opnd(or_value, 1)) ||
+            !ir1_opnd_is_same_reg(limit, ir1_get_opnd(or_zero, 0)) ||
+            !ir1_opnd_is_same_reg(zero, ir1_get_opnd(or_zero, 1)) ||
+            !ir1_opnd_is_gpr(ir1_get_opnd(movzx, 0)) ||
+            ir1_opnd_size(ir1_get_opnd(movzx, 0)) != 32 ||
+            !ir1_opnd_is_same_reg_without_width(limit,
+                                                ir1_get_opnd(movzx, 1)) ||
+            ir1_opnd_size(ir1_get_opnd(movzx, 1)) != 8) {
+            continue;
+        }
+
+        mov_limit->instptn.opc = INSTPTN_OPC_CLAMP_U8;
+        for (int j = 1; j < 9; ++j) {
+            tb_ir1_inst(tb, i + j)->instptn.opc = INSTPTN_OPC_NOP;
+        }
+        i += 8;
+    }
+}
+
 bool insts_pattern_scan_jcc_end(TranslationBlock *tb, IR1_INST *pir1, int pir1_index, scan_elem_t *scan)
 {
 

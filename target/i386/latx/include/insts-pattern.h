@@ -52,6 +52,12 @@
 #define INSTPTN_OPC_SHR_JCC        0x10000000
 #define INSTPTN_OPC_AND_JCC        0x20000000
 
+#define INSTPTN_OPC_BSR_NOT_ADD    (-0x7ffffffe)
+#define INSTPTN_OPC_CLAMP_U8       (-0x7ffffffd)
+
+void insts_pattern_bsr_not_add(TranslationBlock *tb);
+void insts_pattern_clamp_u8(TranslationBlock *tb);
+
 typedef int scan_elem_t;
 
 void insts_pattern_scan_con(TranslationBlock *tb, IR1_INST *ir1, int index, scan_elem_t *scan_buf);
