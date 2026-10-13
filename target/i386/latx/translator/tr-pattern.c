@@ -2414,6 +2414,41 @@ static bool translate_clamp_u8(IR1_INST *pir1)
     return true;
 }
 
+static bool translate_diff_cmov_u16(IR1_INST *pir1)
+{
+    IR1_OPND *load_mem = ir1_get_opnd(pir1, 1);
+    IR2_OPND input = ra_alloc_gpr(
+        ir1_opnd_base_reg_num(ir1_get_opnd(pir1, 0)));
+    IR2_OPND diff = ra_alloc_gpr(
+        ir1_opnd_base_reg_num(ir1_get_opnd(pir1 + 1, 0)));
+    IR2_OPND value = ra_alloc_gpr(
+        ir1_opnd_base_reg_num(ir1_get_opnd(pir1 + 3, 0)));
+    IR2_OPND previous = ra_alloc_gpr(
+        ir1_opnd_base_reg_num(ir1_get_opnd(pir1 + 4, 1)));
+    IR2_OPND alternate = ra_alloc_gpr(
+        ir1_opnd_base_reg_num(ir1_get_opnd(pir1 + 6, 1)));
+    IR2_OPND condition = ra_alloc_itemp();
+    IR2_OPND keep = ra_alloc_itemp();
+
+    load_ireg_from_ir1_mem(input, load_mem, ZERO_EXTENSION, false);
+    /* Preserve both 32-bit guest intermediates, not just the final CX. */
+    li_wu(diff, UINT32_C(0xffff8000));
+    la_sub_w(diff, diff, input);
+    la_bstrpick_d(diff, diff, 31, 0);
+    la_sub_w(value, diff, previous);
+    la_bstrpick_d(condition, value, 15, 0);
+    la_sltui(condition, condition, 5);
+    la_masknez(keep, value, condition);
+    la_maskeqz(condition, alternate, condition);
+    la_or(value, keep, condition);
+    la_bstrpick_d(value, value, 31, 0);
+    la_bstrpick_d(previous, value, 15, 0);
+
+    ra_free_temp(keep);
+    ra_free_temp(condition);
+    return true;
+}
+
 bool try_translate_instptn(IR1_INST *pir1)
 {
     instptn_check_false();
@@ -2498,6 +2533,8 @@ bool try_translate_instptn(IR1_INST *pir1)
         return translate_bsr_not_add(pir1);
     case INSTPTN_OPC_CLAMP_U8:
         return translate_clamp_u8(pir1);
+    case INSTPTN_OPC_DIFF_CMOV_U16:
+        return translate_diff_cmov_u16(pir1);
     default:
         lsassert(0);
         break;

@@ -54,9 +54,11 @@
 
 #define INSTPTN_OPC_BSR_NOT_ADD    (-0x7ffffffe)
 #define INSTPTN_OPC_CLAMP_U8       (-0x7ffffffd)
+#define INSTPTN_OPC_DIFF_CMOV_U16  (-0x7ffffffc)
 
 void insts_pattern_bsr_not_add(TranslationBlock *tb);
 void insts_pattern_clamp_u8(TranslationBlock *tb);
+void insts_pattern_diff_cmov_u16(TranslationBlock *tb);
 
 typedef int scan_elem_t;
 

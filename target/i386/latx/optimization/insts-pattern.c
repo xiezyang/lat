@@ -533,6 +533,105 @@ void insts_pattern_clamp_u8(TranslationBlock *tb)
     }
 }
 
+void insts_pattern_diff_cmov_u16(TranslationBlock *tb)
+{
+    int count = tb_ir1_num(tb);
+
+    for (int i = 0; i + 8 < count; ++i) {
+        IR1_INST *load = tb_ir1_inst(tb, i);
+        IR1_INST *mov_imm = tb_ir1_inst(tb, i + 1);
+        IR1_INST *sub_input = tb_ir1_inst(tb, i + 2);
+        IR1_INST *mov_diff = tb_ir1_inst(tb, i + 3);
+        IR1_INST *sub_prev = tb_ir1_inst(tb, i + 4);
+        IR1_INST *cmp = tb_ir1_inst(tb, i + 5);
+        IR1_INST *cmov = tb_ir1_inst(tb, i + 6);
+        IR1_INST *movzx = tb_ir1_inst(tb, i + 7);
+        IR1_INST *next_cmp = tb_ir1_inst(tb, i + 8);
+        IR1_OPND *input;
+        IR1_OPND *diff;
+        IR1_OPND *value;
+        IR1_OPND *previous;
+        IR1_OPND *alternate;
+        int regs[5];
+        bool distinct = true;
+
+        if (ir1_opcode(load) != WRAP(MOVZX) ||
+            ir1_opcode(mov_imm) != WRAP(MOV) ||
+            ir1_opcode(sub_input) != WRAP(SUB) ||
+            ir1_opcode(mov_diff) != WRAP(MOV) ||
+            ir1_opcode(sub_prev) != WRAP(SUB) ||
+            ir1_opcode(cmp) != WRAP(CMP) ||
+            ir1_opcode(cmov) != WRAP(CMOVB) ||
+            ir1_opcode(movzx) != WRAP(MOVZX) ||
+            ir1_opcode(next_cmp) != WRAP(CMP) ||
+            ir1_get_opnd_num(load) != 2 ||
+            ir1_get_opnd_num(mov_imm) != 2 ||
+            ir1_get_opnd_num(sub_input) != 2 ||
+            ir1_get_opnd_num(mov_diff) != 2 ||
+            ir1_get_opnd_num(sub_prev) != 2 ||
+            ir1_get_opnd_num(cmp) != 2 ||
+            ir1_get_opnd_num(cmov) != 2 ||
+            ir1_get_opnd_num(movzx) != 2 ||
+            ir1_get_opnd_num(next_cmp) != 2) {
+            continue;
+        }
+
+        input = ir1_get_opnd(load, 0);
+        diff = ir1_get_opnd(mov_imm, 0);
+        value = ir1_get_opnd(mov_diff, 0);
+        previous = ir1_get_opnd(sub_prev, 1);
+        alternate = ir1_get_opnd(cmov, 1);
+        if (!ir1_opnd_is_gpr(input) || ir1_opnd_size(input) != 32 ||
+            !ir1_opnd_is_mem(ir1_get_opnd(load, 1)) ||
+            ir1_opnd_size(ir1_get_opnd(load, 1)) != 16 ||
+            !ir1_opnd_is_gpr(diff) || ir1_opnd_size(diff) != 32 ||
+            !ir1_opnd_is_imm(ir1_get_opnd(mov_imm, 1)) ||
+            (uint32_t)ir1_opnd_uimm(ir1_get_opnd(mov_imm, 1)) !=
+                UINT32_C(0xffff8000) ||
+            !ir1_opnd_is_same_reg(diff, ir1_get_opnd(sub_input, 0)) ||
+            !ir1_opnd_is_same_reg(input, ir1_get_opnd(sub_input, 1)) ||
+            !ir1_opnd_is_gpr(value) || ir1_opnd_size(value) != 32 ||
+            !ir1_opnd_is_same_reg(diff, ir1_get_opnd(mov_diff, 1)) ||
+            !ir1_opnd_is_same_reg(value, ir1_get_opnd(sub_prev, 0)) ||
+            !ir1_opnd_is_gpr(previous) || ir1_opnd_size(previous) != 32 ||
+            !ir1_opnd_is_same_reg_without_width(value,
+                                                ir1_get_opnd(cmp, 0)) ||
+            ir1_opnd_size(ir1_get_opnd(cmp, 0)) != 16 ||
+            !ir1_opnd_is_imm(ir1_get_opnd(cmp, 1)) ||
+            ir1_opnd_uimm(ir1_get_opnd(cmp, 1)) != 5 ||
+            !ir1_opnd_is_same_reg(value, ir1_get_opnd(cmov, 0)) ||
+            !ir1_opnd_is_gpr(alternate) || ir1_opnd_size(alternate) != 32 ||
+            !ir1_opnd_is_same_reg(previous, ir1_get_opnd(movzx, 0)) ||
+            !ir1_opnd_is_same_reg_without_width(value,
+                                                ir1_get_opnd(movzx, 1)) ||
+            ir1_opnd_size(ir1_get_opnd(movzx, 1)) != 16 ||
+            !ir1_opnd_is_same_reg(previous, ir1_get_opnd(next_cmp, 0)) ||
+            !ir1_opnd_is_imm(ir1_get_opnd(next_cmp, 1)) ||
+            ir1_opnd_uimm(ir1_get_opnd(next_cmp, 1)) != 0x7fff) {
+            continue;
+        }
+
+        regs[0] = ir1_opnd_base_reg_num(input);
+        regs[1] = ir1_opnd_base_reg_num(diff);
+        regs[2] = ir1_opnd_base_reg_num(value);
+        regs[3] = ir1_opnd_base_reg_num(previous);
+        regs[4] = ir1_opnd_base_reg_num(alternate);
+        for (int a = 0; a < 5; ++a) {
+            for (int b = a + 1; b < 5; ++b) {
+                distinct &= regs[a] != regs[b];
+            }
+        }
+        if (!distinct) {
+            continue;
+        }
+        load->instptn.opc = INSTPTN_OPC_DIFF_CMOV_U16;
+        for (int j = 1; j < 8; ++j) {
+            tb_ir1_inst(tb, i + j)->instptn.opc = INSTPTN_OPC_NOP;
+        }
+        i += 7;
+    }
+}
+
 bool insts_pattern_scan_jcc_end(TranslationBlock *tb, IR1_INST *pir1, int pir1_index, scan_elem_t *scan)
 {
 
