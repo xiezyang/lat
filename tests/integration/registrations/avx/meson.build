@@ -1,5 +1,11 @@
 if 'x86_64-linux-user' in target_dirs
   latx_integration_tests += [{
+    'name': 'test-avx-vector-sums',
+    'runner': find_program('../../test-avx-regressions.py'),
+    'args': [emulators['latx-x86_64'], files('../../avx-vector-sums.asm')],
+    'timeout': 120,
+  }]
+  latx_integration_tests += [{
     'name': 'test-avx-scalar-lowering',
     'runner': find_program('../../test-avx-regressions.py'),
     'args': [emulators['latx-x86_64'], files('../../avx-scalar-lowering.asm')],
