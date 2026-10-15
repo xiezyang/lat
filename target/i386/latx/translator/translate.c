@@ -30,6 +30,7 @@ static bool xtts_matrix_enabled;
 static bool xtts_decrypt_enabled;
 static bool xtts_clock_nanosleep_enabled;
 static bool xtts_hot_tu_enabled;
+static bool xtts_sinf_enabled;
 
 void latx_xtts_hot_options_init(void)
 {
@@ -37,11 +38,13 @@ void latx_xtts_hot_options_init(void)
     const char *decrypt = getenv("LATX_XTTS_DECRYPT");
     const char *sleep = getenv("LATX_XTTS_CLOCK_NANOSLEEP");
     const char *hot = getenv("LATX_XTTS_HOT_TU");
+    const char *sinf = getenv("LATX_XTTS_SINF");
 
     xtts_matrix_enabled = matrix && strcmp(matrix, "0");
     xtts_decrypt_enabled = decrypt && strcmp(decrypt, "0");
     xtts_clock_nanosleep_enabled = sleep && strcmp(sleep, "0");
     xtts_hot_tu_enabled = hot && strcmp(hot, "0");
+    xtts_sinf_enabled = sinf && strcmp(sinf, "0");
 }
 
 static int ss_generate_match_fail_native_code(void* code_buf);
@@ -2468,6 +2471,151 @@ void latx_xtts_matrix(CPUX86State *env, uint32_t kind)
     }
 }
 
+static void xtts_sinf_constant(IR2_OPND dest, IR2_OPND tmp, uint32_t bits)
+{
+    li_w(tmp, bits);
+    la_movgr2fr_w(dest, tmp);
+}
+
+static bool xtts_sinf_entry(TranslationBlock *tb)
+{
+    IR1_INST *last_xor = NULL;
+    IR2_OPND x0, x1, x2, x3, temp, eax, edx, ecx, esi, edi;
+    IR2_OPND tmp, sign, fallback, rsp, return_addr;
+
+    if (!xtts_sinf_enabled || option_enable_lbt || !CODEIS64 ||
+        xfyun_hot_bytes_hash((const uint8_t *)(uintptr_t)tb->pc, 0xcb) !=
+        UINT64_C(0x01f95af0f77fedb9)) {
+        return false;
+    }
+    for (int i = 0; i < tb->icount; i++) {
+        IR1_INST *insn = tb_ir1_inst(tb, i);
+        if (ir1_addr(insn) == tb->pc + 0x7c) {
+            last_xor = insn;
+        }
+    }
+    if (!last_xor || ir1_opcode(last_xor) != dt_X86_INS_XOR) {
+        return false;
+    }
+    /* Keep ordinary translation for subnormal, non-finite and large inputs. */
+    tr_init_for_each_ir1_in_tb(tb_ir1_inst(tb, 0), tb->icount, 0);
+    x0 = ra_alloc_xmm(0);
+    x1 = ra_alloc_xmm(1);
+    x2 = ra_alloc_xmm(2);
+    x3 = ra_alloc_xmm(3);
+    temp = ra_alloc_ftemp();
+    tmp = ra_alloc_itemp();
+    sign = ra_alloc_itemp();
+    fallback = ra_alloc_label();
+    la_movfr2gr_s(tmp, x0);
+    la_bstrpick_d(tmp, tmp, 30, 0);
+    li_w(sign, 0x49800000);
+    la_bgeu(tmp, sign, fallback);
+    li_w(sign, 0x00800000);
+    la_bltu(tmp, sign, fallback);
+
+    for (int i = 0; i < tb->icount; i++) {
+        IR1_INST *insn = tb_ir1_inst(tb, i);
+        tcg_ctx->gen_insn_data[i][0] = ir1_addr(insn);
+        tcg_ctx->gen_insn_data[i][1] = 0;
+        tr_init_for_each_ir1_in_tb(insn, tb->icount, i);
+    }
+    eax = ra_alloc_gpr(eax_index);
+    edx = ra_alloc_gpr(edx_index);
+    ecx = ra_alloc_gpr(ecx_index);
+    esi = ra_alloc_gpr(esi_index);
+    edi = ra_alloc_gpr(edi_index);
+    la_movfr2gr_s(esi, x0);
+    la_bstrpick_d(esi, esi, 31, 0);
+    la_srli_d(esi, esi, 31);
+    la_vxor_v(x1, x1, x1);
+    la_movgr2fr_w(x1, tmp);
+    la_vxor_v(x2, x2, x2);
+    la_vxor_v(x3, x3, x3);
+    xtts_sinf_constant(x2, tmp, 0x3f22f983);
+    la_fmul_s(temp, x2, x1);
+    la_ftintrz_w_s(temp, temp);
+    la_movfr2gr_s(edx, temp);
+    la_bstrpick_d(edx, edx, 31, 0);
+    la_andi(ecx, edx, 1);
+    la_srai_w(eax, edx, 1);
+    la_xor(eax, eax, ecx);
+    la_xor(eax, eax, esi);
+    la_slli_w(eax, eax, 31);
+    la_bstrpick_d(sign, eax, 31, 0);
+
+    la_vxor_v(x0, x0, x0);
+    la_movgr2fr_w(x0, edx);
+    la_ffint_s_w(x0, x0);
+    xtts_sinf_constant(x2, tmp, 0x3fc90fdb);
+    la_fmul_s(x0, x0, x2);
+    la_fsub_s(x1, x1, x0);
+    la_movgr2fr_w(x0, ecx);
+    la_ffint_s_w(x0, x0);
+    la_fmul_s(x2, x2, x0);
+    la_fsub_s(x1, x1, x2);
+    la_movfr2gr_s(edi, x1);
+    la_bstrpick_d(edi, edi, 31, 0);
+    la_xor(eax, sign, edi);
+    la_bstrpick_d(eax, eax, 31, 0);
+    /* The last XOR supplies the function's live arithmetic flags. */
+    IR1_INST flags_insn = *last_xor;
+    IR1_INST *saved_ir1 = lsenv->tr_data->curr_ir1_inst;
+    uint8_t saved_skipped = lsenv->tr_data->curr_ir1_skipped_eflags;
+    ir1_set_eflag_def(&flags_insn, 0x3f);
+    lsenv->tr_data->curr_ir1_inst = &flags_insn;
+    lsenv->tr_data->curr_ir1_skipped_eflags = 0;
+    generate_eflag_calculation(eax, sign, edi, &flags_insn, true);
+    lsenv->tr_data->curr_ir1_inst = saved_ir1;
+    lsenv->tr_data->curr_ir1_skipped_eflags = saved_skipped;
+    la_movgr2fr_w(x1, eax);
+    IR2_OPND redzone = ra_alloc_itemp();
+    rsp = ra_alloc_gpr(esp_index);
+    la_addi_d(redzone, rsp, -4);
+    la_st_w(eax, redzone, 0);
+    ra_free_temp(redzone);
+    xtts_sinf_constant(x0, tmp, 0xb940922c);
+    xtts_sinf_constant(x3, tmp, 0x3c081766);
+    la_fmul_s(x0, x0, x1);
+    la_fmul_s(x3, x3, x1);
+    la_fmul_s(x2, x1, x1);
+    la_fmul_s(x0, x0, x2);
+    la_fadd_s(x0, x0, x3);
+    la_fmul_s(x3, x2, x2);
+    la_fmul_s(x0, x0, x3);
+    xtts_sinf_constant(x3, tmp, 0xbe2aa5db);
+    la_fmul_s(x3, x3, x1);
+    xtts_sinf_constant(temp, tmp, 0x3f7fffc7);
+    la_fmul_s(x1, x1, temp);
+    la_fmul_s(x2, x2, x3);
+    la_fadd_s(x1, x1, x2);
+    la_fadd_s(x0, x0, x1);
+    /* LA scalar FP writes do not define SSE's upper 96 result bits. */
+    for (int i = 0; i < 4; i++) {
+        IR2_OPND xmm = ra_alloc_xmm(i);
+        la_vbsll_v(xmm, xmm, 12);
+        la_vbsrl_v(xmm, xmm, 12);
+    }
+    ra_free_temp(temp);
+    ra_free_temp(tmp);
+    ra_free_temp(sign);
+    return_addr = ra_alloc_dbt_arg2();
+    la_ld_d(return_addr, rsp, 0);
+    la_addi_d(rsp, rsp, 8);
+    tb->bool_flags |= IS_INDIRECT_JMP;
+    IR2_OPND label = ra_alloc_label();
+    la_label(label);
+    tb->jmp_indirect = ir2_opnd_label_id(&label);
+    generate_indirect_goto((void *)tb->tc.ptr);
+    ra_free_all();
+    la_label(fallback);
+    if (latx_tu_scan_enabled()) {
+        fprintf(stderr, "TU_SCAN_XTTS_SINF pc=0x" TARGET_FMT_lx "\n", tb->pc);
+    }
+    /* Emit the original function after this label for the guarded inputs. */
+    return false;
+}
+
 static bool xtts_matrix_entry(TranslationBlock *tb, unsigned kind)
 {
     static const struct {
@@ -3832,6 +3980,9 @@ int tr_ir2_generate(struct TranslationBlock *tb)
 #endif
 #ifdef CONFIG_LATX_TU
     switch (tb->pc) {
+    case UINT64_C(0x551818a770):
+        xtts_sinf_entry(tb);
+        break;
     case UINT64_C(0x551819c200):
         if (xtts_matrix_entry(tb, 0)) {
             return 1;
