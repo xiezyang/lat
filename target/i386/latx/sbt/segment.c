@@ -12,10 +12,24 @@
 #include "segment.h"
 #include "ts.h"
 #include "latx-options.h"
+#include "tu.h"
 
 #ifdef CONFIG_LATX_AOT
 static GTree *segment_tree;
 static GTree *wine_sec_tree;
+static GList *xfyun_hot_segments;
+
+bool segment_xfyun_hot_base(target_ulong pc, target_ulong *base)
+{
+    for (GList *node = xfyun_hot_segments; node; node = node->next) {
+        const seg_info *seg = node->data;
+        if (pc >= seg->seg_begin && pc < seg->seg_end) {
+            *base = seg->seg_begin - seg->file_offset;
+            return true;
+        }
+    }
+    return false;
+}
 
 int segment_get_aot_file_name(const seg_info *seg, char *name,
                               size_t name_size)
@@ -60,6 +74,9 @@ static void seg_delete(gconstpointer a) {
 
     lsassert(oldkey);
     lsassert(oldkey->file_name);
+    if (oldkey->seg_flag & SEG_XFYUN_HOT) {
+        xfyun_hot_segments = g_list_remove(xfyun_hot_segments, oldkey);
+    }
     if ((oldkey->seg_flag & SEG_AOT_LOADED) && oldkey->buffer &&
         (oldkey->aot_file_type & (PE_AOT_FILE | CACHE_AOT_FILE)) &&
         segment_get_aot_file_name(oldkey, aot_file_name,
@@ -209,6 +226,12 @@ void segment_tree_insert(char *name, target_ulong offset, target_ulong begin,
     while(old_seg_info) {
        segment_tree_remove(old_seg_info);
        old_seg_info = segment_tree_lookup2(begin, end);
+    }
+    const char *base_name = strrchr(name, '/');
+    if (seg->lib_size == XFYUN_HOT_LIB_SIZE && begin >= offset &&
+        !strcmp(base_name ? base_name + 1 : name, "libmsc.so")) {
+        seg->seg_flag |= SEG_XFYUN_HOT;
+        xfyun_hot_segments = g_list_prepend(xfyun_hot_segments, seg);
     }
     /* Now insert this new segment into segment_tree */
     g_tree_replace(segment_tree, seg, seg);

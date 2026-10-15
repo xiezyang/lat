@@ -1255,6 +1255,7 @@ static void* relkind_to_fixup_addr[] = {
     [LOAD_HELPER_XFYUN_INV_TRANSFORM] = latx_xfyun_inv_transform,
     [LOAD_HELPER_XTTS_DECRYPT] = latx_xtts_decrypt,
     [LOAD_HELPER_XTTS_CLOCK_NANOSLEEP] = latx_xtts_clock_nanosleep,
+    [LOAD_HELPER_XTTS_MATRIX] = latx_xtts_matrix,
     [LOAD_HELPER_CPUID] = helper_cpuid,
     [LOAD_HELPER_RAISE_INT] = helper_raise_int,
     [LOAD_HELPER_RAISE_ILLOP] = helper_raise_illop,

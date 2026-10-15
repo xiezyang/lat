@@ -24,40 +24,32 @@
 #include "aot_page.h"
 #include "segment.h"
 
-static bool tu_scan_enabled(void)
+static bool tu_scan_enabled;
+static bool xfyun_hot_enabled, xfyun_hot_has_override;
+static target_ulong xfyun_hot_override_base;
+
+void latx_tu_hot_options_init(void)
 {
-    return getenv("LATX_TU_SCAN") != NULL;
+    const char *value = getenv("LATX_XFYUN_HOT_TU");
+    const char *override = getenv("LATX_XFYUN_HOT_BASE");
+
+    tu_scan_enabled = getenv("LATX_TU_SCAN") != NULL;
+    xfyun_hot_enabled = !value || strcmp(value, "0");
+    xfyun_hot_has_override = override != NULL;
+    if (override) {
+        xfyun_hot_override_base = strtoull(override, NULL, 0);
+    }
+}
+
+bool latx_tu_scan_enabled(void)
+{
+    return tu_scan_enabled;
 }
 
 static bool xfyun_hot_lib_base(target_ulong pc, target_ulong *base)
 {
-    seg_info *seg;
-    const char *name;
-    const char *override;
-    const char *hot_enabled;
-
-    hot_enabled = getenv("LATX_XFYUN_HOT_TU");
-    if (hot_enabled && !strcmp(hot_enabled, "0")) {
-        return false;
-    }
-    seg = segment_tree_lookup(pc);
-    if (!seg || !seg->file_name || seg->lib_size != XFYUN_HOT_LIB_SIZE ||
-        seg->seg_begin < seg->file_offset) {
-        return false;
-    }
-    name = strrchr(seg->file_name, '/');
-    if (strcmp(name ? name + 1 : seg->file_name, "libmsc.so")) {
-        return false;
-    }
-    *base = seg->seg_begin - seg->file_offset;
-    override = getenv("LATX_XFYUN_HOT_BASE");
-    if (override && strtoull(override, NULL, 0) != *base) {
-        return false;
-    }
-    if (pc < *base) {
-        return false;
-    }
-    return true;
+    return xfyun_hot_enabled && segment_xfyun_hot_base(pc, base) &&
+           (!xfyun_hot_has_override || xfyun_hot_override_base == *base);
 }
 
 bool xfyun_hot_tu_bounds(target_ulong pc, target_ulong *begin,
@@ -157,7 +149,7 @@ bool xfyun_hot_no_lbt_tu_branch(TranslationBlock *tb)
     if (!tb || !xfyun_hot_tu_bounds(tb->pc, &begin, &end)) {
         return false;
     }
-    if (tu_scan_enabled() && tb && tb->pc >= begin && tb->pc < end) {
+    if (latx_tu_scan_enabled() && tb && tb->pc >= begin && tb->pc < end) {
         next_tb = tb->s_data->next_tb[TU_TB_INDEX_NEXT];
         target_tb = tb->s_data->next_tb[TU_TB_INDEX_TARGET];
         fprintf(stderr, "TU_SCAN_XFYUN_HOT_BRANCH_CHECK pc=0x" TARGET_FMT_lx
@@ -190,7 +182,7 @@ bool xfyun_hot_no_lbt_tu_branch(TranslationBlock *tb)
             target_tb->eflag_use) {
         return false;
     }
-    if (tu_scan_enabled()) {
+    if (latx_tu_scan_enabled()) {
         fprintf(stderr, "TU_SCAN_XFYUN_HOT_EFLAGS pc=0x" TARGET_FMT_lx
                 " next=0x" TARGET_FMT_lx " target=0x" TARGET_FMT_lx
                 "\n", tb->pc, next_tb->pc, target_tb->pc);
@@ -836,7 +828,7 @@ static TranslationBlock *tb_explore(CPUState *cpu,
     /* flag reduction */
     tu_ir1_optimization(tb_list, *tb_num_in_tu);
 
-    if (tu_scan_enabled()) {
+    if (latx_tu_scan_enabled()) {
         fprintf(stderr, "TU_SCAN_BUILD tb_num=%u ir1_num=%u\n",
                 *tb_num_in_tu, *ir1_num_in_tu);
     }
@@ -1352,7 +1344,7 @@ TranslationBlock *tu_gen_code(CPUState *cpu,
 
     translate_tu(*tb_num_in_tu, tb_list);
     register_tu(*tb_num_in_tu, tb_list, cpu, cflags);
-    if (tu_scan_enabled()) {
+    if (latx_tu_scan_enabled()) {
         fprintf(stderr, "TU_SCAN_REGISTER tb_num=%u\n", *tb_num_in_tu);
     }
     tu_trees_reset();
@@ -1461,7 +1453,7 @@ bool judge_tu_eflag_gen(void *tb_in_tu) {
         TranslationBlock *tb_next = tb->s_data->next_tb[TU_TB_INDEX_NEXT];
         /* TODO */
         if (tb_target->eflag_use && !tb_next->eflag_use){
-            if (tu_scan_enabled()) {
+            if (latx_tu_scan_enabled()) {
                 fprintf(stderr, "TU_SCAN_EFLAG_FALLBACK pc=0x" TARGET_FMT_lx "\n",
                         tb->pc);
             }
@@ -1498,7 +1490,7 @@ void set_use_tu_jmp(TranslationBlock *tb)
         tb->bool_flags &= ~IS_TU_JMP;
         return;
     }
-    if (tu_scan_enabled()) {
+    if (latx_tu_scan_enabled()) {
         fprintf(stderr, "TU_SCAN_LINK pc=0x" TARGET_FMT_lx "\n", tb->pc);
     }
     tb->bool_flags |= IS_TU_JMP;
@@ -1507,7 +1499,7 @@ void set_use_tu_jmp(TranslationBlock *tb)
 
 void unset_use_tu_jmp(TranslationBlock *tb)
 {
-    if (tu_scan_enabled()) {
+    if (latx_tu_scan_enabled()) {
         fprintf(stderr, "TU_SCAN_UNLINK pc=0x" TARGET_FMT_lx "\n", tb->pc);
     }
     tb->bool_flags &= ~IS_TU_JMP;

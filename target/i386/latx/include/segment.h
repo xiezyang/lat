@@ -28,6 +28,7 @@ typedef struct seg_info {
 #define SEG_RUNNING     0x1
 #define IS_ELF_SEG      0x2
 #define SEG_AOT_LOADED  0x4
+#define SEG_XFYUN_HOT   0x8
     uint8_t seg_flag;
     uint8_t aot_file_type;
 } seg_info;
@@ -85,6 +86,7 @@ void segment_tree_insert(char *name, target_ulong offset, target_ulong begin,
         target_ulong end);
 seg_info *segment_tree_lookup(target_ulong pc);
 seg_info *segment_tree_lookup2(target_ulong begin, target_ulong end);
+bool segment_xfyun_hot_base(target_ulong pc, target_ulong *base);
 void segment_tree_remove(seg_info *val);
 bool segment_tree_winepe_lookup(target_ulong pc);
 gint get_segment_num(void);

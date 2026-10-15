@@ -247,6 +247,8 @@ extern unsigned long long counter_mips_tr;
     ENVSUP_PLUGIN
 
 void options_init(void);
+void latx_tu_hot_options_init(void);
+void latx_xtts_hot_options_init(void);
 bool latx_options_finalize(void);
 void options_parse_opt(const char *opt);
 bool latx_parse_host_hwcap_arg(const char *arg, unsigned long *value);

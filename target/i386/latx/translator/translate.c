@@ -21,10 +21,29 @@
 #include "jrra.h"
 #include "jrra-translator.h"
 #include "latx-native-asm.h"
+#include "xtts-matrix-native.h"
 #include <errno.h>
 #include <time.h>
 
 extern void *helper_tb_lookup_ptr(CPUArchState *);
+static bool xtts_matrix_enabled;
+static bool xtts_decrypt_enabled;
+static bool xtts_clock_nanosleep_enabled;
+static bool xtts_hot_tu_enabled;
+
+void latx_xtts_hot_options_init(void)
+{
+    const char *matrix = getenv("LATX_XTTS_MATRIX");
+    const char *decrypt = getenv("LATX_XTTS_DECRYPT");
+    const char *sleep = getenv("LATX_XTTS_CLOCK_NANOSLEEP");
+    const char *hot = getenv("LATX_XTTS_HOT_TU");
+
+    xtts_matrix_enabled = matrix && strcmp(matrix, "0");
+    xtts_decrypt_enabled = decrypt && strcmp(decrypt, "0");
+    xtts_clock_nanosleep_enabled = sleep && strcmp(sleep, "0");
+    xtts_hot_tu_enabled = hot && strcmp(hot, "0");
+}
+
 static int ss_generate_match_fail_native_code(void* code_buf);
 static void generate_indirect_goto(void *code_buf);
 #if defined(CONFIG_LATX_KZT)
@@ -2375,10 +2394,10 @@ uint64_t latx_xtts_clock_nanosleep(uint32_t clock_id, uint32_t flags,
     memcpy(&request, g2h_untagged(request_addr), sizeof(request));
     ret = clock_nanosleep(clock_id, flags, &request,
                           remain_addr ? &remain : NULL);
-    if (ret == 0 && remain_addr) {
+    if (ret == EINTR && !(flags & TIMER_ABSTIME) && remain_addr) {
         memcpy(g2h_untagged(remain_addr), &remain, sizeof(remain));
     }
-    return ret == 0 ? 0 : errno;
+    return ret;
 }
 
 static uint64_t xfyun_hot_bytes_hash(const uint8_t *bytes, size_t size)
@@ -2392,19 +2411,135 @@ static uint64_t xfyun_hot_bytes_hash(const uint8_t *bytes, size_t size)
     return hash;
 }
 
-static bool xtts_decrypt_entry(TranslationBlock *tb)
+void latx_xtts_matrix(CPUX86State *env, uint32_t kind)
 {
-    static int enabled = -1;
-    IR2_OPND key, input, output, key_len, len, function, rsp, return_addr;
+    const uint64_t *stack = g2h_untagged(env->regs[esp_index]);
+    int iq, wq, bq, oq;
 
-    if (!tb || tb->pc != UINT64_C(0x55183113c0)) {
+    if (kind == 5) {
+        xtts_matrix_colmajor((int32_t)env->regs[edi_index],
+                            (int32_t)env->regs[esi_index],
+                            g2h_untagged(env->regs[ecx_index]),
+                            g2h_untagged(env->regs[r8_index]),
+                            g2h_untagged(env->regs[r9_index]),
+                            g2h_untagged(stack[1]), g2h_untagged(stack[2]),
+                            (int8_t)stack[3], (int8_t)stack[4],
+                            (int8_t)stack[5]);
+    } else if (kind == 2 || kind == 3) {
+        iq = (int8_t)stack[1];
+        wq = (int8_t)stack[2];
+        bq = (int8_t)stack[3];
+        oq = (int32_t)stack[4];
+        if (kind == 3) {
+            xtts_matrix_i8((int32_t)env->regs[edi_index],
+                          (int32_t)env->regs[esi_index],
+                          g2h_untagged(env->regs[edx_index]),
+                          g2h_untagged(env->regs[ecx_index]),
+                          g2h_untagged(env->regs[r8_index]),
+                          g2h_untagged(env->regs[r9_index]), iq, wq, bq, oq);
+        } else {
+            xtts_matrix_i16_w8((int32_t)env->regs[edi_index],
+                          (int32_t)env->regs[esi_index],
+                          g2h_untagged(env->regs[edx_index]),
+                          g2h_untagged(env->regs[ecx_index]),
+                          g2h_untagged(env->regs[r8_index]),
+                          g2h_untagged(env->regs[r9_index]), iq, wq, bq, oq);
+        }
+    } else {
+        iq = (int8_t)stack[2];
+        wq = (int8_t)stack[3];
+        bq = (int8_t)stack[4];
+        oq = (int32_t)stack[5];
+        if (kind == 4) {
+            xtts_matrix_i16_out16((int32_t)env->regs[edi_index],
+                       (int32_t)env->regs[esi_index],
+                       g2h_untagged(env->regs[ecx_index]),
+                       g2h_untagged(env->regs[r8_index]),
+                       g2h_untagged(env->regs[r9_index]),
+                       g2h_untagged(stack[1]), iq, wq, bq, oq);
+        } else {
+            xtts_matrix_i16((int32_t)env->regs[edi_index],
+                       (int32_t)env->regs[esi_index],
+                       g2h_untagged(env->regs[ecx_index]),
+                       g2h_untagged(env->regs[r8_index]),
+                       g2h_untagged(env->regs[r9_index]),
+                       g2h_untagged(stack[1]), iq, wq, bq, oq, kind);
+        }
+    }
+}
+
+static bool xtts_matrix_entry(TranslationBlock *tb, unsigned kind)
+{
+    static const struct {
+        size_t size;
+        uint64_t hash;
+    } signatures[] = {
+        {0x295, UINT64_C(0xe7a66e92ec5529cc)},
+        {0x28f, UINT64_C(0xb32cf0eaec80baf0)},
+        {0x393, UINT64_C(0xb5e4a663a54a970e)},
+        {0x84b, UINT64_C(0xba3dc35c8db9911f)},
+        {0x3e6, UINT64_C(0x7fa9e7294f7a59e1)},
+        {0x2d9, UINT64_C(0x34254ddbe45268c5)},
+    };
+    IR2_OPND function, rsp, return_addr;
+
+    if (!xtts_matrix_enabled || option_enable_lbt || !CODEIS64) {
         return false;
     }
-    if (enabled < 0) {
-        const char *value = getenv("LATX_XTTS_DECRYPT");
-        enabled = value && strcmp(value, "0");
+    if (xfyun_hot_bytes_hash((const uint8_t *)(uintptr_t)tb->pc,
+                             signatures[kind].size) != signatures[kind].hash) {
+        return false;
     }
-    if (!enabled) {
+    for (int i = 0; i < tb->icount; i++) {
+        IR1_INST *insn = tb_ir1_inst(tb, i);
+        tcg_ctx->gen_insn_data[i][0] = ir1_addr(insn);
+        tcg_ctx->gen_insn_data[i][1] = 0;
+        tr_init_for_each_ir1_in_tb(insn, tb->icount, i);
+    }
+    tr_save_gpr_to_env(0xff);
+    tr_save_xmm_to_env(0xff);
+    tr_save_x64_8_registers_to_env(0xff, 0xff);
+    for (int i = 0; i < 8; i++) {
+        la_fst_d(ra_alloc_mmx(i), env_ir2_opnd, lsenv_offset_of_mmx(lsenv, i));
+    }
+    la_st_w(ra_alloc_eflags(), env_ir2_opnd, lsenv_offset_of_eflags(lsenv));
+    la_mov64(a0_ir2_opnd, env_ir2_opnd);
+    li_d(a1_ir2_opnd, kind);
+    function = ra_alloc_itemp();
+    aot_load_host_addr(function, (ADDR)latx_xtts_matrix,
+                       LOAD_HELPER_XTTS_MATRIX, 0);
+    la_jirl(ra_ir2_opnd, function, 0);
+    ra_free_temp(function);
+    for (int i = 0; i < 8; i++) {
+        la_fld_d(ra_alloc_mmx(i), env_ir2_opnd, lsenv_offset_of_mmx(lsenv, i));
+    }
+    tr_load_xmm_from_env(0xff);
+    tr_load_x64_8_registers_from_env(0xff, 0xff);
+    tr_load_gpr_from_env(0xff);
+    la_ld_w(ra_alloc_eflags(), env_ir2_opnd, lsenv_offset_of_eflags(lsenv));
+    xfyun_hot_native_zero_result_flags();
+    rsp = ra_alloc_gpr(esp_index);
+    return_addr = ra_alloc_dbt_arg2();
+    la_ld_d(return_addr, rsp, 0);
+    la_addi_d(rsp, rsp, 8);
+    tb->bool_flags |= IS_INDIRECT_JMP;
+    IR2_OPND label = ra_alloc_label();
+    la_label(label);
+    tb->jmp_indirect = ir2_opnd_label_id(&label);
+    generate_indirect_goto((void *)tb->tc.ptr);
+    ra_free_all();
+    if (latx_tu_scan_enabled()) {
+        fprintf(stderr, "TU_SCAN_XTTS_MATRIX pc=0x" TARGET_FMT_lx
+                " kind=%u\n", tb->pc, kind);
+    }
+    return true;
+}
+
+static bool xtts_decrypt_entry(TranslationBlock *tb)
+{
+    IR2_OPND key, input, output, key_len, len, function, rsp, return_addr;
+
+    if (!xtts_decrypt_enabled) {
         return false;
     }
     if (xfyun_hot_bytes_hash((const uint8_t *)(uintptr_t)tb->pc, 0x3e) !=
@@ -2456,7 +2591,7 @@ static bool xtts_decrypt_entry(TranslationBlock *tb)
         generate_indirect_goto((void *)tb->tc.ptr);
     }
     ra_free_all();
-    if (getenv("LATX_TU_SCAN")) {
+    if (latx_tu_scan_enabled()) {
         fprintf(stderr, "TU_SCAN_XTTS_NATIVE_DECRYPT pc=0x" TARGET_FMT_lx
                 "\n", tb->pc);
     }
@@ -2465,17 +2600,9 @@ static bool xtts_decrypt_entry(TranslationBlock *tb)
 
 static bool xtts_clock_nanosleep_entry(TranslationBlock *tb)
 {
-    static int enabled = -1;
     IR2_OPND clock_id, flags, request, remain, function, rsp, return_addr;
 
-    if (!tb || tb->pc != UINT64_C(0x5509110b20)) {
-        return false;
-    }
-    if (enabled < 0) {
-        const char *value = getenv("LATX_XTTS_CLOCK_NANOSLEEP");
-        enabled = value && strcmp(value, "0");
-    }
-    if (!enabled) {
+    if (!xtts_clock_nanosleep_enabled) {
         return false;
     }
 
@@ -2526,33 +2653,21 @@ static bool xtts_clock_nanosleep_entry(TranslationBlock *tb)
 
 static bool xtts_hot_native_loop_entry(TranslationBlock *tb)
 {
-    static int enabled = -1;
     target_ulong begin, end;
     IR1_INST *call_insn;
     IR2_OPND r12, r13, r9, r14, rbp, rax, rsp, rdi, rsi, tmp;
 
-    if (!tb || tb->pc != UINT64_C(0x5518176453)) {
-        return false;
-    }
-    if (enabled < 0) {
-        const char *value = getenv("LATX_XTTS_HOT_TU");
-        enabled = value && strcmp(value, "0");
-    }
-    if (!enabled) {
+    if (!xtts_hot_tu_enabled) {
         return false;
     }
     begin = tb->pc;
     end = begin + 0x3a;
-    if (end - begin != 0x3a) {
-        return false;
-    }
-
     if (xfyun_hot_bytes_hash((const uint8_t *)(uintptr_t)begin,
                              end - begin) !=
         UINT64_C(0x72f1f9ccff4952c8)) {
         return false;
     }
-    if (getenv("LATX_TU_SCAN")) {
+    if (latx_tu_scan_enabled()) {
         fprintf(stderr, "TU_SCAN_XTTS_ENTRY pc=0x" TARGET_FMT_lx
                 "\n", tb->pc);
     }
@@ -2561,7 +2676,7 @@ static bool xtts_hot_native_loop_entry(TranslationBlock *tb)
         return false;
     }
     call_insn = tb_ir1_inst(tb, tb->icount - 1);
-    if (getenv("LATX_TU_SCAN")) {
+    if (latx_tu_scan_enabled()) {
         fprintf(stderr, "TU_SCAN_XTTS_SHAPE pc=0x" TARGET_FMT_lx
                 " icount=%d last_op=%d target=0x" TARGET_FMT_lx
                 "\n", tb->pc, tb->icount, ir1_opcode(call_insn),
@@ -2612,7 +2727,7 @@ static bool xtts_hot_native_loop_entry(TranslationBlock *tb)
         return false;
     }
     ra_free_all();
-    if (getenv("LATX_TU_SCAN")) {
+    if (latx_tu_scan_enabled()) {
         fprintf(stderr, "TU_SCAN_XTTS_HOT_LOOP pc=0x" TARGET_FMT_lx
                 " ir2=%d\n", tb->pc,
                 lsenv->tr_data->ir2_inst_num_current);
@@ -2656,7 +2771,7 @@ static bool xfyun_hot_native_fir_entry(TranslationBlock *tb,
     }
     hash = xfyun_hot_bytes_hash((const uint8_t *)(uintptr_t)begin, size);
     if (hash != UINT64_C(0x3bf740c3292da02e)) {
-        if (getenv("LATX_TU_SCAN")) {
+        if (latx_tu_scan_enabled()) {
             fprintf(stderr, "TU_SCAN_XFYUN_FIR_REJECT hash=0x%016" PRIx64
                     " pc=0x" TARGET_FMT_lx "\n", hash, tb->pc);
         }
@@ -2712,7 +2827,7 @@ static bool xfyun_hot_native_fir_entry(TranslationBlock *tb,
         tr_generate_exit_tb(ret_insn, 0);
     }
     ra_free_all();
-    if (getenv("LATX_TU_SCAN")) {
+    if (latx_tu_scan_enabled()) {
         fprintf(stderr, "TU_SCAN_XFYUN_NATIVE_FIR pc=0x" TARGET_FMT_lx
                 "\n", tb->pc);
     }
@@ -2734,7 +2849,7 @@ static bool xfyun_hot_native_inv_entry(TranslationBlock *tb,
     }
     hash = xfyun_hot_bytes_hash((const uint8_t *)(uintptr_t)begin, size);
     if (hash != UINT64_C(0x3fa6d98b97e5e08e)) {
-        if (getenv("LATX_TU_SCAN")) {
+        if (latx_tu_scan_enabled()) {
             fprintf(stderr, "TU_SCAN_XFYUN_INV_REJECT hash=0x%016" PRIx64
                     " pc=0x" TARGET_FMT_lx "\n", hash, tb->pc);
         }
@@ -2787,7 +2902,7 @@ static bool xfyun_hot_native_inv_entry(TranslationBlock *tb,
         }
     }
     ra_free_all();
-    if (getenv("LATX_TU_SCAN")) {
+    if (latx_tu_scan_enabled()) {
         fprintf(stderr, "TU_SCAN_XFYUN_NATIVE_INV pc=0x" TARGET_FMT_lx
                 "\n", tb->pc);
     }
@@ -2811,7 +2926,7 @@ static bool xfyun_hot_native_mod_diff_entry(TranslationBlock *tb,
     }
     hash = xfyun_hot_bytes_hash((const uint8_t *)(uintptr_t)begin, size);
     if (hash != UINT64_C(0x22878071575c8228)) {
-        if (getenv("LATX_TU_SCAN")) {
+        if (latx_tu_scan_enabled()) {
             fprintf(stderr, "TU_SCAN_XFYUN_MOD_DIFF_REJECT hash=0x%016" PRIx64
                     " pc=0x" TARGET_FMT_lx "\n", hash, tb->pc);
         }
@@ -2901,7 +3016,7 @@ static bool xfyun_hot_native_mod_diff_entry(TranslationBlock *tb,
         }
     }
     ra_free_all();
-    if (getenv("LATX_TU_SCAN")) {
+    if (latx_tu_scan_enabled()) {
         fprintf(stderr, "TU_SCAN_XFYUN_NATIVE_MOD_DIFF pc=0x"
                 TARGET_FMT_lx "\n", tb->pc);
     }
@@ -2910,18 +3025,14 @@ static bool xfyun_hot_native_mod_diff_entry(TranslationBlock *tb,
 
 /* These accesses dominate the two measured libmsc.so TUs.  Keep each x86
  * instruction marker in the caller so a fault still restores its own PC. */
-static bool xfyun_hot_native_byte_access(IR1_INST *ir1)
+static bool xfyun_hot_native_byte_access(IR1_INST *ir1,
+                                         target_ulong begin, target_ulong end)
 {
     TranslationBlock *tb = lsenv->tr_data->curr_tb;
-    target_ulong begin, end;
     IR1_OPND *dst, *src;
     IR2_OPND rdi, rsi, rax, rcx;
 
-    if (!tb || !CODEIS64 || option_enable_lbt || !latx_tu_enabled() ||
-        option_mem_test || tb_use_smc_opt(tb) || option_imm_reg ||
-        (tb->flags & HF_TF_MASK) || latx_trace_mem || latx_break_insn ||
-        !xfyun_hot_tu_bounds(tb->pc, &begin, &end) ||
-        ir1_opnd_num(ir1) != 2 || ir1_is_prefix_lock(ir1)) {
+    if (ir1_opnd_num(ir1) != 2 || ir1_is_prefix_lock(ir1)) {
         return false;
     }
 
@@ -2985,7 +3096,7 @@ static bool xfyun_hot_native_byte_access(IR1_INST *ir1)
         la_dbar(0);
     }
     ra_free_all();
-    if (getenv("LATX_TU_SCAN")) {
+    if (latx_tu_scan_enabled()) {
         fprintf(stderr, "TU_SCAN_XFYUN_NATIVE_BYTE pc=0x" TARGET_FMT_lx
                 " ir1=0x" TARGET_FMT_lx "\n", tb->pc, ir1_addr(ir1));
     }
@@ -3208,7 +3319,7 @@ static bool xfyun_hot_native_entry(TranslationBlock *tb)
     la_label(fallback_ret);
     tr_generate_exit_tb(jcc, 1);
     ra_free_all();
-    if (getenv("LATX_TU_SCAN")) {
+    if (latx_tu_scan_enabled()) {
         fprintf(stderr, "TU_SCAN_XFYUN_NATIVE_ENTRY pc=0x" TARGET_FMT_lx
                 "\n", tb->pc);
     }
@@ -3292,7 +3403,7 @@ static bool xfyun_hot_native_middle_or_ret(TranslationBlock *tb)
         }
     }
     ra_free_all();
-    if (getenv("LATX_TU_SCAN")) {
+    if (latx_tu_scan_enabled()) {
         fprintf(stderr, "TU_SCAN_XFYUN_NATIVE_%s pc=0x" TARGET_FMT_lx
                 "\n", ret ? "RET" : "MIDDLE", tb->pc);
     }
@@ -3621,7 +3732,7 @@ static bool xfyun_hot_native_loop(TranslationBlock *tb)
     la_label(fallback_ret);
     tr_generate_exit_tb(jcc, 1);
     ra_free_all();
-    if (getenv("LATX_TU_SCAN")) {
+    if (latx_tu_scan_enabled()) {
         fprintf(stderr, "TU_SCAN_XFYUN_NATIVE_LOOP pc=0x" TARGET_FMT_lx
                 " ir1=%d\n", tb->pc, tb->icount);
     }
@@ -3720,10 +3831,63 @@ int tr_ir2_generate(struct TranslationBlock *tb)
     }
 #endif
 #ifdef CONFIG_LATX_TU
-    if (xtts_clock_nanosleep_entry(tb) || xtts_decrypt_entry(tb) ||
-        xtts_hot_native_loop_entry(tb) ||
-        xfyun_hot_native_entry(tb) || xfyun_hot_native_loop(tb) ||
-        xfyun_hot_native_middle_or_ret(tb)) {
+    switch (tb->pc) {
+    case UINT64_C(0x551819c200):
+        if (xtts_matrix_entry(tb, 0)) {
+            return 1;
+        }
+        break;
+    case UINT64_C(0x551819c4a0):
+        if (xtts_matrix_entry(tb, 1)) {
+            return 1;
+        }
+        break;
+    case UINT64_C(0x55181989b0):
+        if (xtts_matrix_entry(tb, 2)) {
+            return 1;
+        }
+        break;
+    case UINT64_C(0x55181992e0):
+        if (xtts_matrix_entry(tb, 3)) {
+            return 1;
+        }
+        break;
+    case UINT64_C(0x551819b9c0):
+        if (xtts_matrix_entry(tb, 4)) {
+            return 1;
+        }
+        break;
+    case UINT64_C(0x5518198d50):
+        if (xtts_matrix_entry(tb, 5)) {
+            return 1;
+        }
+        break;
+    case UINT64_C(0x5509110b20):
+        if (xtts_clock_nanosleep_entry(tb)) {
+            return 1;
+        }
+        break;
+    case UINT64_C(0x55183113c0):
+        if (xtts_decrypt_entry(tb)) {
+            return 1;
+        }
+        break;
+    case UINT64_C(0x5518176453):
+        if (xtts_hot_native_loop_entry(tb)) {
+            return 1;
+        }
+        break;
+    }
+    target_ulong xfyun_begin, xfyun_end, xfyun_mod_begin, xfyun_mod_end;
+    bool xfyun_hot_tb = xfyun_hot_tu_bounds(tb->pc, &xfyun_begin, &xfyun_end);
+    bool xfyun_byte_access = !option_enable_lbt && CODEIS64 &&
+        latx_tu_enabled() && xfyun_hot_tb && !option_mem_test &&
+        !tb_use_smc_opt(tb) && !option_imm_reg && !(tb->flags & HF_TF_MASK) &&
+        !latx_trace_mem && !latx_break_insn;
+    if ((xfyun_hot_tb ||
+         xfyun_hot_mod_diff_bounds(tb->pc, &xfyun_mod_begin, &xfyun_mod_end)) &&
+        (xfyun_hot_native_entry(tb) || xfyun_hot_native_loop(tb) ||
+         xfyun_hot_native_middle_or_ret(tb))) {
         return 1;
     }
 #endif
@@ -3837,7 +4001,8 @@ int tr_ir2_generate(struct TranslationBlock *tb)
 
         bool translation_success;
 #ifdef CONFIG_LATX_TU
-        translation_success = xfyun_hot_native_byte_access(pir1);
+        translation_success = xfyun_byte_access &&
+            xfyun_hot_native_byte_access(pir1, xfyun_begin, xfyun_end);
         if (!translation_success)
 #endif
             translation_success = ir1_translate(pir1);
@@ -3889,7 +4054,7 @@ int tr_ir2_generate(struct TranslationBlock *tb)
         }
     }
 #endif
-        if (getenv("LATX_TU_SCAN") &&
+        if (tb->pc == UINT64_C(0x5518176453) && latx_tu_scan_enabled() &&
             xfyun_hot_bytes_hash((const uint8_t *)(uintptr_t)tb->pc, 0x3a) ==
             UINT64_C(0x72f1f9ccff4952c8)) {
             fprintf(stderr, "TU_SCAN_XTTS_NORMAL pc=0x" TARGET_FMT_lx

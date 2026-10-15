@@ -29,6 +29,7 @@
 #define XFYUN_HOT_LIB_SIZE 4297464ULL
 
 void get_last_info(TranslationBlock *tb, IR1_INST *pir1);
+bool latx_tu_scan_enabled(void);
 
 #ifdef CONFIG_LATX_TU
 /*

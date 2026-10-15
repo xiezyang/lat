@@ -1828,6 +1828,26 @@ static void build_page_bitmap(PageDesc *p)
  * for the same block of guest code that @tb corresponds to. In that case,
  * the caller should discard the original @tb, and use instead the returned TB.
  */
+static void latx_perf_map_tb(TranslationBlock *tb)
+{
+    static bool checked;
+    static FILE *map;
+
+    if (!checked) {
+        checked = true;
+        if (getenv("LATX_PERF_MAP")) {
+            char path[64];
+            snprintf(path, sizeof(path), "/tmp/perf-%ld.map", (long)getpid());
+            map = fopen(path, "w");
+        }
+    }
+    if (map && tb->tc.size) {
+        fprintf(map, "%lx %zx x86_%" PRIx64 "\n",
+                (unsigned long)tb->tc.ptr, tb->tc.size, (uint64_t)tb->pc);
+        fflush(map);
+    }
+}
+
 TranslationBlock *
 tb_link_page(TranslationBlock *tb, tb_page_addr_t phys_pc,
              tb_page_addr_t phys_page2)
@@ -1879,6 +1899,7 @@ tb_link_page(TranslationBlock *tb, tb_page_addr_t phys_pc,
         tb_page_check();
     }
 #endif
+    latx_perf_map_tb(tb);
     return tb;
 }
 

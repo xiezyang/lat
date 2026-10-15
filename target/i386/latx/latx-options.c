@@ -228,6 +228,8 @@ void conf_init(char **argv)
 void options_init(void)
 {
     latx_runtime_reset();
+    latx_tu_hot_options_init();
+    latx_xtts_hot_options_init();
 #if defined(CONFIG_LATX_KZT)
     option_kzt = 0;
     option_kzt_log = 0;
