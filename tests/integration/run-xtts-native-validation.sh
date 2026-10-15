@@ -42,6 +42,34 @@ if [[ -e output.pcm || -L output.pcm ]]; then
     mv -- output.pcm "$result/previous-output.pcm"
 fi
 TIMEFORMAT='real=%3R user=%3U sys=%3S'
+wait_aot_workers()
+{
+    local phase=$1 start=$SECONDS process running entry
+    while :; do
+        running=()
+        for process in /proc/[0-9]*; do
+            [[ $(readlink "$process/exe" 2>/dev/null) == "$latx" ]] || continue
+            [[ -r "$process/environ" ]] || continue
+            while IFS= read -r -d '' entry; do
+                if [[ "$entry" == "HOME=$HOME" ]]; then
+                    running+=("${process##*/}")
+                    break
+                fi
+            done <"$process/environ" 2>/dev/null
+        done
+        if (( ${#running[@]} == 0 )); then
+            printf '%s workers_finished wait=%ds\n' "$phase" "$((SECONDS-start))" \
+                >>"$result/aot-workers.txt"
+            return
+        fi
+        if (( SECONDS-start >= 90 )); then
+            printf '%s AOT workers did not finish: %s\n' "$phase" "${running[*]}" \
+                | tee -a "$result/aot-workers.txt" >&2
+            return 1
+        fi
+        sleep 0.2
+    done
+}
 for phase in jit generate load warm1 warm2 warm3 run1 run2 run3 run4 run5; do
     export LATX_AOT=1
     unset LATX_AOT_SCAN
@@ -55,6 +83,8 @@ for phase in jit generate load warm1 warm2 warm3 run1 run2 run3 run4 run5; do
         2>"$result/$phase.time" || rc=$?
     printf '%s rc=%d %s\n' "$phase" "$rc" "$(<"$result/$phase.time")" \
         | tee -a "$result/times.txt"
+    # AOT writers daemonize, so waiting for the guest alone is insufficient.
+    wait_aot_workers "$phase"
     [[ $rc == 0 && -f output.pcm && ! -L output.pcm ]]
     printf '%s  output.pcm\n' "$expected" | sha256sum -c - \
         | tee "$result/$phase.pcm-check"
@@ -62,6 +92,8 @@ for phase in jit generate load warm1 warm2 warm3 run1 run2 run3 run4 run5; do
     if [[ "$phase" == generate ]]; then
         ! grep -q 'AOT_SCAN_LOAD_SUCCESS' "$result/$phase.err"
         grep -q 'AOT_SCAN_GENERATE_SUCCESS' "$result/$phase.err"
+        # Keep the exact first-generation cache, before later runs extend it.
+        cp -a -- "$HOME/.cache/latx" "$result/generated-cache"
     elif [[ "$phase" == load ]]; then
         grep -q 'AOT_SCAN_LOAD_SUCCESS' "$result/$phase.err"
         grep -q 'AOT_SCAN_RECOVER' "$result/$phase.err"

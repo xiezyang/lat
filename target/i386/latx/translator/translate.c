@@ -469,7 +469,10 @@ int label_dispose(TranslationBlock *tb, TRANSLATION_DATA *lat_ctx)
             if (label_id != TB_JMP_RESET_OFFSET_INVALID) {
                 tb->jmp_indirect = ir2_label[label_id];
             }
-        } else if (!use_tu_jmp(tb)) {
+        }
+        /* A guarded native path may dispatch indirectly while its ordinary
+         * fallback still has direct branches. Resolve both sets of labels. */
+        if (!use_tu_jmp(tb)) {
             for (i = 0; i < 2; ++i) {
                 label_id = tb->jmp_reset_offset[i];
                 if (label_id != TB_JMP_RESET_OFFSET_INVALID) {
@@ -487,7 +490,8 @@ int label_dispose(TranslationBlock *tb, TRANSLATION_DATA *lat_ctx)
 
         }
 #ifdef CONFIG_LATX_TU
-        else if (in_pre_translate && !(tb->bool_flags & IS_TUNNEL_LIB)) {
+        else if (use_tu_jmp(tb) && in_pre_translate &&
+                 !(tb->bool_flags & IS_TUNNEL_LIB)) {
             for (i = 0; i < 2; ++i) {
                 label_id = tb->tu_jmp[i];
                 if (label_id != TB_JMP_RESET_OFFSET_INVALID &&

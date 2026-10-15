@@ -1301,6 +1301,9 @@ int target_munmap(abi_ulong start, abi_ulong len, int rlimit_as_account)
         return -TARGET_EINVAL;
     }
 
+#ifdef CONFIG_LATX_AOT
+    aot_xtts_before_unmap(start, len);
+#endif
     mmap_lock();
     ret = mmap_unmap_host_range(start, len);
 

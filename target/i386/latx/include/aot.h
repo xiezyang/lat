@@ -312,9 +312,11 @@ int add_rel_entry(aot_rel_kind kind, uint32_t **tc_offset,
 typedef enum AOTExitReason {
     AOT_EXIT_THREAD,
     AOT_EXIT_FINAL,
+    AOT_EXIT_UNMAP,
 } AOTExitReason;
 
 void aot_exit_entry(CPUState *cpu, AOTExitReason reason);
+void aot_xtts_before_unmap(target_ulong start, target_ulong len);
 void aot_init(void);
 target_ulong aot_get_call_offset(ADDRX addr);
 void aot_generate(CPUState *cpu);

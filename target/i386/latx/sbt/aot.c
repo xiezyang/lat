@@ -57,6 +57,8 @@ static int seg_info_num;
 static int curr_lib_seg_num;
 static char *curr_lib_name;
 static char curr_aot_file_name[PATH_MAX];
+static bool xtts_unmap_cache_enabled;
+static const char *unmap_cache_library;
 uintptr_t table_end_addr;
 
 static bool aot_scan_enabled(void)
@@ -985,6 +987,9 @@ static inline void gen_aot_by_lib(int first_seg_id, int end_seg_id,
     int lockfd = -1;
 
     curr_lib_name = seg_info_vector[first_seg_id]->file_name;
+    if (unmap_cache_library && strcmp(curr_lib_name, unmap_cache_library)) {
+        return;
+    }
     if (segment_get_aot_file_name(seg_info_vector[first_seg_id],
                                   curr_aot_file_name,
                                   sizeof(curr_aot_file_name)) < 0) {
@@ -1714,7 +1719,7 @@ void aot_exit_entry(CPUState *cpu, AOTExitReason reason)
     bool exclusive_started = false;
     bool in_exclusive_context = cpu_in_exclusive_context(cpu);
     if (!in_exclusive_context) {
-        if (reason == AOT_EXIT_FINAL) {
+        if (reason == AOT_EXIT_FINAL || reason == AOT_EXIT_UNMAP) {
             if (!start_exclusive_timeout(AOT_EXIT_EXCLUSIVE_TIMEOUT_MS)) {
                 qemu_log_mask(LAT_LOG_AOT,
                               "skip final aot: exclusive wait timeout\n");
@@ -1796,8 +1801,56 @@ parent_exit:
     _exit(EXIT_SUCCESS);
 }
 
+static bool xtts_needs_unmap_cache(target_ulong start, target_ulong end)
+{
+    seg_info *seg = segment_tree_lookup2(start, end);
+    if (!seg || start > seg->seg_begin || end < seg->seg_end ||
+        (seg->seg_flag & SEG_AOT_LOADED)) {
+        return false;
+    }
+    const char *base = strrchr(seg->file_name, '/');
+    return !strcmp(base ? base + 1 : seg->file_name,
+                   "ebd1bade4_v1025_aee.so");
+}
+
+void aot_xtts_before_unmap(target_ulong start, target_ulong len)
+{
+    if (!option_aot || !xtts_unmap_cache_enabled || !thread_cpu ||
+        in_pre_translate || start > UINT64_C(0x551815c000) ||
+        start + len <= UINT64_C(0x551815c000)) {
+        return;
+    }
+    /* Do not stop other guest threads again when this library already has
+     * loaded code. The snapshot is only needed to seed its missing cache. */
+    mmap_lock();
+    bool needed = xtts_needs_unmap_cache(start, start + len);
+    mmap_unlock();
+    if (!needed) {
+        return;
+    }
+    /* Stop guest execution before taking mmap_lock: the reverse order can
+     * deadlock against another CPU servicing a guest memory operation. */
+    bool exclusive = cpu_in_exclusive_context(thread_cpu);
+    if (!exclusive && !start_exclusive_timeout(AOT_EXIT_EXCLUSIVE_TIMEOUT_MS)) {
+        return;
+    }
+    mmap_lock();
+    if (xtts_needs_unmap_cache(start, start + len)) {
+        seg_info *seg = segment_tree_lookup2(start, start + len);
+        unmap_cache_library = seg->file_name;
+        aot_exit_entry(thread_cpu, AOT_EXIT_UNMAP);
+        unmap_cache_library = NULL;
+    }
+    mmap_unlock();
+    if (!exclusive) {
+        end_exclusive();
+    }
+}
+
 void aot_init(void)
 {
+    const char *unmap = getenv("LATX_XTTS_AOT_UNMAP");
+    xtts_unmap_cache_enabled = unmap && strcmp(unmap, "0");
     if (aot_scan_enabled()) {
         fprintf(stderr, "AOT_SCAN_INIT option_aot=%d load=%d\n",
                 option_aot, option_load_aot);
