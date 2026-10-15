@@ -136,5 +136,5 @@ typedef struct IR2_OPND {
             int32 _label_id; /* LABEL */
         };
     };
-} IR2_OPND;
+} __attribute__((aligned(8))) IR2_OPND;
 #endif

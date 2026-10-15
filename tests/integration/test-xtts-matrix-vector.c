@@ -14,13 +14,25 @@
 #define xtts_matrix_i8 scalar_i8
 #define xtts_matrix_i16_w8 scalar_i16_w8
 #define xtts_matrix_i16_out16 scalar_i16_out16
+#define xtts_matrix_i8_w16 scalar_i8_w16
 #include "../../target/i386/latx/include/xtts-matrix-native.h"
+
+#undef xtts_matrix_scale
+#undef xtts_matrix_convert
+#undef xtts_float_to_i32
+#undef xtts_matrix_colmajor
+#undef xtts_dot_i16_pair
+#undef xtts_matrix_i16
+#undef xtts_matrix_i8
+#undef xtts_matrix_i16_w8
+#undef xtts_matrix_i16_out16
+#undef xtts_matrix_i8_w16
 
 int main(void)
 {
     unsigned state = 98765;
     for (int test = 0; test < 10000; test++) {
-        int columns = (rand_r(&state) % 32 + 1) * 8;
+        int columns = (rand_r(&state) % 64 + 1) * 4;
         int16_t input[256], weights[256 * 16], bias16[16];
         int8_t weights8[256 * 16];
         int32_t bias32[16], actual[16], expected[16];
@@ -59,6 +71,11 @@ int main(void)
         scalar_i16_out16(columns, 16, input, weights, bias16,
                           expected8, iq, wq, bq, oq);
         if (memcmp(actual8, expected8, sizeof(actual8))) return 4;
+        xtts_matrix_i8_w16(columns, 16, 3, (const int8_t *)input, weights,
+                            bias16, actual8, iq, wq, bq, oq);
+        scalar_i8_w16(columns, 16, 3, (const int8_t *)input, weights,
+                       bias16, expected8, iq, wq, bq, oq);
+        if (memcmp(actual8, expected8, sizeof(actual8))) return 6;
         int16_t indices[16], colbias[256], cola[256], colb[256];
         int32_t sa[256] __attribute__((aligned(16)));
         int32_t sb[256] __attribute__((aligned(16)));
@@ -72,6 +89,6 @@ int main(void)
             return 5;
         }
     }
-    puts("PASS: 60000 vector/scalar matrix comparisons");
+    puts("PASS: 70000 vector/scalar matrix comparisons");
     return 0;
 }

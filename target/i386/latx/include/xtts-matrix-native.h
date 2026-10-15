@@ -84,7 +84,24 @@ static void xtts_dot_i16_pair(const int16_t *input, const int16_t *w0,
         __asm__ volatile (
             "vxor.v $vr3, $vr3, $vr3\n\t"
             "vxor.v $vr4, $vr4, $vr4\n\t"
+            "sltui %[a], %[n], 8\n\t"
+            "bnez %[a], 2f\n\t"
             "1:\n\t"
+            "vld $vr0, %[x], 0\n\t"
+            "vld $vr1, %[w0], 0\n\t"
+            "vld $vr2, %[w1], 0\n\t"
+            "vmaddwev.w.h $vr3, $vr0, $vr1\n\t"
+            "vmaddwod.w.h $vr3, $vr0, $vr1\n\t"
+            "vmaddwev.w.h $vr4, $vr0, $vr2\n\t"
+            "vmaddwod.w.h $vr4, $vr0, $vr2\n\t"
+            "addi.d %[x], %[x], 16\n\t"
+            "addi.d %[w0], %[w0], 16\n\t"
+            "addi.d %[w1], %[w1], 16\n\t"
+            "addi.w %[n], %[n], -8\n\t"
+            "sltui %[a], %[n], 8\n\t"
+            "beqz %[a], 1b\n\t"
+            "2:\n\t"
+            "beqz %[n], 3f\n\t"
             "vldrepl.d $vr0, %[x], 0\n\t"
             "vldrepl.d $vr1, %[w0], 0\n\t"
             "vldrepl.d $vr2, %[w1], 0\n\t"
@@ -93,11 +110,7 @@ static void xtts_dot_i16_pair(const int16_t *input, const int16_t *w0,
             "vsllwil.w.h $vr2, $vr2, 0\n\t"
             "vmadd.w $vr3, $vr0, $vr1\n\t"
             "vmadd.w $vr4, $vr0, $vr2\n\t"
-            "addi.d %[x], %[x], 8\n\t"
-            "addi.d %[w0], %[w0], 8\n\t"
-            "addi.d %[w1], %[w1], 8\n\t"
-            "addi.w %[n], %[n], -4\n\t"
-            "bnez %[n], 1b\n\t"
+            "3:\n\t"
             "vshuf4i.w $vr0, $vr3, 0x4e\n\t"
             "vshuf4i.w $vr1, $vr4, 0x4e\n\t"
             "vadd.w $vr3, $vr3, $vr0\n\t"
@@ -164,6 +177,72 @@ static void xtts_matrix_i16_out16(int columns, int rows,
         for (int k = 0; k < 4; k++) {
             output[row + k] = (uint16_t)xtts_matrix_convert(
                 sums[k], bias[row + k], scale, output_scale);
+        }
+    }
+}
+
+static void xtts_matrix_i8_w16(int columns, int rows, int multiplier,
+                               const int8_t *input, const int16_t *weights,
+                               const int16_t *bias, int16_t *output,
+                               int input_q, int weight_q, int bias_q,
+                               int output_q)
+{
+    int count = (columns / 8) * 8;
+    float scale = xtts_matrix_scale(bias_q - input_q - weight_q);
+    float output_scale = xtts_matrix_scale(output_q - bias_q);
+
+    for (int row = 0; row < rows; row += 2) {
+        uint32_t sums[2] = {0, 0};
+        const int16_t *w0 = weights + (int64_t)row * columns;
+        const int16_t *w1 = w0 + columns;
+#if defined(__loongarch64) && !defined(XTTS_MATRIX_SCALAR)
+        if (count > 0) {
+            const int8_t *x = input;
+            int n = count;
+            __asm__ volatile (
+                "vxor.v $vr3, $vr3, $vr3\n\t"
+                "vxor.v $vr4, $vr4, $vr4\n\t"
+                "1:\n\t"
+                "vldrepl.d $vr0, %[x], 0\n\t"
+                "vsllwil.h.b $vr0, $vr0, 0\n\t"
+                "vld $vr1, %[w0], 0\n\t"
+                "vld $vr2, %[w1], 0\n\t"
+                "vmaddwev.w.h $vr3, $vr0, $vr1\n\t"
+                "vmaddwod.w.h $vr3, $vr0, $vr1\n\t"
+                "vmaddwev.w.h $vr4, $vr0, $vr2\n\t"
+                "vmaddwod.w.h $vr4, $vr0, $vr2\n\t"
+                "addi.d %[x], %[x], 8\n\t"
+                "addi.d %[w0], %[w0], 16\n\t"
+                "addi.d %[w1], %[w1], 16\n\t"
+                "addi.w %[n], %[n], -8\n\t"
+                "bnez %[n], 1b\n\t"
+                "vshuf4i.w $vr0, $vr3, 0x4e\n\t"
+                "vshuf4i.w $vr1, $vr4, 0x4e\n\t"
+                "vadd.w $vr3, $vr3, $vr0\n\t"
+                "vadd.w $vr4, $vr4, $vr1\n\t"
+                "vshuf4i.w $vr0, $vr3, 0xb1\n\t"
+                "vshuf4i.w $vr1, $vr4, 0xb1\n\t"
+                "vadd.w $vr3, $vr3, $vr0\n\t"
+                "vadd.w $vr4, $vr4, $vr1\n\t"
+                "vpickve2gr.w %[a], $vr3, 0\n\t"
+                "vpickve2gr.w %[b], $vr4, 0\n\t"
+                : [x] "+&r"(x), [w0] "+&r"(w0), [w1] "+&r"(w1),
+                  [n] "+&r"(n), [a] "=&r"(sums[0]), [b] "=&r"(sums[1])
+                : : "f0", "f1", "f2", "f3", "f4", "memory");
+        }
+#else
+        for (int i = 0; i < count; i++) {
+            sums[0] += (uint32_t)((int32_t)input[i] * w0[i]);
+            sums[1] += (uint32_t)((int32_t)input[i] * w1[i]);
+        }
+#endif
+        for (int k = 0; k < 2; k++) {
+            volatile float product = (float)(int32_t)sums[k] * scale;
+            volatile float biased = product + (float)bias[row + k];
+            volatile float scaled = biased * output_scale;
+            int32_t value = xtts_float_to_i32(scaled * (float)multiplier);
+            output[row + k] = value > INT16_MAX ? INT16_MAX :
+                              value < INT16_MIN ? INT16_MIN : value;
         }
     }
 }

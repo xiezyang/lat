@@ -22,6 +22,7 @@
 #include "jrra-translator.h"
 #include "latx-native-asm.h"
 #include "xtts-matrix-native.h"
+#include "xtts-decrypt-native.h"
 #include <errno.h>
 #include <time.h>
 
@@ -31,6 +32,7 @@ static bool xtts_decrypt_enabled;
 static bool xtts_clock_nanosleep_enabled;
 static bool xtts_hot_tu_enabled;
 static bool xtts_sinf_enabled;
+static bool xtts_mpi_enabled;
 
 void latx_xtts_hot_options_init(void)
 {
@@ -39,12 +41,14 @@ void latx_xtts_hot_options_init(void)
     const char *sleep = getenv("LATX_XTTS_CLOCK_NANOSLEEP");
     const char *hot = getenv("LATX_XTTS_HOT_TU");
     const char *sinf = getenv("LATX_XTTS_SINF");
+    const char *mpi = getenv("LATX_XTTS_MPI");
 
     xtts_matrix_enabled = matrix && strcmp(matrix, "0");
     xtts_decrypt_enabled = decrypt && strcmp(decrypt, "0");
     xtts_clock_nanosleep_enabled = sleep && strcmp(sleep, "0");
     xtts_hot_tu_enabled = hot && strcmp(hot, "0");
     xtts_sinf_enabled = sinf && strcmp(sinf, "0");
+    xtts_mpi_enabled = mpi && strcmp(mpi, "0");
 }
 
 static int ss_generate_match_fail_native_code(void* code_buf);
@@ -2327,60 +2331,15 @@ void latx_xfyun_inv_transform(const int16_t *input, int32_t *output,
     }
 }
 
-static const uint8_t xtts_crypt_table[] =
-    "IFLYTEK CO.,LTD.(iFLYTEK)is a national key software enterprise dedicated to the research of intelligent speech and language technologies, development of software and chip products, provision of speech information services, and integration of E-government s";
-
 uint64_t latx_xtts_decrypt(uint64_t key_addr, uint32_t key_len,
                            uint64_t input_addr, uint64_t len,
                            uint64_t output_addr)
 {
-    uint8_t stream[32];
-    const uint8_t *key = g2h_untagged(key_addr);
-    const uint8_t *input = g2h_untagged(input_addr);
-    uint8_t *output = g2h_untagged(output_addr);
-    uint32_t key_span;
-
-    if (!key_addr) {
-        return 1;
-    }
-    key_span = key_len - 8;
-    if (key_span > 0x18) {
-        return 2;
-    }
-    if (!input_addr) {
-        return 3;
-    }
-    if (!len) {
-        return 4;
-    }
-    if (!output_addr) {
-        return 5;
-    }
-
-    if (key[0] & 1) {
-        uint8_t checksum = 0;
-        for (uint32_t i = 0; i < key_len; i++) {
-            checksum ^= key[i];
-        }
-        for (uint32_t i = 0; i < 32; i++) {
-            stream[i] = xtts_crypt_table[checksum] ^
-                        key[i % key_len];
-            checksum += 2;
-        }
-    } else {
-        uint8_t checksum = 0;
-        for (uint32_t i = 0; i < key_len; i++) {
-            checksum += key[i];
-        }
-        for (uint32_t i = 0; i < 32; i++) {
-            stream[i] = xtts_crypt_table[(uint8_t)(checksum + i)] ^
-                        key[i % key_len];
-        }
-    }
-    for (uint64_t i = 0; i < len; i++) {
-        output[i] = input[i] ^ stream[i & 31];
-    }
-    return 0;
+    return xtts_decrypt_bytes(key_addr ? g2h_untagged(key_addr) : NULL,
+                              key_len,
+                              input_addr ? g2h_untagged(input_addr) : NULL,
+                              len,
+                              output_addr ? g2h_untagged(output_addr) : NULL);
 }
 
 uint64_t latx_xtts_clock_nanosleep(uint32_t clock_id, uint32_t flags,
@@ -2419,7 +2378,16 @@ void latx_xtts_matrix(CPUX86State *env, uint32_t kind)
     const uint64_t *stack = g2h_untagged(env->regs[esp_index]);
     int iq, wq, bq, oq;
 
-    if (kind == 5) {
+    if (kind == 6) {
+        xtts_matrix_i8_w16((int32_t)env->regs[edi_index],
+                          (int32_t)env->regs[esi_index],
+                          (int32_t)env->regs[edx_index],
+                          g2h_untagged(env->regs[ecx_index]),
+                          g2h_untagged(env->regs[r8_index]),
+                          g2h_untagged(env->regs[r9_index]),
+                          g2h_untagged(stack[1]), (int8_t)stack[2],
+                          (int8_t)stack[3], (int8_t)stack[4], (int8_t)stack[5]);
+    } else if (kind == 5) {
         xtts_matrix_colmajor((int32_t)env->regs[edi_index],
                             (int32_t)env->regs[esi_index],
                             g2h_untagged(env->regs[ecx_index]),
@@ -2469,6 +2437,288 @@ void latx_xtts_matrix(CPUX86State *env, uint32_t kind)
                        g2h_untagged(stack[1]), iq, wq, bq, oq, kind);
         }
     }
+}
+
+static bool xtts_mpi_word_entry(TranslationBlock *tb, bool subtract)
+{
+    size_t size = subtract ? 0x43 : 0x41;
+    uint64_t hash = subtract ? UINT64_C(0xbfb998a81fcaa7e4) :
+                               UINT64_C(0x54ed67e863ce195b);
+    IR1_INST *flags_insn = NULL;
+    if (!xtts_mpi_enabled || option_enable_lbt || !CODEIS64 ||
+        xfyun_hot_bytes_hash((const uint8_t *)(uintptr_t)tb->pc, size) != hash) {
+        return false;
+    }
+    for (int i = 0; i < tb->icount; i++) {
+        IR1_INST *insn = tb_ir1_inst(tb, i);
+        if (ir1_addr(insn) == tb->pc + (subtract ? 0x36 : 0x35)) {
+            flags_insn = insn;
+        }
+    }
+    if (!flags_insn || ir1_opcode(flags_insn) !=
+                       (subtract ? dt_X86_INS_SUB : dt_X86_INS_ADD)) {
+        return false;
+    }
+    for (int i = 0; i < tb->icount; i++) {
+        IR1_INST *insn = tb_ir1_inst(tb, i);
+        tcg_ctx->gen_insn_data[i][0] = ir1_addr(insn);
+        tcg_ctx->gen_insn_data[i][1] = 0;
+        tr_init_for_each_ir1_in_tb(insn, tb->icount, i);
+    }
+    IR2_OPND lhs = ra_alloc_itemp();
+    IR2_OPND rhs = ra_alloc_itemp();
+    IR2_OPND result = ra_alloc_itemp();
+    IR2_OPND bit = ra_alloc_itemp();
+    IR2_OPND rax = ra_alloc_gpr(eax_index);
+    IR2_OPND rdx = ra_alloc_gpr(edx_index);
+    IR2_OPND rsi = ra_alloc_gpr(esi_index);
+    IR2_OPND rdi = ra_alloc_gpr(edi_index);
+    IR2_OPND rsp = ra_alloc_gpr(esp_index);
+    la_st_d(ra_alloc_gpr(ebp_index), rsp, -8);
+    la_st_d(rdi, rsp, -16);
+    la_st_w(rsi, rsp, -20);
+    la_st_d(rdx, rsp, -32);
+    la_bstrpick_d(rhs, rsi, 31, 0);
+    if (subtract) {
+        la_ld_bu(lhs, rdx, 0);
+        la_ld_wu(result, rdi, 0);
+        la_sltu(bit, result, rhs);
+        la_sub_w(bit, lhs, bit);
+        la_st_b(bit, rdx, 0);
+        la_ld_wu(lhs, rdi, 0);
+        la_sub_w(result, lhs, rhs);
+    } else {
+        la_ld_wu(lhs, rdi, 0);
+        la_add_w(result, lhs, rhs);
+        la_st_w(result, rdi, 0);
+        la_ld_bu(lhs, rdx, 0);
+        la_ld_wu(result, rdi, 0);
+        la_sltu(rhs, result, rhs);
+        /* SETB AL retains bits 8..31 of the reloaded destination in EAX. */
+        la_bstrins_d(result, rhs, 7, 0);
+        la_mov64(rhs, result);
+        la_add_w(result, lhs, rhs);
+    }
+    IR1_INST flags_copy = *flags_insn;
+    IR1_INST *saved_ir1 = lsenv->tr_data->curr_ir1_inst;
+    uint8_t saved_skipped = lsenv->tr_data->curr_ir1_skipped_eflags;
+    ir1_set_eflag_def(&flags_copy, 0x3f);
+    lsenv->tr_data->curr_ir1_inst = &flags_copy;
+    lsenv->tr_data->curr_ir1_skipped_eflags = 0;
+    generate_eflag_calculation(result, lhs, rhs, &flags_copy, true);
+    lsenv->tr_data->curr_ir1_inst = saved_ir1;
+    lsenv->tr_data->curr_ir1_skipped_eflags = saved_skipped;
+    if (subtract) {
+        la_st_w(result, rdi, 0);
+        la_mov64(rax, rdi);
+    } else {
+        la_st_b(result, rdx, 0);
+        la_mov64(rax, rdx);
+    }
+    la_bstrpick_d(rdx, result, 31, 0);
+    ra_free_temp(lhs);
+    ra_free_temp(rhs);
+    ra_free_temp(result);
+    ra_free_temp(bit);
+    IR2_OPND return_addr = ra_alloc_dbt_arg2();
+    la_ld_d(return_addr, rsp, 0);
+    la_addi_d(rsp, rsp, 8);
+    tb->bool_flags |= IS_INDIRECT_JMP;
+    IR2_OPND label = ra_alloc_label();
+    la_label(label);
+    tb->jmp_indirect = ir2_opnd_label_id(&label);
+    generate_indirect_goto((void *)tb->tc.ptr);
+    ra_free_all();
+    if (latx_tu_scan_enabled()) {
+        fprintf(stderr, "TU_SCAN_XTTS_MPI_%s32 pc=0x" TARGET_FMT_lx "\n",
+                subtract ? "SUB" : "ADD", tb->pc);
+    }
+    return true;
+}
+
+static bool xtts_mpi_sub_entry(TranslationBlock *tb)
+{
+    if (!xtts_mpi_enabled || option_enable_lbt || !CODEIS64 ||
+        xfyun_hot_bytes_hash((const uint8_t *)(uintptr_t)tb->pc, 0xe1) !=
+        UINT64_C(0xfc9bf8348c20bb1b)) {
+        return false;
+    }
+    for (int i = 0; i < tb->icount; i++) {
+        IR1_INST *insn = tb_ir1_inst(tb, i);
+        tcg_ctx->gen_insn_data[i][0] = ir1_addr(insn);
+        tcg_ctx->gen_insn_data[i][1] = 0;
+        tr_init_for_each_ir1_in_tb(insn, tb->icount, i);
+    }
+    IR2_OPND count = ra_alloc_itemp();
+    IR2_OPND dst = ra_alloc_itemp();
+    IR2_OPND src = ra_alloc_itemp();
+    IR2_OPND borrow = ra_alloc_itemp();
+    IR2_OPND bit = ra_alloc_itemp();
+    IR2_OPND value = ra_alloc_itemp();
+    IR2_OPND rax = ra_alloc_gpr(eax_index);
+    IR2_OPND rdx = ra_alloc_gpr(edx_index);
+    IR2_OPND rsi = ra_alloc_gpr(esi_index);
+    IR2_OPND rdi = ra_alloc_gpr(edi_index);
+    IR2_OPND rsp = ra_alloc_gpr(esp_index);
+    IR2_OPND loop = ra_alloc_label();
+    IR2_OPND propagate = ra_alloc_label();
+    IR2_OPND done = ra_alloc_label();
+    IR2_OPND exit = ra_alloc_label();
+
+    la_st_d(ra_alloc_gpr(ebp_index), rsp, -8);
+    la_st_d(rdi, rsp, -48);
+    la_mov64(count, rdi);
+    la_mov64(dst, rdx);
+    la_mov64(src, rsi);
+    la_mov64(borrow, zero_ir2_opnd);
+    la_mov64(bit, zero_ir2_opnd);
+    la_beq(count, zero_ir2_opnd, done);
+    la_label(loop);
+    la_ld_d(rdx, dst, 0);
+    la_sltu(bit, rdx, borrow);
+    la_sub_d(rdx, rdx, borrow);
+    la_st_d(rdx, dst, 0);
+    /* Reload after the store: the original permits source/destination alias. */
+    la_ld_d(value, src, 0);
+    la_sltu(borrow, rdx, value);
+    la_add_d(borrow, borrow, bit);
+    la_sub_d(rdx, rdx, value);
+    la_st_d(rdx, dst, 0);
+    la_addi_d(src, src, 8);
+    la_addi_d(dst, dst, 8);
+    la_addi_d(count, count, -1);
+    la_bne(count, zero_ir2_opnd, loop);
+    la_label(done);
+    la_mov64(rax, rdi);
+    la_beq(borrow, zero_ir2_opnd, exit);
+    la_label(propagate);
+    la_ld_d(rdx, dst, 0);
+    la_sltu(bit, rdx, borrow);
+    la_sub_d(rdx, rdx, borrow);
+    la_st_d(rdx, dst, 0);
+    la_mov64(borrow, bit);
+    la_addi_d(dst, dst, 8);
+    la_bne(borrow, zero_ir2_opnd, propagate);
+    la_mov64(rax, zero_ir2_opnd);
+    la_label(exit);
+    la_st_d(bit, rsp, -56);
+    la_st_d(zero_ir2_opnd, rsp, -40);
+    la_st_d(dst, rsp, -32);
+    la_st_d(src, rsp, -24);
+    la_st_d(rdi, rsp, -16);
+    xfyun_hot_native_zero_result_flags();
+    ra_free_temp(count);
+    ra_free_temp(dst);
+    ra_free_temp(src);
+    ra_free_temp(borrow);
+    ra_free_temp(bit);
+    ra_free_temp(value);
+    IR2_OPND return_addr = ra_alloc_dbt_arg2();
+    la_ld_d(return_addr, rsp, 0);
+    la_addi_d(rsp, rsp, 8);
+    tb->bool_flags |= IS_INDIRECT_JMP;
+    IR2_OPND label = ra_alloc_label();
+    la_label(label);
+    tb->jmp_indirect = ir2_opnd_label_id(&label);
+    generate_indirect_goto((void *)tb->tc.ptr);
+    ra_free_all();
+    if (latx_tu_scan_enabled()) {
+        fprintf(stderr, "TU_SCAN_XTTS_MPI_SUB pc=0x" TARGET_FMT_lx "\n", tb->pc);
+    }
+    return true;
+}
+
+static bool xtts_mpi_mul_entry(TranslationBlock *tb)
+{
+    if (!xtts_mpi_enabled || option_enable_lbt || !CODEIS64 ||
+        xfyun_hot_bytes_hash((const uint8_t *)(uintptr_t)tb->pc, 0x41a) !=
+        UINT64_C(0xe90a204b0c5228f3)) {
+        return false;
+    }
+    for (int i = 0; i < tb->icount; i++) {
+        IR1_INST *insn = tb_ir1_inst(tb, i);
+        tcg_ctx->gen_insn_data[i][0] = ir1_addr(insn);
+        tcg_ctx->gen_insn_data[i][1] = 0;
+        tr_init_for_each_ir1_in_tb(insn, tb->icount, i);
+    }
+    IR2_OPND count = ra_alloc_itemp();
+    IR2_OPND dst = ra_alloc_itemp();
+    IR2_OPND carry = ra_alloc_itemp();
+    IR2_OPND high = ra_alloc_itemp();
+    IR2_OPND bit = ra_alloc_itemp();
+    IR2_OPND rax = ra_alloc_gpr(eax_index);
+    IR2_OPND rdx = ra_alloc_gpr(edx_index);
+    IR2_OPND rcx = ra_alloc_gpr(ecx_index);
+    IR2_OPND rsi = ra_alloc_gpr(esi_index);
+    IR2_OPND rdi = ra_alloc_gpr(edi_index);
+    IR2_OPND rsp = ra_alloc_gpr(esp_index);
+    IR2_OPND loop = ra_alloc_label();
+    IR2_OPND propagate = ra_alloc_label();
+    IR2_OPND done = ra_alloc_label();
+
+    /* Preserve the original function's stack scratch and caller-save outputs. */
+    la_st_d(ra_alloc_gpr(ebp_index), rsp, -8);
+    la_st_d(ra_alloc_gpr(ebx_index), rsp, -16);
+    la_st_d(rcx, rsp, -64);
+    la_mov64(count, rdi);
+    la_mov64(dst, rdx);
+    la_mov64(carry, zero_ir2_opnd);
+    la_beq(count, zero_ir2_opnd, done);
+    la_mov64(ra_alloc_gpr(r9_index), rcx);
+    la_mov64(ra_alloc_gpr(r8_index), zero_ir2_opnd);
+    la_label(loop);
+    la_ld_d(rax, rsi, 0);
+    la_mulh_du(high, rax, ra_alloc_gpr(r9_index));
+    la_mul_d(rax, rax, ra_alloc_gpr(r9_index));
+    la_add_d(rax, rax, carry);
+    la_sltu(bit, rax, carry);
+    la_add_d(high, high, bit);
+    la_ld_d(rdx, dst, 0);
+    la_add_d(rdx, rdx, rax);
+    la_sltu(bit, rdx, rax);
+    la_add_d(carry, high, bit);
+    la_st_d(rdx, dst, 0);
+    la_addi_d(rsi, rsi, 8);
+    la_addi_d(dst, dst, 8);
+    la_addi_d(count, count, -1);
+    la_bne(count, zero_ir2_opnd, loop);
+    la_mov64(rcx, carry);
+    la_mov64(rdi, dst);
+    la_label(done);
+    la_st_d(rsi, rsp, -48);
+    la_st_d(zero_ir2_opnd, rsp, -40);
+    li_d(bit, 1);
+    la_st_d(bit, rsp, -24);
+    /* mpi_mul_hlp always touches one extra destination limb, even at n=0. */
+    la_label(propagate);
+    la_ld_d(rdx, dst, 0);
+    la_add_d(rdx, rdx, carry);
+    la_sltu(carry, rdx, carry);
+    la_st_d(rdx, dst, 0);
+    la_addi_d(dst, dst, 8);
+    la_bne(carry, zero_ir2_opnd, propagate);
+    la_st_d(dst, rsp, -56);
+    la_st_d(zero_ir2_opnd, rsp, -32);
+    la_mov64(rax, zero_ir2_opnd);
+    xfyun_hot_native_zero_result_flags();
+    ra_free_temp(count);
+    ra_free_temp(dst);
+    ra_free_temp(carry);
+    ra_free_temp(high);
+    ra_free_temp(bit);
+    IR2_OPND return_addr = ra_alloc_dbt_arg2();
+    la_ld_d(return_addr, rsp, 0);
+    la_addi_d(rsp, rsp, 8);
+    tb->bool_flags |= IS_INDIRECT_JMP;
+    IR2_OPND label = ra_alloc_label();
+    la_label(label);
+    tb->jmp_indirect = ir2_opnd_label_id(&label);
+    generate_indirect_goto((void *)tb->tc.ptr);
+    ra_free_all();
+    if (latx_tu_scan_enabled()) {
+        fprintf(stderr, "TU_SCAN_XTTS_MPI_MUL pc=0x" TARGET_FMT_lx "\n", tb->pc);
+    }
+    return true;
 }
 
 static void xtts_sinf_constant(IR2_OPND dest, IR2_OPND tmp, uint32_t bits)
@@ -2628,6 +2878,7 @@ static bool xtts_matrix_entry(TranslationBlock *tb, unsigned kind)
         {0x84b, UINT64_C(0xba3dc35c8db9911f)},
         {0x3e6, UINT64_C(0x7fa9e7294f7a59e1)},
         {0x2d9, UINT64_C(0x34254ddbe45268c5)},
+        {0x3fc, UINT64_C(0x09a8c3eca3594374)},
     };
     IR2_OPND function, rsp, return_addr;
 
@@ -3980,6 +4231,31 @@ int tr_ir2_generate(struct TranslationBlock *tb)
 #endif
 #ifdef CONFIG_LATX_TU
     switch (tb->pc) {
+    case UINT64_C(0x55084ba310):
+        if (xtts_mpi_word_entry(tb, false)) {
+            return 1;
+        }
+        break;
+    case UINT64_C(0x55084ba351):
+        if (xtts_mpi_word_entry(tb, true)) {
+            return 1;
+        }
+        break;
+    case UINT64_C(0x551819d8e0):
+        if (xtts_matrix_entry(tb, 6)) {
+            return 1;
+        }
+        break;
+    case UINT64_C(0x550846aa00):
+        if (xtts_mpi_sub_entry(tb)) {
+            return 1;
+        }
+        break;
+    case UINT64_C(0x550846ae71):
+        if (xtts_mpi_mul_entry(tb)) {
+            return 1;
+        }
+        break;
     case UINT64_C(0x551818a770):
         xtts_sinf_entry(tb);
         break;

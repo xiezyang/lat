@@ -1380,8 +1380,24 @@ static bool tb_cmp(const void *ap, const void *bp)
 static void tb_htable_init(void)
 {
     unsigned int mode = QHT_MODE_AUTO_RESIZE;
+    size_t initial_size = CODE_GEN_HTABLE_SIZE;
 
-    qht_init(&tb_ctx.htable, tb_cmp, CODE_GEN_HTABLE_SIZE, mode);
+#ifdef CONFIG_LATX
+    const char *arg = getenv("LATX_TB_HASH_BITS");
+    if (arg) {
+        char *end;
+        errno = 0;
+        unsigned long bits = strtoul(arg, &end, 10);
+        if (errno || end == arg || *end || bits < 12 || bits > 20) {
+            error_report("LATX_TB_HASH_BITS must be an integer from 12 to 20");
+            exit(EXIT_FAILURE);
+        }
+        initial_size = (size_t)1 << bits;
+    }
+#endif
+
+    tb_ctx.initial_htable_size = initial_size;
+    qht_init(&tb_ctx.htable, tb_cmp, initial_size, mode);
 }
 
 /* Must be called before using the QEMU cpus. 'tb_size' is the size

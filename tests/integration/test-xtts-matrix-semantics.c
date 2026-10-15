@@ -15,6 +15,8 @@ typedef void (*matrix16_fn)(int, int, int, const int16_t *, const int16_t *,
                             const int16_t *, int16_t *, int, int, int, int);
 typedef void (*colmajor_fn)(int, int, int, const int16_t *, const int16_t *,
                             const int16_t *, int16_t *, int32_t *, int, int, int);
+typedef void (*matrix_i8_w16_fn)(int, int, int, const int8_t *, const int16_t *,
+                                const int16_t *, int16_t *, int, int, int, int);
 
 int main(int argc, char **argv)
 {
@@ -31,7 +33,8 @@ int main(int argc, char **argv)
     matrix_i8_fn func_i8 = dlsym(lib, "ivMatrixCalc_AddBias16_In8_W8_Out16");
     matrix16_fn func16 = dlsym(lib, "ivMatrixCalcMul_AddBias16_In16_W16_Out16");
     colmajor_fn col = dlsym(lib, "ivMatrixAdd_AddBias16_In16_W16_Out16_ColMajor");
-    if (!funcs[0] || !funcs[1] || !func8 || !func_i8 || !func16 || !col) {
+    matrix_i8_w16_fn i8_w16 = dlsym(lib, "ivMatrixCalc_AddBias16_In8_W16_Out16");
+    if (!funcs[0] || !funcs[1] || !func8 || !func_i8 || !func16 || !col || !i8_w16) {
         return 2;
     }
     unsigned state = 12345;
@@ -53,6 +56,15 @@ int main(int argc, char **argv)
         }
         int iq = rand_r(&state) % 16, wq = rand_r(&state) % 16;
         int bq = rand_r(&state) % 24, oq = rand_r(&state) % 24;
+        int multiplier = (int)(rand_r(&state) % 7) - 3;
+        i8_w16(columns, rows, multiplier, (const int8_t *)input, weights,
+                 bias16, actual8, iq, wq, bq, oq);
+        xtts_matrix_i8_w16(columns, rows, multiplier, (const int8_t *)input,
+                           weights, bias16, expected8, iq, wq, bq, oq);
+        if (memcmp(actual8, expected8, rows * 2)) {
+            fprintf(stderr, "matrix_i8_w16 mismatch test=%d\n", test);
+            return 8;
+        }
         for (int kind = 0; kind < 2; kind++) {
             const void *bias = kind ? (void *)bias32 : (void *)bias16;
             funcs[kind](columns, rows, 0, input, weights, bias, actual,
@@ -102,6 +114,6 @@ int main(int argc, char **argv)
             return 7;
         }
     }
-    puts("PASS: 60000 matrix differential cases");
+    puts("PASS: 70000 matrix differential cases");
     return 0;
 }
