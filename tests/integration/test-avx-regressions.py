@@ -46,11 +46,20 @@ def run_case(emulator, source, work, prebuilt):
     key = hashlib.sha256(str(guest).encode()).hexdigest()
     pattern = "v2-*-" + key + ".aot2"
     env = os.environ.copy()
+    marker = work / (source.stem + ".aot-loaded")
+    env.pop("LATX_TEST_AOT_LOAD_MARKER", None)
     try:
         for mode in ("jit", "cold", "hot"):
             env["LATX_AOT"] = "0" if mode == "jit" else "1"
+            if mode == "hot":
+                env["LATX_TEST_AOT_LOAD_MARKER"] = str(marker)
             subprocess.run([emulator, str(guest)], env=env,
                            check=True, timeout=30)
+            if mode == "hot" and (
+                    not marker.exists() or
+                    str(guest) not in marker.read_text().splitlines()):
+                raise RuntimeError("AOT cache was not loaded for " +
+                                   source.name)
             if mode == "cold":
                 deadline = time.monotonic() + 10
                 while time.monotonic() < deadline:
@@ -62,7 +71,10 @@ def run_case(emulator, source, work, prebuilt):
     finally:
         # Only remove cache artifacts keyed by this temporary executable.
         for artifact in cache.glob(pattern + "*"):
-            artifact.unlink(missing_ok=True)
+            try:
+                artifact.unlink()
+            except FileNotFoundError:
+                pass
 
 
 def main():

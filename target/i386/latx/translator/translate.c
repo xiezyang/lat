@@ -2649,6 +2649,14 @@ int tr_ir2_generate(struct TranslationBlock *tb)
 
         pir1++;
     }
+    /*
+     * AOT can split overlapping TBs after an ordinary instruction. Such a
+     * TB falls through without translating a branch or generating an exit,
+     * but the next TB starts with an empty pending mask. Materialize the
+     * remaining upper zeros before leaving this TB's instruction body.
+     */
+    emit_ymmh_zeros();
+    lsenv->tr_data->ymmh_zero_pending = 0;
     if (x87_fcsr_active) {
         gen_softfpu_x87_fcsr_exit();
     }
