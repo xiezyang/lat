@@ -1,5 +1,11 @@
 if 'x86_64-linux-user' in target_dirs
   latx_integration_tests += [{
+    'name': 'test-sse41-ymmh-preserve',
+    'runner': find_program('../../test-avx-regressions.py'),
+    'args': [emulators['latx-x86_64'], files('../../sse41-ymmh-preserve.asm')],
+    'timeout': 120,
+  }]
+  latx_integration_tests += [{
     'name': 'test-avx-compare-jcc',
     'runner': find_program('../../test-avx-regressions.py'),
     'args': [emulators['latx-x86_64'], files('../../vcomis-jcc.S')],

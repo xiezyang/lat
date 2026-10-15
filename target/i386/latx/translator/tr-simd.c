@@ -2373,7 +2373,17 @@ bool translate_phaddsw(IR1_INST *pir1)
 }
 
 
-/* sse 4.1 fp */
+/* Merge a legacy SSE result without clobbering YMMH. Without LASX,
+ * callers generate the result directly in dest and need no writeback. */
+static void store_sse_result128(IR2_OPND dest, IR2_OPND result)
+{
+    if (option_enable_lasx) {
+        la_xvpermi_q(dest, result, XVPERMI_Q_4_0(3, 0));
+    }
+    /* An earlier AVX upper-zero request remains valid across legacy writes. */
+}
+
+/* Legacy SSE4.1 must never request an architectural YMM upper zero. */
 bool translate_dpps(IR1_INST *pir1)
 {
     IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
@@ -2385,6 +2395,7 @@ bool translate_dpps(IR1_INST *pir1)
     prepare_sse_rounding_mode();
     IR2_OPND temp1 = ra_alloc_ftemp();
     IR2_OPND temp2 = ra_alloc_ftemp();
+    IR2_OPND result = option_enable_lasx ? ra_alloc_ftemp() : dest;
     uint8_t imm = ir1_opnd_uimm(opnd2);
     la_vxor_v(temp1, temp1, temp1);
     la_vxor_v(temp2, temp2, temp2);
@@ -2412,20 +2423,20 @@ bool translate_dpps(IR1_INST *pir1)
     la_vpackev_d(temp1, temp1, temp1);
     la_vfadd_s(temp1, temp1, temp2);
 
-    la_vxor_v(dest, dest, dest);
+    la_vxor_v(result, result, result);
     if(imm & 0x1){
-        la_vextrins_w(dest, temp1, 0x00);
+        la_vextrins_w(result, temp1, 0x00);
     }
     if(imm & 0x2){
-        la_vextrins_w(dest, temp1, 0x11);
+        la_vextrins_w(result, temp1, 0x11);
     }
     if(imm & 0x4){
-        la_vextrins_w(dest, temp1, 0x22);
+        la_vextrins_w(result, temp1, 0x22);
     }
     if(imm & 0x8){
-        la_vextrins_w(dest, temp1, 0x33);
+        la_vextrins_w(result, temp1, 0x33);
     }
-    set_high128_xreg_to_zero(dest);
+    store_sse_result128(dest, result);
     return true;
 }
 
@@ -2440,6 +2451,7 @@ bool translate_dppd(IR1_INST *pir1)
     prepare_sse_rounding_mode();
     IR2_OPND temp1 = ra_alloc_ftemp();
     IR2_OPND temp2 = ra_alloc_ftemp();
+    IR2_OPND result = option_enable_lasx ? ra_alloc_ftemp() : dest;
     uint8_t imm = ir1_opnd_uimm(opnd2);
 
     if (option_enable_lasx) {
@@ -2463,25 +2475,25 @@ bool translate_dppd(IR1_INST *pir1)
     la_vpackev_d(temp1, temp1, temp1);
     la_vfadd_d(temp1, temp1, temp2);
     if (option_enable_lasx) {
-        la_xvxor_v(dest, dest, dest);
+        la_xvxor_v(result, result, result);
     } else {
-        la_vxor_v(dest, dest, dest);
+        la_vxor_v(result, result, result);
     }
     if(imm & 0x1){
         if (option_enable_lasx) {
-            la_xvextrins_d(dest, temp1, 0x00);
+            la_xvextrins_d(result, temp1, 0x00);
         } else {
-            la_vextrins_d(dest, temp1, 0x00);
+            la_vextrins_d(result, temp1, 0x00);
         }
     }
     if(imm & 0x2){
         if (option_enable_lasx) {
-            la_xvextrins_d(dest, temp1, 0x11);
+            la_xvextrins_d(result, temp1, 0x11);
         } else {
-            la_vextrins_d(dest, temp1, 0x11);
+            la_vextrins_d(result, temp1, 0x11);
         }
     }
-    set_high128_xreg_to_zero(dest);
+    store_sse_result128(dest, result);
     return true;
 }
 
@@ -2557,6 +2569,7 @@ bool translate_roundps(IR1_INST *pir1)
     lsassert(ir1_opnd_is_xmm(opnd0));
     IR2_OPND dest = load_freg128_from_ir1(opnd0);
     IR2_OPND src = load_freg128_from_ir1(opnd1);
+    IR2_OPND result = option_enable_lasx ? ra_alloc_ftemp() : dest;
     uint8_t imm = ir1_opnd_uimm(opnd2);
 
     IR2_OPND temp = ra_alloc_ftemp();
@@ -2584,8 +2597,8 @@ bool translate_roundps(IR1_INST *pir1)
         la_label(label1);
         la_bstrins_w(fcsr, temp, 9, 8);
         la_movgr2fcsr(fcsr_ir2_opnd, fcsr);
-        la_vfrint_s(dest, src);
-        set_high128_xreg_to_zero(dest);
+        la_vfrint_s(result, src);
+        store_sse_result128(dest, result);
         la_movgr2fcsr(fcsr_ir2_opnd, fcsr_save);
 
         ra_free_temp(temp);
@@ -2596,15 +2609,15 @@ bool translate_roundps(IR1_INST *pir1)
     }
     la_movgr2fcsr(fcsr_ir2_opnd, fcsr);
     if ((imm & 0x3) == 0x0) {
-        la_vfrintrne_s(dest, src);
+        la_vfrintrne_s(result, src);
     } else if ((imm & 0x3) == 0x1) {
-        la_vfrintrm_s(dest, src);
+        la_vfrintrm_s(result, src);
     } else if ((imm & 0x3) == 0x2) {
-        la_vfrintrp_s(dest, src);
+        la_vfrintrp_s(result, src);
     } else if ((imm & 0x3) == 0x3) {
-        la_vfrintrz_s(dest, src);
+        la_vfrintrz_s(result, src);
 	}
-    set_high128_xreg_to_zero(dest);
+    store_sse_result128(dest, result);
     la_movgr2fcsr(fcsr_ir2_opnd, fcsr_save);
 
     ra_free_temp(temp);
@@ -2623,7 +2636,8 @@ bool translate_roundss(IR1_INST *pir1)
     IR2_OPND dest = load_freg128_from_ir1(opnd0);
     IR2_OPND src1 = load_freg128_from_ir1(opnd1);
     uint8_t imm = ir1_opnd_uimm(opnd2);
-    bool dead_high = SHBR_ON_32(pir1);
+    /* SHBR proves only XMM lanes dead, not the physical YMM upper half. */
+    bool dead_high = SHBR_ON_32(pir1) && !option_enable_lasx;
 
     IR2_OPND temp = ra_alloc_ftemp();
     IR2_OPND temp_dest = dead_high ? dest : ra_alloc_ftemp();
@@ -2666,7 +2680,6 @@ bool translate_roundss(IR1_INST *pir1)
                 la_vextrins_w(dest, temp_dest, 0);
             }
         }
-        set_high128_xreg_to_zero(dest);
         la_movgr2fcsr(fcsr_ir2_opnd, fcsr_save);
 
         ra_free_temp(temp);
@@ -2692,7 +2705,6 @@ bool translate_roundss(IR1_INST *pir1)
             la_vextrins_w(dest, temp_dest, 0);
         }
     }
-    set_high128_xreg_to_zero(dest);
     la_movgr2fcsr(fcsr_ir2_opnd, fcsr_save);
 
     ra_free_temp(temp);
@@ -2710,6 +2722,7 @@ bool translate_roundpd(IR1_INST *pir1)
     lsassert(ir1_opnd_is_xmm(opnd0));
     IR2_OPND dest = load_freg128_from_ir1(opnd0);
     IR2_OPND src = load_freg128_from_ir1(opnd1);
+    IR2_OPND result = option_enable_lasx ? ra_alloc_ftemp() : dest;
     uint8_t imm = ir1_opnd_uimm(opnd2);
 
     IR2_OPND temp = ra_alloc_ftemp();
@@ -2737,8 +2750,8 @@ bool translate_roundpd(IR1_INST *pir1)
         la_label(label1);
         la_bstrins_w(fcsr, temp, 9, 8);
         la_movgr2fcsr(fcsr_ir2_opnd, fcsr);
-        la_vfrint_d(dest, src);
-        set_high128_xreg_to_zero(dest);
+        la_vfrint_d(result, src);
+        store_sse_result128(dest, result);
         la_movgr2fcsr(fcsr_ir2_opnd, fcsr_save);
 
         ra_free_temp(temp);
@@ -2749,15 +2762,15 @@ bool translate_roundpd(IR1_INST *pir1)
     }
     la_movgr2fcsr(fcsr_ir2_opnd, fcsr);
     if ((imm & 0x3) == 0x0) {
-        la_vfrintrne_d(dest, src);
+        la_vfrintrne_d(result, src);
     } else if ((imm & 0x3) == 0x1) {
-        la_vfrintrm_d(dest, src);
+        la_vfrintrm_d(result, src);
     } else if ((imm & 0x3) == 0x2) {
-        la_vfrintrp_d(dest, src);
+        la_vfrintrp_d(result, src);
     } else if ((imm & 0x3) == 0x3) {
-        la_vfrintrz_d(dest, src);
+        la_vfrintrz_d(result, src);
 	}
-    set_high128_xreg_to_zero(dest);
+    store_sse_result128(dest, result);
     la_movgr2fcsr(fcsr_ir2_opnd, fcsr_save);
 
     ra_free_temp(temp);
@@ -2776,7 +2789,8 @@ bool translate_roundsd(IR1_INST *pir1)
     IR2_OPND dest = load_freg128_from_ir1(opnd0);
     IR2_OPND src1 = load_freg128_from_ir1(opnd1);
     uint8_t imm = ir1_opnd_uimm(opnd2);
-    bool dead_high = SHBR_ON_64(pir1);
+    /* SHBR proves only XMM lanes dead, not the physical YMM upper half. */
+    bool dead_high = SHBR_ON_64(pir1) && !option_enable_lasx;
 
     IR2_OPND temp = ra_alloc_ftemp();
     IR2_OPND temp_dest = dead_high ? dest : ra_alloc_ftemp();
@@ -2820,7 +2834,6 @@ bool translate_roundsd(IR1_INST *pir1)
                 la_vextrins_d(dest, temp_dest, 0);
             }
         }
-        set_high128_xreg_to_zero(dest);
         la_movgr2fcsr(fcsr_ir2_opnd, fcsr_save);
 
         ra_free_temp(temp);
@@ -2846,7 +2859,6 @@ bool translate_roundsd(IR1_INST *pir1)
             la_vextrins_d(dest, temp_dest, 0);
         }
     }
-    set_high128_xreg_to_zero(dest);
     la_movgr2fcsr(fcsr_ir2_opnd, fcsr_save);
 
     ra_free_temp(temp);
@@ -2942,6 +2954,7 @@ bool translate_phminposuw(IR1_INST *pir1)
     IR1_OPND * opnd1 = ir1_get_opnd(pir1, 1);
 
     IR2_OPND dest = load_freg128_from_ir1(opnd0);
+    IR2_OPND result = option_enable_lasx ? ra_alloc_ftemp() : dest;
     IR2_OPND src = load_freg128_from_ir1(opnd1);
     IR2_OPND temp = ra_alloc_ftemp();
     IR2_OPND temp1 = ra_alloc_ftemp();
@@ -2973,13 +2986,14 @@ bool translate_phminposuw(IR1_INST *pir1)
     }
     la_vseq_h(temp1, src, temp);
     la_vfrstpi_h(temp2, temp1, 0);
-    la_vpackev_h(dest, temp2, temp);
+    la_vpackev_h(result, temp2, temp);
     if (option_enable_lasx) {
-        la_xvpickve_w(dest, dest, 0);
+        la_xvpickve_w(result, result, 0);
     } else {
-        la_vinsgr2vr_d(dest, zero_ir2_opnd, 1);
-        la_vinsgr2vr_w(dest, zero_ir2_opnd, 1);
+        la_vinsgr2vr_d(result, zero_ir2_opnd, 1);
+        la_vinsgr2vr_w(result, zero_ir2_opnd, 1);
     }
+    store_sse_result128(dest, result);
     return true;
 }
 
