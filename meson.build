@@ -67,6 +67,13 @@ add_project_arguments('-iquote', '.',
 link_language = meson.get_external_property('link_language', 'cpp')
 add_languages('cpp', required: true, native: false)
 
+if 'CONFIG_LATX' in config_host and config_host['ARCH'] in ['loongarch64', 'loongarch']
+  # Small-field stores must not become unaligned wide stores on older cores.
+  add_project_arguments(cc.get_supported_arguments('-mstrict-align'), language: 'c')
+  add_project_arguments(meson.get_compiler('cpp').get_supported_arguments('-mstrict-align'),
+                        language: 'cpp')
+endif
+
 ###########################################
 # Target-specific checks and dependencies #
 ###########################################

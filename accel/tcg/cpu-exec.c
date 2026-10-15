@@ -642,7 +642,9 @@ void tb_set_jmp_target(TranslationBlock *tb, int n, uintptr_t addr)
             }
             assert(tb->lazylink[n] == 1);
             tb->lazylink[n] = 2;
-            tb->lazylinkinst[n] = *(uint64_t*)jmp_rx; /* save inst */
+            /* Instruction pairs are only guaranteed to be four-byte aligned. */
+            const uint32_t *insns = (const uint32_t *)jmp_rx;
+            tb->lazylinkinst[n] = insns[0] | ((uint64_t)insns[1] << 32);
             tb_target_set_jmp_target(tc_ptr, jmp_rx, jmp_rw, addr);
         }
 #else
