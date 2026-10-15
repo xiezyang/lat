@@ -132,9 +132,10 @@ int main(void)
         int32_t sb[256] __attribute__((aligned(16)));
         for (int i = 0; i < 16; i++) indices[i] = rand_r(&state) % 16;
         for (int i = 0; i < columns; i++) colbias[i] = rand_r(&state);
-        xtts_matrix_colmajor(columns, 16, indices, weights, colbias, cola, sa,
+        int colrows = rand_r(&state) % 16 + 1;
+        xtts_matrix_colmajor(columns, colrows, indices, weights, colbias, cola, sa,
                               iq, wq, bq);
-        scalar_colmajor(columns, 16, indices, weights, colbias, colb, sb,
+        scalar_colmajor(columns, colrows, indices, weights, colbias, colb, sb,
                           iq, wq, bq);
         if (memcmp(cola, colb, columns * 2) || memcmp(sa, sb, columns * 4)) {
             return 5;

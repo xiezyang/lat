@@ -38,6 +38,9 @@ static bool xtts_logf_enabled;
 static bool xtts_filter_enabled;
 static bool xtts_cosf_enabled;
 static bool xtts_mpi_enabled;
+static bool xtts_json_enabled;
+static bool xtts_memset_enabled;
+static bool xtts_accumulate_enabled;
 
 void latx_xtts_hot_options_init(void)
 {
@@ -52,6 +55,9 @@ void latx_xtts_hot_options_init(void)
     const char *filter = getenv("LATX_XTTS_FILTER");
     const char *cosf = getenv("LATX_XTTS_COSF");
     const char *mpi = getenv("LATX_XTTS_MPI");
+    const char *json = getenv("LATX_XTTS_JSON");
+    const char *memset_loop = getenv("LATX_XTTS_MEMSET");
+    const char *accumulate = getenv("LATX_XTTS_ACCUMULATE");
 
     xtts_matrix_enabled = matrix && strcmp(matrix, "0");
     xtts_decrypt_enabled = decrypt && strcmp(decrypt, "0");
@@ -64,6 +70,9 @@ void latx_xtts_hot_options_init(void)
     xtts_filter_enabled = filter && strcmp(filter, "0");
     xtts_cosf_enabled = cosf && strcmp(cosf, "0");
     xtts_mpi_enabled = mpi && strcmp(mpi, "0");
+    xtts_json_enabled = json && strcmp(json, "0");
+    xtts_memset_enabled = memset_loop && strcmp(memset_loop, "0");
+    xtts_accumulate_enabled = accumulate && strcmp(accumulate, "0");
 }
 
 static int ss_generate_match_fail_native_code(void* code_buf);
@@ -2742,6 +2751,248 @@ static void xtts_sinf_constant(IR2_OPND dest, IR2_OPND tmp, uint32_t bits)
     la_movgr2fr_w(dest, tmp);
 }
 
+static bool xtts_accumulate_loop(TranslationBlock *tb)
+{
+    IR1_INST *compare = NULL;
+    if (!xtts_accumulate_enabled || option_enable_lbt || !CODEIS64 ||
+        xfyun_hot_bytes_hash((const uint8_t *)(uintptr_t)tb->pc, 0x45) !=
+        UINT64_C(0x3fae3cb6723c5a3d)) {
+        return false;
+    }
+    for (int i = 0; i < tb->icount; i++) {
+        IR1_INST *insn = tb_ir1_inst(tb, i);
+        if (ir1_addr(insn) == tb->pc + 0x41) compare = insn;
+    }
+    if (!compare || ir1_opcode(compare) != dt_X86_INS_CMP) return false;
+    for (int i = 0; i < tb->icount; i++) {
+        IR1_INST *insn = tb_ir1_inst(tb, i);
+        tcg_ctx->gen_insn_data[i][0] = ir1_addr(insn);
+        tcg_ctx->gen_insn_data[i][1] = 0;
+        tr_init_for_each_ir1_in_tb(insn, tb->icount, i);
+    }
+    IR2_OPND eax = ra_alloc_gpr(eax_index), edx = ra_alloc_gpr(edx_index);
+    IR2_OPND ecx = ra_alloc_gpr(ecx_index), ebx = ra_alloc_gpr(ebx_index);
+    IR2_OPND r9 = ra_alloc_gpr(r9_index), r15 = ra_alloc_gpr(r15_index);
+    IR2_OPND x0 = ra_alloc_xmm(0), x1 = ra_alloc_xmm(1);
+    IR2_OPND address = ra_alloc_itemp(), dest = ra_alloc_itemp();
+    IR2_OPND bound = ra_alloc_itemp(), tmp = ra_alloc_itemp();
+    IR2_OPND loop = ra_alloc_label();
+    la_slli_d(bound, ebx, 32);
+    la_srai_d(bound, bound, 32);
+    la_label(loop);
+    la_slli_d(ecx, eax, 32);
+    la_srai_d(ecx, ecx, 32);
+    la_alsl_d(dest, ecx, r15, 1);
+    la_add_w(eax, eax, ebx);
+    la_alsl_d(address, eax, r9, 1);
+    la_fld_s(x0, address, 0);
+    la_alsl_d(eax, eax, r15, 1);
+    la_fmul_s(x0, x0, x1);
+    IR2_OPND value = ra_alloc_ftemp();
+    la_fld_s(value, dest, 0x58);
+    la_fadd_s(x0, x0, value);
+    la_fst_s(x0, dest, 0x58);
+    la_slli_d(ecx, edx, 48);
+    la_srai_d(ecx, ecx, 48);
+    la_addi_w(edx, edx, 1);
+    la_bstrpick_d(edx, edx, 31, 0);
+    la_alsl_d(address, ecx, r9, 1);
+    la_fld_s(x0, address, 0);
+    la_fmul_s(x0, x0, x1);
+    la_fld_s(value, eax, 0x58);
+    la_fadd_s(x0, x0, value);
+    la_fst_s(x0, eax, 0x58);
+    la_slli_d(eax, edx, 48);
+    la_srai_d(eax, eax, 48);
+    la_blt(eax, bound, loop);
+    la_bstrpick_d(eax, eax, 31, 0);
+    la_vbsll_v(x0, x0, 12);
+    la_vbsrl_v(x0, x0, 12);
+    la_sub_w(tmp, eax, ebx);
+    IR1_INST flags_insn = *compare;
+    IR1_INST *saved = lsenv->tr_data->curr_ir1_inst;
+    uint8_t skipped = lsenv->tr_data->curr_ir1_skipped_eflags;
+    ir1_set_eflag_def(&flags_insn, 0x3f);
+    lsenv->tr_data->curr_ir1_inst = &flags_insn;
+    lsenv->tr_data->curr_ir1_skipped_eflags = 0;
+    generate_eflag_calculation(tmp, eax, ebx, &flags_insn, true);
+    lsenv->tr_data->curr_ir1_inst = saved;
+    lsenv->tr_data->curr_ir1_skipped_eflags = skipped;
+    ra_free_temp(address);
+    ra_free_temp(dest);
+    ra_free_temp(bound);
+    ra_free_temp(tmp);
+    ra_free_temp(value);
+    la_dbar(0);
+    IR2_OPND next_pc = ra_alloc_dbt_arg2();
+    aot_load_guest_addr(next_pc, tb->pc + 0x45, LOAD_CALL_TARGET,
+                        aot_get_call_offset(tb->pc + 0x45));
+    tb->bool_flags |= IS_INDIRECT_JMP;
+    IR2_OPND label = ra_alloc_label();
+    la_label(label);
+    tb->jmp_indirect = ir2_opnd_label_id(&label);
+    generate_indirect_goto((void *)tb->tc.ptr);
+    ra_free_all();
+    if (latx_tu_scan_enabled()) {
+        fprintf(stderr, "TU_SCAN_XTTS_ACCUMULATE pc=0x" TARGET_FMT_lx "\n", tb->pc);
+    }
+    return true;
+}
+
+static bool xtts_memset_loop(TranslationBlock *tb)
+{
+    IR1_INST *compare = NULL;
+    if (!xtts_memset_enabled || option_enable_lbt || !CODEIS64 ||
+        xfyun_hot_bytes_hash((const uint8_t *)(uintptr_t)tb->pc, 0x18) !=
+        UINT64_C(0xf4ff2112c4e961bd)) {
+        return false;
+    }
+    for (int i = 0; i < tb->icount; i++) {
+        IR1_INST *insn = tb_ir1_inst(tb, i);
+        if (ir1_addr(insn) == tb->pc + 0x13) compare = insn;
+    }
+    if (!compare || ir1_opcode(compare) != dt_X86_INS_CMP) return false;
+    for (int i = 0; i < tb->icount; i++) {
+        IR1_INST *insn = tb_ir1_inst(tb, i);
+        tcg_ctx->gen_insn_data[i][0] = ir1_addr(insn);
+        tcg_ctx->gen_insn_data[i][1] = 0;
+        tr_init_for_each_ir1_in_tb(insn, tb->icount, i);
+    }
+    IR2_OPND rdx = ra_alloc_gpr(edx_index), rdi = ra_alloc_gpr(edi_index);
+    IR2_OPND x0 = ra_alloc_xmm(0), loop = ra_alloc_label();
+    la_label(loop);
+    la_vst(x0, rdx, 0);
+    la_vst(x0, rdx, 16);
+    la_vst(x0, rdx, 32);
+    la_vst(x0, rdx, 48);
+    la_addi_d(rdx, rdx, 64);
+    la_bltu(rdx, rdi, loop);
+    IR2_OPND result = ra_alloc_itemp();
+    la_sub_d(result, rdx, rdi);
+    IR1_INST flags_insn = *compare;
+    IR1_INST *saved = lsenv->tr_data->curr_ir1_inst;
+    uint8_t skipped = lsenv->tr_data->curr_ir1_skipped_eflags;
+    ir1_set_eflag_def(&flags_insn, 0x3f);
+    lsenv->tr_data->curr_ir1_inst = &flags_insn;
+    lsenv->tr_data->curr_ir1_skipped_eflags = 0;
+    generate_eflag_calculation(result, rdx, rdi, &flags_insn, true);
+    lsenv->tr_data->curr_ir1_inst = saved;
+    lsenv->tr_data->curr_ir1_skipped_eflags = skipped;
+    ra_free_temp(result);
+    la_dbar(0);
+    IR2_OPND next_pc = ra_alloc_dbt_arg2();
+    aot_load_guest_addr(next_pc, tb->pc + 0x18, LOAD_CALL_TARGET,
+                        aot_get_call_offset(tb->pc + 0x18));
+    tb->bool_flags |= IS_INDIRECT_JMP;
+    IR2_OPND label = ra_alloc_label();
+    la_label(label);
+    tb->jmp_indirect = ir2_opnd_label_id(&label);
+    generate_indirect_goto((void *)tb->tc.ptr);
+    ra_free_all();
+    if (latx_tu_scan_enabled()) {
+        fprintf(stderr, "TU_SCAN_XTTS_MEMSET pc=0x" TARGET_FMT_lx "\n", tb->pc);
+    }
+    return true;
+}
+
+static bool xtts_json_loop(TranslationBlock *tb, bool copy)
+{
+    size_t size = copy ? 0x12c : 0x73;
+    uint64_t hash = copy ? UINT64_C(0x4550257d3789ceb7) :
+                           UINT64_C(0xc0003d27709d6fd4);
+    if (!xtts_json_enabled || option_enable_lbt || !CODEIS64 ||
+        xfyun_hot_bytes_hash((const uint8_t *)(uintptr_t)tb->pc, size) != hash) {
+        return false;
+    }
+    for (int i = 0; i < tb->icount; i++) {
+        IR1_INST *insn = tb_ir1_inst(tb, i);
+        tcg_ctx->gen_insn_data[i][0] = ir1_addr(insn);
+        tcg_ctx->gen_insn_data[i][1] = 0;
+        tr_init_for_each_ir1_in_tb(insn, tb->icount, i);
+    }
+    IR2_OPND rbp = ra_alloc_gpr(ebp_index);
+    IR2_OPND rax = ra_alloc_gpr(eax_index), rdx, rcx;
+    if (copy) {
+        rdx = ra_alloc_gpr(edx_index);
+        rcx = ra_alloc_gpr(ecx_index);
+    }
+    IR2_OPND source = ra_alloc_itemp(), end = ra_alloc_itemp();
+    IR2_OPND value = ra_alloc_itemp(), escape = ra_alloc_itemp();
+    IR2_OPND loop = ra_alloc_label(), done = ra_alloc_label();
+    IR2_OPND escaped = ra_alloc_label(), dispatch = ra_alloc_label();
+    IR2_OPND next_pc = ra_alloc_dbt_arg2();
+    la_ld_d(source, rbp, copy ? -0x28 : -0x20);
+    la_ld_bu(value, source, 0);
+    li_w(escape, '\\');
+    la_beq(value, escape, escaped);
+    if (copy) {
+        IR2_OPND destination = ra_alloc_itemp();
+        la_ld_d(destination, rbp, -0x30);
+        la_ld_d(end, rbp, -0x20);
+        la_label(loop);
+        la_or(rax, destination, zero_ir2_opnd);
+        la_or(rdx, value, zero_ir2_opnd);
+        la_addi_d(rcx, source, 1);
+        la_st_b(value, destination, 0);
+        la_addi_d(destination, destination, 1);
+        la_addi_d(source, source, 1);
+        la_bgeu(source, end, done);
+        la_ld_bu(value, source, 0);
+        la_bne(value, escape, loop);
+        la_label(done);
+        la_st_d(source, rbp, -0x28);
+        la_st_d(destination, rbp, -0x30);
+        ra_free_temp(destination);
+    } else {
+        IR2_OPND base = ra_alloc_itemp(), distance = ra_alloc_itemp();
+        IR2_OPND quote = ra_alloc_itemp();
+        la_ld_d(end, rbp, -0x50);
+        la_ld_d(base, end, 0);
+        la_ld_d(end, end, 8);
+        li_w(quote, '"');
+        la_label(loop);
+        la_addi_d(source, source, 1);
+        /* Match the original unsigned offset check without reading past end. */
+        la_sub_d(distance, source, base);
+        la_bgeu(distance, end, done);
+        la_ld_bu(value, source, 0);
+        la_beq(value, quote, done);
+        la_bne(value, escape, loop);
+        la_label(done);
+        la_st_d(source, rbp, -0x20);
+        ra_free_temp(base);
+        ra_free_temp(distance);
+        ra_free_temp(quote);
+    }
+    /* Original loop conditions restore precise architectural flags at exit. */
+    target_ulong target = copy ? tb->pc + 0x11e : tb->pc + 0x47;
+    aot_load_guest_addr(next_pc, target, LOAD_CALL_TARGET,
+                        aot_get_call_offset(target));
+    la_b(dispatch);
+    la_label(escaped);
+    la_or(rax, value, zero_ir2_opnd);
+    xfyun_hot_native_zero_result_flags();
+    target = tb->pc + (copy ? 0x2d : 0xb);
+    aot_load_guest_addr(next_pc, target, LOAD_CALL_TARGET,
+                        aot_get_call_offset(target));
+    la_label(dispatch);
+    ra_free_temp(source);
+    ra_free_temp(end);
+    ra_free_temp(value);
+    ra_free_temp(escape);
+    tb->bool_flags |= IS_INDIRECT_JMP;
+    IR2_OPND label = ra_alloc_label();
+    la_label(label);
+    tb->jmp_indirect = ir2_opnd_label_id(&label);
+    generate_indirect_goto((void *)tb->tc.ptr);
+    ra_free_all();
+    if (latx_tu_scan_enabled()) {
+        fprintf(stderr, "TU_SCAN_XTTS_JSON_%s pc=0x" TARGET_FMT_lx "\n",
+                copy ? "COPY" : "SCAN", tb->pc);
+    }
+    return true;
+}
+
 static bool xtts_filter_loop(TranslationBlock *tb)
 {
     IR1_INST *compare = NULL;
@@ -4735,6 +4986,26 @@ int tr_ir2_generate(struct TranslationBlock *tb)
 #endif
 #ifdef CONFIG_LATX_TU
     switch (tb->pc) {
+    case UINT64_C(0x55182bedb8):
+        if (xtts_accumulate_loop(tb)) {
+            return 1;
+        }
+        break;
+    case UINT64_C(0x55090df340):
+        if (xtts_memset_loop(tb)) {
+            return 1;
+        }
+        break;
+    case UINT64_C(0x550843e24e):
+        if (xtts_json_loop(tb, false)) {
+            return 1;
+        }
+        break;
+    case UINT64_C(0x550843e34b):
+        if (xtts_json_loop(tb, true)) {
+            return 1;
+        }
+        break;
     case UINT64_C(0x551818ae20):
         xtts_sinf_entry(tb, true);
         break;
