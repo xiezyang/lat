@@ -1590,6 +1590,10 @@ void latx_xfyun_fir_add(int32_t *coeff, int32_t *buf, uint32_t start,
                         uint32_t count);
 void latx_xfyun_inv_transform(const int16_t *input, int32_t *output,
                               const int16_t *table);
+uint64_t latx_xtts_decrypt(uint64_t key, uint32_t key_len, uint64_t input,
+                           uint64_t len, uint64_t output);
+uint64_t latx_xtts_clock_nanosleep(uint32_t clock_id, uint32_t flags,
+                                   uint64_t request, uint64_t remain);
 void helper_raise_int(void);
 void helper_raise_illop(void);
 void helper_raise_trapop(void);

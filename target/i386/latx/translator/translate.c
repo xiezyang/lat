@@ -21,9 +21,12 @@
 #include "jrra.h"
 #include "jrra-translator.h"
 #include "latx-native-asm.h"
+#include <errno.h>
+#include <time.h>
 
 extern void *helper_tb_lookup_ptr(CPUArchState *);
 static int ss_generate_match_fail_native_code(void* code_buf);
+static void generate_indirect_goto(void *code_buf);
 #if defined(CONFIG_LATX_KZT)
 uintptr_t kzt_get_alternate_pc(uintptr_t addr)
 {
@@ -2302,6 +2305,82 @@ void latx_xfyun_inv_transform(const int16_t *input, int32_t *output,
     }
 }
 
+static const uint8_t xtts_crypt_table[] =
+    "IFLYTEK CO.,LTD.(iFLYTEK)is a national key software enterprise dedicated to the research of intelligent speech and language technologies, development of software and chip products, provision of speech information services, and integration of E-government s";
+
+uint64_t latx_xtts_decrypt(uint64_t key_addr, uint32_t key_len,
+                           uint64_t input_addr, uint64_t len,
+                           uint64_t output_addr)
+{
+    uint8_t stream[32];
+    const uint8_t *key = g2h_untagged(key_addr);
+    const uint8_t *input = g2h_untagged(input_addr);
+    uint8_t *output = g2h_untagged(output_addr);
+    uint32_t key_span;
+
+    if (!key_addr) {
+        return 1;
+    }
+    key_span = key_len - 8;
+    if (key_span > 0x18) {
+        return 2;
+    }
+    if (!input_addr) {
+        return 3;
+    }
+    if (!len) {
+        return 4;
+    }
+    if (!output_addr) {
+        return 5;
+    }
+
+    if (key[0] & 1) {
+        uint8_t checksum = 0;
+        for (uint32_t i = 0; i < key_len; i++) {
+            checksum ^= key[i];
+        }
+        for (uint32_t i = 0; i < 32; i++) {
+            stream[i] = xtts_crypt_table[checksum] ^
+                        key[i % key_len];
+            checksum += 2;
+        }
+    } else {
+        uint8_t checksum = 0;
+        for (uint32_t i = 0; i < key_len; i++) {
+            checksum += key[i];
+        }
+        for (uint32_t i = 0; i < 32; i++) {
+            stream[i] = xtts_crypt_table[(uint8_t)(checksum + i)] ^
+                        key[i % key_len];
+        }
+    }
+    for (uint64_t i = 0; i < len; i++) {
+        output[i] = input[i] ^ stream[i & 31];
+    }
+    return 0;
+}
+
+uint64_t latx_xtts_clock_nanosleep(uint32_t clock_id, uint32_t flags,
+                                   uint64_t request_addr,
+                                   uint64_t remain_addr)
+{
+    struct timespec request;
+    struct timespec remain;
+    int ret;
+
+    if (!request_addr) {
+        return EFAULT;
+    }
+    memcpy(&request, g2h_untagged(request_addr), sizeof(request));
+    ret = clock_nanosleep(clock_id, flags, &request,
+                          remain_addr ? &remain : NULL);
+    if (ret == 0 && remain_addr) {
+        memcpy(g2h_untagged(remain_addr), &remain, sizeof(remain));
+    }
+    return ret == 0 ? 0 : errno;
+}
+
 static uint64_t xfyun_hot_bytes_hash(const uint8_t *bytes, size_t size)
 {
     uint64_t hash = UINT64_C(0xcbf29ce484222325);
@@ -2311,6 +2390,234 @@ static uint64_t xfyun_hot_bytes_hash(const uint8_t *bytes, size_t size)
         hash *= UINT64_C(0x100000001b3);
     }
     return hash;
+}
+
+static bool xtts_decrypt_entry(TranslationBlock *tb)
+{
+    static int enabled = -1;
+    IR2_OPND key, input, output, key_len, len, function, rsp, return_addr;
+
+    if (!tb || tb->pc != UINT64_C(0x55183113c0)) {
+        return false;
+    }
+    if (enabled < 0) {
+        const char *value = getenv("LATX_XTTS_DECRYPT");
+        enabled = value && strcmp(value, "0");
+    }
+    if (!enabled) {
+        return false;
+    }
+    if (xfyun_hot_bytes_hash((const uint8_t *)(uintptr_t)tb->pc, 0x3e) !=
+        UINT64_C(0x523f1f247b39f3b4)) {
+        return false;
+    }
+
+    for (int i = 0; i < tb->icount; i++) {
+        IR1_INST *insn = tb_ir1_inst(tb, i);
+        tcg_ctx->gen_insn_data[i][0] = ir1_addr(insn);
+        tcg_ctx->gen_insn_data[i][1] = 0;
+        tr_init_for_each_ir1_in_tb(insn, tb->icount, i);
+    }
+
+    tr_save_gpr_to_env(0xff);
+    tr_save_x64_8_registers_to_env(0xff, 0);
+    key = ra_alloc_gpr(edi_index);
+    key_len = ra_alloc_gpr(esi_index);
+    input = ra_alloc_gpr(edx_index);
+    len = ra_alloc_gpr(ecx_index);
+    output = ra_alloc_gpr(r8_index);
+    la_mov64(a0_ir2_opnd, key);
+    la_bstrpick_d(a1_ir2_opnd, key_len, 31, 0);
+    la_mov64(a2_ir2_opnd, input);
+    la_mov64(a3_ir2_opnd, len);
+    la_mov64(a4_ir2_opnd, output);
+
+    function = ra_alloc_itemp();
+    aot_load_host_addr(function, (ADDR)latx_xtts_decrypt,
+                       LOAD_HELPER_XTTS_DECRYPT, 0);
+    la_jirl(ra_ir2_opnd, function, 0);
+    ra_free_temp(function);
+
+    la_store_addrx(a0_ir2_opnd, env_ir2_opnd,
+                   lsenv_offset_of_gpr(lsenv, rax_index));
+    tr_load_x64_8_registers_from_env(0xff, 0);
+    tr_load_gpr_from_env(0xff);
+
+    rsp = ra_alloc_gpr(esp_index);
+    return_addr = ra_alloc_dbt_arg2();
+    la_ld_d(return_addr, rsp, 0);
+    la_dbar(0);
+    la_addi_d(rsp, rsp, 8);
+    tb->bool_flags |= IS_INDIRECT_JMP;
+    {
+        IR2_OPND old_jmp_label = ra_alloc_label();
+        la_label(old_jmp_label);
+        tb->jmp_indirect = ir2_opnd_label_id(&old_jmp_label);
+        generate_indirect_goto((void *)tb->tc.ptr);
+    }
+    ra_free_all();
+    if (getenv("LATX_TU_SCAN")) {
+        fprintf(stderr, "TU_SCAN_XTTS_NATIVE_DECRYPT pc=0x" TARGET_FMT_lx
+                "\n", tb->pc);
+    }
+    return true;
+}
+
+static bool xtts_clock_nanosleep_entry(TranslationBlock *tb)
+{
+    static int enabled = -1;
+    IR2_OPND clock_id, flags, request, remain, function, rsp, return_addr;
+
+    if (!tb || tb->pc != UINT64_C(0x5509110b20)) {
+        return false;
+    }
+    if (enabled < 0) {
+        const char *value = getenv("LATX_XTTS_CLOCK_NANOSLEEP");
+        enabled = value && strcmp(value, "0");
+    }
+    if (!enabled) {
+        return false;
+    }
+
+    for (int i = 0; i < tb->icount; i++) {
+        IR1_INST *insn = tb_ir1_inst(tb, i);
+        tcg_ctx->gen_insn_data[i][0] = ir1_addr(insn);
+        tcg_ctx->gen_insn_data[i][1] = 0;
+        tr_init_for_each_ir1_in_tb(insn, tb->icount, i);
+    }
+
+    tr_save_gpr_to_env(0xff);
+    tr_save_x64_8_registers_to_env(0xff, 0);
+    clock_id = ra_alloc_gpr(edi_index);
+    flags = ra_alloc_gpr(esi_index);
+    request = ra_alloc_gpr(edx_index);
+    remain = ra_alloc_gpr(ecx_index);
+    la_bstrpick_d(a0_ir2_opnd, clock_id, 31, 0);
+    la_bstrpick_d(a1_ir2_opnd, flags, 31, 0);
+    la_mov64(a2_ir2_opnd, request);
+    la_mov64(a3_ir2_opnd, remain);
+
+    function = ra_alloc_itemp();
+    aot_load_host_addr(function, (ADDR)latx_xtts_clock_nanosleep,
+                       LOAD_HELPER_XTTS_CLOCK_NANOSLEEP, 0);
+    la_jirl(ra_ir2_opnd, function, 0);
+    ra_free_temp(function);
+
+    la_store_addrx(a0_ir2_opnd, env_ir2_opnd,
+                   lsenv_offset_of_gpr(lsenv, rax_index));
+    tr_load_x64_8_registers_from_env(0xff, 0);
+    tr_load_gpr_from_env(0xff);
+
+    rsp = ra_alloc_gpr(esp_index);
+    return_addr = ra_alloc_dbt_arg2();
+    la_ld_d(return_addr, rsp, 0);
+    la_dbar(0);
+    la_addi_d(rsp, rsp, 8);
+    tb->bool_flags |= IS_INDIRECT_JMP;
+    {
+        IR2_OPND old_jmp_label = ra_alloc_label();
+        la_label(old_jmp_label);
+        tb->jmp_indirect = ir2_opnd_label_id(&old_jmp_label);
+        generate_indirect_goto((void *)tb->tc.ptr);
+    }
+    ra_free_all();
+    return true;
+}
+
+static bool xtts_hot_native_loop_entry(TranslationBlock *tb)
+{
+    static int enabled = -1;
+    target_ulong begin, end;
+    IR1_INST *call_insn;
+    IR2_OPND r12, r13, r9, r14, rbp, rax, rsp, rdi, rsi, tmp;
+
+    if (!tb || tb->pc != UINT64_C(0x5518176453)) {
+        return false;
+    }
+    if (enabled < 0) {
+        const char *value = getenv("LATX_XTTS_HOT_TU");
+        enabled = value && strcmp(value, "0");
+    }
+    if (!enabled) {
+        return false;
+    }
+    begin = tb->pc;
+    end = begin + 0x3a;
+    if (end - begin != 0x3a) {
+        return false;
+    }
+
+    if (xfyun_hot_bytes_hash((const uint8_t *)(uintptr_t)begin,
+                             end - begin) !=
+        UINT64_C(0x72f1f9ccff4952c8)) {
+        return false;
+    }
+    if (getenv("LATX_TU_SCAN")) {
+        fprintf(stderr, "TU_SCAN_XTTS_ENTRY pc=0x" TARGET_FMT_lx
+                "\n", tb->pc);
+    }
+
+    if (tb->icount < 1) {
+        return false;
+    }
+    call_insn = tb_ir1_inst(tb, tb->icount - 1);
+    if (getenv("LATX_TU_SCAN")) {
+        fprintf(stderr, "TU_SCAN_XTTS_SHAPE pc=0x" TARGET_FMT_lx
+                " icount=%d last_op=%d target=0x" TARGET_FMT_lx
+                "\n", tb->pc, tb->icount, ir1_opcode(call_insn),
+                ir1_target_addr(call_insn));
+    }
+    if (ir1_opcode(call_insn) != dt_X86_INS_CALL ||
+        ir1_target_addr(call_insn) != begin - 0x11f63) {
+        return false;
+    }
+
+    for (int i = 0; i < tb->icount; i++) {
+        IR1_INST *insn = tb_ir1_inst(tb, i);
+        tcg_ctx->gen_insn_data[i][0] = ir1_addr(insn);
+        tcg_ctx->gen_insn_data[i][1] = 0;
+        tr_init_for_each_ir1_in_tb(insn, tb->icount, i);
+    }
+
+    r12 = ra_alloc_gpr(r12_index);
+    r13 = ra_alloc_gpr(r13_index);
+    r9 = ra_alloc_gpr(r9_index);
+    r14 = ra_alloc_gpr(r14_index);
+    rbp = ra_alloc_gpr(rbp_index);
+    rax = ra_alloc_gpr(rax_index);
+    rsp = ra_alloc_gpr(esp_index);
+    rdi = ra_alloc_gpr(edi_index);
+    rsi = ra_alloc_gpr(esi_index);
+    tmp = ra_alloc_itemp();
+
+    /* rbp = (r12 * 5) << 3; r14 = r9 + rbp. */
+    la_slli_d(tmp, r12, 2);
+    la_add_d(tmp, tmp, r12);
+    la_slli_d(rbp, tmp, 3);
+    la_add_d(r14, r9, rbp);
+
+    la_ld_d(rdi, rsp, 0x48);
+    la_ld_d(rax, r13, 0);
+    la_st_d(rax, r14, 0);
+    la_ld_wu(rax, r13, 0x18);
+    la_st_d(rax, r14, 8);
+    la_ld_d(rax, r13, 8);
+    la_st_d(rax, r14, 0x18);
+    la_ld_d(rax, r13, 0x10);
+    la_st_d(rax, r14, 0x20);
+    la_mov64(rsi, r14);
+
+    ra_free_temp(tmp);
+    if (!translate_call(call_insn)) {
+        return false;
+    }
+    ra_free_all();
+    if (getenv("LATX_TU_SCAN")) {
+        fprintf(stderr, "TU_SCAN_XTTS_HOT_LOOP pc=0x" TARGET_FMT_lx
+                " ir2=%d\n", tb->pc,
+                lsenv->tr_data->ir2_inst_num_current);
+    }
+    return true;
 }
 
 static IR1_INST *xfyun_hot_find_ret_insn(TranslationBlock *tb,
@@ -3413,7 +3720,9 @@ int tr_ir2_generate(struct TranslationBlock *tb)
     }
 #endif
 #ifdef CONFIG_LATX_TU
-    if (xfyun_hot_native_entry(tb) || xfyun_hot_native_loop(tb) ||
+    if (xtts_clock_nanosleep_entry(tb) || xtts_decrypt_entry(tb) ||
+        xtts_hot_native_loop_entry(tb) ||
+        xfyun_hot_native_entry(tb) || xfyun_hot_native_loop(tb) ||
         xfyun_hot_native_middle_or_ret(tb)) {
         return 1;
     }
@@ -3580,6 +3889,13 @@ int tr_ir2_generate(struct TranslationBlock *tb)
         }
     }
 #endif
+        if (getenv("LATX_TU_SCAN") &&
+            xfyun_hot_bytes_hash((const uint8_t *)(uintptr_t)tb->pc, 0x3a) ==
+            UINT64_C(0x72f1f9ccff4952c8)) {
+            fprintf(stderr, "TU_SCAN_XTTS_NORMAL pc=0x" TARGET_FMT_lx
+                    " ir2=%d\n", tb->pc,
+                    lsenv->tr_data->ir2_inst_num_current);
+        }
         return 1;
 }
 
