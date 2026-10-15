@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       pr_number:
-        description: "Open pull request number in lat-opensource/lat"
+        description: "Open pull request number in xiezyang/lat"
         required: true
         type: string
       test_request:

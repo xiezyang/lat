@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Resolve a manually approved upstream LAT pull request safely."""
+"""Resolve a manually approved personal LAT pull request safely."""
 
 import argparse
 import json
@@ -9,7 +9,7 @@ import re
 import urllib.request
 
 
-EXPECTED_TARGET_REPOSITORY = "lat-opensource/lat"
+EXPECTED_TARGET_REPOSITORY = "xiezyang/lat"
 SHA_PATTERN = re.compile(r"[0-9a-f]{40,64}", re.IGNORECASE)
 POSITIVE_INTEGER_PATTERN = re.compile(r"[1-9][0-9]*")
 

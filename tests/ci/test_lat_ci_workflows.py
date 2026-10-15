@@ -24,7 +24,7 @@ def load_helper(name):
 
 REQUEST = load_helper("lat_ci_request")
 CALLBACK = load_helper("lat_ci_callback")
-TARGET = "lat-opensource/lat"
+TARGET = "xiezyang/lat"
 HEAD_SHA = "a" * 40
 BASE_SHA = "b" * 40
 
@@ -56,9 +56,13 @@ class LatCIRequestTest(unittest.TestCase):
             pr_number, TARGET, lambda path: pr
         )
 
-    def test_accepts_upstream_branch_with_s_in_repository_name(self):
+    def test_accepts_personal_branch_with_s_in_repository_name(self):
         result = self.resolve(pull_request(TARGET))
-        self.assertEqual(result["source_repository"], "lat-opensource/lat")
+        self.assertEqual(result["source_repository"], "xiezyang/lat")
+
+    def test_personal_entry_rejects_another_target_repository(self):
+        with self.assertRaisesRegex(REQUEST.LatCIRequestError, "must run in xiezyang/lat"):
+            REQUEST.resolve_pull_request("466", "lat-opensource/lat", lambda path: pull_request())
 
     def test_accepts_external_fork_with_s_in_owner_and_repository_name(self):
         result = self.resolve(pull_request("reviewers/test-suite"))
