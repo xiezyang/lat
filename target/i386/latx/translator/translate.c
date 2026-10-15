@@ -34,6 +34,9 @@ static bool xtts_hot_tu_enabled;
 static bool xtts_sinf_enabled;
 static bool xtts_expf_enabled;
 static bool xtts_powf_enabled;
+static bool xtts_logf_enabled;
+static bool xtts_filter_enabled;
+static bool xtts_cosf_enabled;
 static bool xtts_mpi_enabled;
 
 void latx_xtts_hot_options_init(void)
@@ -45,6 +48,9 @@ void latx_xtts_hot_options_init(void)
     const char *sinf = getenv("LATX_XTTS_SINF");
     const char *expf = getenv("LATX_XTTS_EXPF");
     const char *powf = getenv("LATX_XTTS_POWF");
+    const char *logf = getenv("LATX_XTTS_LOGF");
+    const char *filter = getenv("LATX_XTTS_FILTER");
+    const char *cosf = getenv("LATX_XTTS_COSF");
     const char *mpi = getenv("LATX_XTTS_MPI");
 
     xtts_matrix_enabled = matrix && strcmp(matrix, "0");
@@ -54,6 +60,9 @@ void latx_xtts_hot_options_init(void)
     xtts_sinf_enabled = sinf && strcmp(sinf, "0");
     xtts_expf_enabled = expf && strcmp(expf, "0");
     xtts_powf_enabled = powf && strcmp(powf, "0");
+    xtts_logf_enabled = logf && strcmp(logf, "0");
+    xtts_filter_enabled = filter && strcmp(filter, "0");
+    xtts_cosf_enabled = cosf && strcmp(cosf, "0");
     xtts_mpi_enabled = mpi && strcmp(mpi, "0");
 }
 
@@ -2733,6 +2742,200 @@ static void xtts_sinf_constant(IR2_OPND dest, IR2_OPND tmp, uint32_t bits)
     la_movgr2fr_w(dest, tmp);
 }
 
+static bool xtts_filter_loop(TranslationBlock *tb)
+{
+    IR1_INST *compare = NULL;
+    if (!xtts_filter_enabled || option_enable_lbt || !CODEIS64 ||
+        xfyun_hot_bytes_hash((const uint8_t *)(uintptr_t)tb->pc, 0x25) !=
+        UINT64_C(0xda88921a81982c62)) {
+        return false;
+    }
+    for (int i = 0; i < tb->icount; i++) {
+        IR1_INST *insn = tb_ir1_inst(tb, i);
+        if (ir1_addr(insn) == tb->pc + 0x1d) {
+            compare = insn;
+        }
+    }
+    if (!compare || ir1_opcode(compare) != dt_X86_INS_CMP) {
+        return false;
+    }
+    for (int i = 0; i < tb->icount; i++) {
+        IR1_INST *insn = tb_ir1_inst(tb, i);
+        tcg_ctx->gen_insn_data[i][0] = ir1_addr(insn);
+        tcg_ctx->gen_insn_data[i][1] = 0;
+        tr_init_for_each_ir1_in_tb(insn, tb->icount, i);
+    }
+    IR2_OPND x0 = ra_alloc_xmm(0), x1 = ra_alloc_xmm(1);
+    IR2_OPND x2 = ra_alloc_xmm(2), x3 = ra_alloc_xmm(3);
+    IR2_OPND rdx = ra_alloc_gpr(edx_index), rcx = ra_alloc_gpr(ecx_index);
+    IR2_OPND previous = ra_alloc_ftemp();
+    IR2_OPND fallback = ra_alloc_label(), loop = ra_alloc_label();
+    IR2_OPND alignment = ra_alloc_itemp(), distance = ra_alloc_itemp();
+    la_andi(alignment, rdx, 3);
+    la_bne(alignment, zero_ir2_opnd, fallback);
+    la_sub_d(distance, rcx, rdx);
+    la_andi(alignment, distance, 3);
+    la_bne(alignment, zero_ir2_opnd, fallback);
+    la_bge(zero_ir2_opnd, distance, fallback);
+    /* Reuse the preceding stored result, with the same scalar rounding. */
+    la_fld_s(previous, rdx, -4);
+    la_label(loop);
+    la_fld_s(x2, rdx, 0);
+    la_vor_v(x1, x2, x2);
+    la_fsub_s(x1, x1, previous);
+    la_fmul_s(x1, x1, x3);
+    la_fadd_s(x0, x0, x1);
+    la_fst_s(x0, rdx, 0);
+    la_fmov_s(previous, x0);
+    la_vor_v(x0, x2, x2);
+    la_addi_d(rdx, rdx, 4);
+    la_bne(rdx, rcx, loop);
+    for (int i = 0; i < 3; i++) {
+        IR2_OPND xmm = ra_alloc_xmm(i);
+        la_vbsll_v(xmm, xmm, 12);
+        la_vbsrl_v(xmm, xmm, 12);
+    }
+    xfyun_hot_native_zero_result_flags();
+    ra_free_temp(previous);
+    ra_free_temp(alignment);
+    ra_free_temp(distance);
+    IR2_OPND next_pc = ra_alloc_dbt_arg2();
+    aot_load_guest_addr(next_pc, tb->pc + 0x25, LOAD_CALL_TARGET,
+                        aot_get_call_offset(tb->pc + 0x25));
+    tb->bool_flags |= IS_INDIRECT_JMP;
+    IR2_OPND label = ra_alloc_label();
+    la_label(label);
+    tb->jmp_indirect = ir2_opnd_label_id(&label);
+    generate_indirect_goto((void *)tb->tc.ptr);
+    ra_free_all();
+    la_label(fallback);
+    if (latx_tu_scan_enabled()) {
+        fprintf(stderr, "TU_SCAN_XTTS_FILTER pc=0x" TARGET_FMT_lx "\n", tb->pc);
+    }
+    return false;
+}
+
+static bool xtts_logf_entry(TranslationBlock *tb, bool log10)
+{
+    static const uint32_t constants[2][9] = {
+        {0x40a5a113, 0x4012eb5b, 0x3f5810d8, 0x401e2024,
+         0x3c677861, 0x3e29383a, 0x4092b3e3, 0x40b5fb4c, 0x3f317218},
+        {0x400fdd1b, 0x3f7f399d, 0x3ebbac20, 0x3f89589a,
+         0x3bc90d70, 0x3d92fb78, 0x3ffed942, 0x401e1137, 0x3e9a209b},
+    };
+    const uint32_t *k = constants[log10];
+    uint64_t hash = log10 ? UINT64_C(0x751c2c96e3b5bb6f) :
+                           UINT64_C(0x6297c744585ebb9d);
+    IR1_INST *last_sub = NULL;
+
+    if (!xtts_logf_enabled || option_enable_lbt || !CODEIS64 ||
+        xfyun_hot_bytes_hash((const uint8_t *)(uintptr_t)tb->pc, 0xa9) != hash) {
+        return false;
+    }
+    for (int i = 0; i < tb->icount; i++) {
+        IR1_INST *insn = tb_ir1_inst(tb, i);
+        if (ir1_addr(insn) == tb->pc + 0x23) {
+            last_sub = insn;
+        }
+    }
+    if (!last_sub || ir1_opcode(last_sub) != dt_X86_INS_SUB) {
+        return false;
+    }
+    IR2_OPND x[5];
+    for (int i = 0; i < 5; i++) {
+        x[i] = ra_alloc_xmm(i);
+    }
+    IR2_OPND c = ra_alloc_ftemp();
+    IR2_OPND original = ra_alloc_itemp(), tmp = ra_alloc_itemp();
+    IR2_OPND fallback = ra_alloc_label();
+    tr_init_for_each_ir1_in_tb(tb_ir1_inst(tb, 0), tb->icount, 0);
+    la_movfr2gr_s(original, x[0]);
+    la_bstrpick_d(original, original, 31, 0);
+    li_w(tmp, 0x00800000);
+    la_bltu(original, tmp, fallback);
+    li_w(tmp, 0x7f800000);
+    la_bgeu(original, tmp, fallback);
+    for (int i = 0; i < tb->icount; i++) {
+        IR1_INST *insn = tb_ir1_inst(tb, i);
+        tcg_ctx->gen_insn_data[i][0] = ir1_addr(insn);
+        tcg_ctx->gen_insn_data[i][1] = 0;
+        tr_init_for_each_ir1_in_tb(insn, tb->icount, i);
+    }
+    IR2_OPND eax = ra_alloc_gpr(eax_index), edx = ra_alloc_gpr(edx_index);
+    IR2_OPND ecx = ra_alloc_gpr(ecx_index);
+    la_srai_w(edx, original, 23);
+    la_addi_w(edx, edx, -127);
+    la_slli_w(ecx, edx, 23);
+    la_bstrpick_d(ecx, ecx, 31, 0);
+    la_bstrpick_d(edx, edx, 31, 0);
+    la_sub_w(eax, original, ecx);
+    la_bstrpick_d(eax, eax, 31, 0);
+    la_movgr2fr_w(x[1], eax);
+    xtts_sinf_constant(x[0], tmp, k[2]);
+    xtts_sinf_constant(x[2], tmp, k[0]);
+    la_fmul_s(x[0], x[0], x[1]);
+    la_fmov_s(x[3], x[1]);
+    la_fmul_s(x[2], x[2], x[1]);
+    la_fmul_s(x[3], x[3], x[1]);
+    la_fmov_s(x[4], x[0]);
+    xtts_sinf_constant(x[0], tmp, k[4]);
+    xtts_sinf_constant(c, tmp, k[1]);
+    la_fsub_s(x[2], x[2], c);
+    la_fmul_s(x[0], x[0], x[1]);
+    xtts_sinf_constant(c, tmp, k[3]);
+    la_fsub_s(x[4], x[4], c);
+    xtts_sinf_constant(c, tmp, k[6]);
+    la_fmul_s(x[1], x[1], c);
+    xtts_sinf_constant(c, tmp, k[5]);
+    la_fsub_s(x[0], x[0], c);
+    xtts_sinf_constant(c, tmp, k[7]);
+    la_fsub_s(x[1], x[1], c);
+    la_fmul_s(x[0], x[0], x[3]);
+    la_fmul_s(x[1], x[1], x[3]);
+    la_fadd_s(x[0], x[0], x[4]);
+    la_fmul_s(x[4], x[3], x[3]);
+    la_fadd_s(x[1], x[1], x[2]);
+    la_movgr2fr_w(x[2], edx);
+    la_ffint_s_w(x[2], x[2]);
+    la_fmul_s(x[0], x[0], x[4]);
+    la_fadd_s(x[0], x[0], x[1]);
+    xtts_sinf_constant(c, tmp, k[8]);
+    la_fmul_s(x[2], x[2], c);
+    la_fadd_s(x[0], x[0], x[2]);
+    IR1_INST flags_insn = *last_sub;
+    IR1_INST *saved_ir1 = lsenv->tr_data->curr_ir1_inst;
+    uint8_t saved_skipped = lsenv->tr_data->curr_ir1_skipped_eflags;
+    ir1_set_eflag_def(&flags_insn, 0x3f);
+    lsenv->tr_data->curr_ir1_inst = &flags_insn;
+    lsenv->tr_data->curr_ir1_skipped_eflags = 0;
+    generate_eflag_calculation(eax, original, ecx, &flags_insn, true);
+    lsenv->tr_data->curr_ir1_inst = saved_ir1;
+    lsenv->tr_data->curr_ir1_skipped_eflags = saved_skipped;
+    for (int i = 0; i < 5; i++) {
+        la_vbsll_v(x[i], x[i], 12);
+        la_vbsrl_v(x[i], x[i], 12);
+    }
+    IR2_OPND rsp = ra_alloc_gpr(esp_index);
+    la_st_w(eax, rsp, -4);
+    ra_free_temp(c);
+    ra_free_temp(original);
+    ra_free_temp(tmp);
+    IR2_OPND return_addr = ra_alloc_dbt_arg2();
+    la_ld_d(return_addr, rsp, 0);
+    la_addi_d(rsp, rsp, 8);
+    tb->bool_flags |= IS_INDIRECT_JMP;
+    IR2_OPND label = ra_alloc_label();
+    la_label(label);
+    tb->jmp_indirect = ir2_opnd_label_id(&label);
+    generate_indirect_goto((void *)tb->tc.ptr);
+    ra_free_all();
+    la_label(fallback);
+    if (latx_tu_scan_enabled()) {
+        fprintf(stderr, "TU_SCAN_XTTS_LOGF pc=0x" TARGET_FMT_lx "\n", tb->pc);
+    }
+    return false;
+}
+
 static bool xtts_powf_entry(TranslationBlock *tb)
 {
     IR1_INST *last_add = NULL;
@@ -3001,16 +3204,28 @@ static bool xtts_expf_entry(TranslationBlock *tb)
     return false;
 }
 
-static bool xtts_sinf_entry(TranslationBlock *tb)
+static bool xtts_sinf_entry(TranslationBlock *tb, bool cosine)
 {
     IR1_INST *last_xor = NULL;
+    IR1_INST cosine_xor;
     IR2_OPND x0, x1, x2, x3, temp, eax, edx, ecx, esi, edi;
     IR2_OPND tmp, sign, fallback, rsp, return_addr;
 
-    if (!xtts_sinf_enabled || option_enable_lbt || !CODEIS64 ||
-        xfyun_hot_bytes_hash((const uint8_t *)(uintptr_t)tb->pc, 0xcb) !=
+    target_ulong sin_pc = cosine ? tb->pc - 0x6b0 : tb->pc;
+    if (!(cosine ? xtts_cosf_enabled : xtts_sinf_enabled) ||
+        option_enable_lbt || !CODEIS64 ||
+        (cosine &&
+         xfyun_hot_bytes_hash((const uint8_t *)(uintptr_t)tb->pc, 0x15) !=
+         UINT64_C(0xc8d12420e1a062eb)) ||
+        xfyun_hot_bytes_hash((const uint8_t *)(uintptr_t)sin_pc, 0xcb) !=
         UINT64_C(0x01f95af0f77fedb9)) {
         return false;
+    }
+    if (cosine) {
+        char info[IR1_INST_SIZE] = {0};
+        ir1_disasm(&cosine_xor, (void *)(uintptr_t)(sin_pc + 0x7c),
+                    sin_pc + 0x7c, 0, info);
+        last_xor = &cosine_xor;
     }
     for (int i = 0; i < tb->icount; i++) {
         IR1_INST *insn = tb_ir1_inst(tb, i);
@@ -3031,7 +3246,18 @@ static bool xtts_sinf_entry(TranslationBlock *tb)
     tmp = ra_alloc_itemp();
     sign = ra_alloc_itemp();
     fallback = ra_alloc_label();
-    la_movfr2gr_s(tmp, x0);
+    if (cosine) {
+        IR2_OPND pi = ra_alloc_ftemp();
+        li_d(tmp, UINT64_C(0x3ff921fb54442d18));
+        la_movgr2fr_d(pi, tmp);
+        la_fcvt_d_s(temp, x0);
+        la_fadd_d(temp, temp, pi);
+        la_fcvt_s_d(temp, temp);
+        la_movfr2gr_s(tmp, temp);
+        ra_free_temp(pi);
+    } else {
+        la_movfr2gr_s(tmp, x0);
+    }
     la_bstrpick_d(tmp, tmp, 30, 0);
     li_w(sign, 0x49800000);
     la_bgeu(tmp, sign, fallback);
@@ -3049,6 +3275,9 @@ static bool xtts_sinf_entry(TranslationBlock *tb)
     ecx = ra_alloc_gpr(ecx_index);
     esi = ra_alloc_gpr(esi_index);
     edi = ra_alloc_gpr(edi_index);
+    if (cosine) {
+        la_fmov_s(x0, temp);
+    }
     la_movfr2gr_s(esi, x0);
     la_bstrpick_d(esi, esi, 31, 0);
     la_srli_d(esi, esi, 31);
@@ -3134,7 +3363,8 @@ static bool xtts_sinf_entry(TranslationBlock *tb)
     ra_free_all();
     la_label(fallback);
     if (latx_tu_scan_enabled()) {
-        fprintf(stderr, "TU_SCAN_XTTS_SINF pc=0x" TARGET_FMT_lx "\n", tb->pc);
+        fprintf(stderr, "TU_SCAN_XTTS_%s pc=0x" TARGET_FMT_lx "\n",
+                cosine ? "COSF" : "SINF", tb->pc);
     }
     /* Emit the original function after this label for the guarded inputs. */
     return false;
@@ -4505,6 +4735,18 @@ int tr_ir2_generate(struct TranslationBlock *tb)
 #endif
 #ifdef CONFIG_LATX_TU
     switch (tb->pc) {
+    case UINT64_C(0x551818ae20):
+        xtts_sinf_entry(tb, true);
+        break;
+    case UINT64_C(0x55182bf8b0):
+        xtts_filter_loop(tb);
+        break;
+    case UINT64_C(0x551818ae40):
+        xtts_logf_entry(tb, false);
+        break;
+    case UINT64_C(0x551818b050):
+        xtts_logf_entry(tb, true);
+        break;
     case UINT64_C(0x551818aca0):
         xtts_powf_entry(tb);
         break;
@@ -4537,7 +4779,7 @@ int tr_ir2_generate(struct TranslationBlock *tb)
         }
         break;
     case UINT64_C(0x551818a770):
-        xtts_sinf_entry(tb);
+        xtts_sinf_entry(tb, false);
         break;
     case UINT64_C(0x551819c200):
         if (xtts_matrix_entry(tb, 0)) {

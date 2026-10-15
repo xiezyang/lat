@@ -27,6 +27,13 @@ cd "$sdk"
     printf 'binary=%s\nruntime=%s\nsdk=%s\nHOME=%s\n' \
         "$latx" "$runtime" "$sdk" "$HOME"
     sha256sum "$latx" ./aikit_test
+    for configuration in etc/resolv.conf etc/hosts; do
+        if [[ -f "$runtime/$configuration" ]]; then
+            sha256sum "$runtime/$configuration"
+            printf '\n%s:\n' "$runtime/$configuration"
+            cat "$runtime/$configuration"
+        fi
+    done
     find ./libs -type f -name '*.so*' -exec sha256sum {} +
     env | LC_ALL=C sort | grep -E '^(LATX_|LBT_X86=|LD_LIBRARY_PATH=)'
 } >"$result/provenance.txt"

@@ -9,7 +9,7 @@
 #include <unistd.h>
 
 /* Run natively on x86 and under LATX, then compare the complete output files. */
-extern void capture_sinf(uint32_t input, uint64_t *output);
+extern void capture_sinf(uint32_t input, uint64_t *output, uintptr_t entry);
 __asm__(
     ".text\n"
     ".global capture_sinf\n"
@@ -18,7 +18,7 @@ __asm__(
     "push %rbx\n"
     "mov %rsi,%rbx\n"
     "movd %edi,%xmm0\n"
-    "movabs $0x551818a770,%rax\n"
+    "mov %rdx,%rax\n"
     "call *%rax\n"
     "mov %rax,0(%rbx)\n"
     "mov %rdx,8(%rbx)\n"
@@ -39,7 +39,9 @@ __asm__(
 
 int main(int argc, char **argv)
 {
-    if (argc != 2) return 2;
+    if (argc != 2 && argc != 3) return 2;
+    uintptr_t entry = argc == 3 ? UINT64_C(0x551818ae20) :
+                                  UINT64_C(0x551818a770);
     int fd = open(argv[1], O_RDONLY);
     struct stat st;
     if (fd < 0 || fstat(fd, &st)) return 3;
@@ -55,7 +57,7 @@ int main(int argc, char **argv)
         state = state * UINT32_C(1664525) + UINT32_C(1013904223);
         uint32_t bits = (state & 0x807fffff) | ((state % 146 + 1) << 23);
         uint64_t result[14];
-        capture_sinf(bits, result);
+        capture_sinf(bits, result, entry);
         if (fwrite(result, sizeof(result), 1, stdout) != 1) return 5;
     }
     static const uint32_t special[] = {
@@ -66,7 +68,7 @@ int main(int argc, char **argv)
     };
     for (unsigned i = 0; i < sizeof(special) / sizeof(special[0]); i++) {
         uint64_t result[14];
-        capture_sinf(special[i], result);
+        capture_sinf(special[i], result, entry);
         if (fwrite(result, sizeof(result), 1, stdout) != 1) return 5;
     }
     return 0;
