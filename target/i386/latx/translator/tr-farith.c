@@ -983,6 +983,10 @@ bool translate_fxtract(IR1_INST *pir1)
 #ifdef USE_FXTRACT_HELPER
     tr_gen_call_to_helper1((ADDR)helper_fxtract, 1, LOAD_HELPER_FXTRACT);
 #else
+    /* The zero/infinity paths bypass the register saves below. */
+    emit_ymmh_zeros();
+    lsenv->tr_data->ymmh_zero_pending = 0;
+
     /* if the source operand is 0.0 or -0.0, goto label_zero for special process
      */
     IR2_OPND f_zero = ra_alloc_ftemp();

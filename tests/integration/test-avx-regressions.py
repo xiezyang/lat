@@ -14,22 +14,25 @@ import tempfile
 import time
 
 
-def run_case(emulator, source, work, prebuilt):
+def run_case(emulator, source, work, prebuilt, guest_bits=64):
     guest = work / source.stem
     if prebuilt:
         shutil.copy2(prebuilt / source.stem, guest)
     elif source.suffix == ".asm":
         obj = work / (source.stem + ".o")
-        subprocess.run(["nasm", "-f", "elf64", str(source), "-o", str(obj)],
+        subprocess.run(["nasm", "-f", "elf" + str(guest_bits),
+                        str(source), "-o", str(obj)],
                        check=True)
-        subprocess.run(["ld.lld", "-m", "elf_x86_64", "-static", "--build-id=none",
+        machine = "elf_x86_64" if guest_bits == 64 else "elf_i386"
+        subprocess.run(["ld.lld", "-m", machine, "-static", "--build-id=none",
                         str(obj), "-o", str(guest)], check=True)
     else:
         if platform.machine() == "x86_64" and shutil.which("gcc"):
-            compiler = ["gcc"]
+            compiler = ["gcc", "-m" + str(guest_bits)]
         else:
             clang = shutil.which("clang-19") or shutil.which("clang")
-            compiler = [clang, "--target=x86_64-linux-gnu", "-fuse-ld=lld"]
+            target = "x86_64" if guest_bits == 64 else "i386"
+            compiler = [clang, "--target=" + target + "-linux-gnu", "-fuse-ld=lld"]
         flags = []
         if source.suffix == ".c":
             flags = ["-O2", "-mavx2", "-ffreestanding", "-fno-builtin",
@@ -83,6 +86,8 @@ def main():
                         default=os.environ.get("LATX_AVX_PREBUILT"),
                         help="guests compiled on x86 (or LATX_AVX_PREBUILT)")
     parser.add_argument("emulator", help="LAT executable, or native")
+    parser.add_argument("--guest-bits", type=int, choices=(32, 64), default=64,
+                        help="guest ELF width (default: 64)")
     parser.add_argument("sources", type=Path, nargs="+")
     args = parser.parse_args()
     nasm_only = all(source.suffix == ".asm" for source in args.sources)
@@ -99,7 +104,8 @@ def main():
     with tempfile.TemporaryDirectory(prefix="latx-avx-regression-") as directory:
         for source in args.sources:
             try:
-                run_case(emulator, source.resolve(), Path(directory), args.prebuilt)
+                run_case(emulator, source.resolve(), Path(directory),
+                         args.prebuilt, args.guest_bits)
                 print("PASS:", source.name, flush=True)
             except (subprocess.SubprocessError, RuntimeError) as error:
                 failures += 1
