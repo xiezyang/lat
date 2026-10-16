@@ -38,6 +38,11 @@ bool translate_popf(IR1_INST *pir1)
     }
 #endif
 
+    /* The helper's register saves consume pending YMM zeros at translation
+     * time. Clear before the branch so the TF=0 path cannot skip them. */
+    emit_ymmh_zeros();
+    lsenv->tr_data->ymmh_zero_pending = 0;
+
     la_andi(eflags_temp_opnd, eflags_opnd, TF_MASK);
     la_beqz(eflags_temp_opnd, label_miss);
     tr_gen_call_to_helper1((ADDR)helper_eflagtf, 1, LOAD_HELPER_EFLAGTF);

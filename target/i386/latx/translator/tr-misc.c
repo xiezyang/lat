@@ -350,6 +350,10 @@ bool translate_out(IR1_INST *pir1)
 
 bool translate_into(IR1_INST *pir1)
 {
+    /* The no-overflow path skips the exception helper's register saves. */
+    emit_ymmh_zeros();
+    lsenv->tr_data->ymmh_zero_pending = 0;
+
     /* raise INTO , enabel when OF = 1 */
     IR2_OPND flag_opnd = ra_alloc_itemp();
     IR2_OPND label_z = ra_alloc_label();
@@ -374,6 +378,10 @@ bool translate_into(IR1_INST *pir1)
 
 bool translate_bound(IR1_INST *pir1)
 {
+    /* In-range operands skip the exception helper's register saves. */
+    emit_ymmh_zeros();
+    lsenv->tr_data->ymmh_zero_pending = 0;
+
     /* raise BOUND , disenable when a<=b<=c */
     int opnd_size = ir1_opnd_size(ir1_get_opnd(pir1, 0));
     IR2_OPND high = ra_alloc_itemp();
@@ -1388,6 +1396,10 @@ bool translate_hlt(IR1_INST *pir1)
 
 bool translate_rdtsc(IR1_INST *pir1)
 {
+    /* The normal path skips the exception helper's register saves. */
+    emit_ymmh_zeros();
+    lsenv->tr_data->ymmh_zero_pending = 0;
+
     IR2_OPND tsc_mode = ra_alloc_itemp();
     IR2_OPND tsc_enabled = ra_alloc_label();
     IR2_OPND eip_opnd;
@@ -1420,6 +1432,10 @@ bool translate_rdtsc(IR1_INST *pir1)
 
 bool translate_rdtscp(IR1_INST *pir1)
 {
+    /* The normal path skips the exception helper's register saves. */
+    emit_ymmh_zeros();
+    lsenv->tr_data->ymmh_zero_pending = 0;
+
     IR2_OPND tsc_mode = ra_alloc_itemp();
     IR2_OPND tsc_enabled = ra_alloc_label();
     IR2_OPND eip_opnd;
