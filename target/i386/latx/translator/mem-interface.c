@@ -579,7 +579,14 @@ skip:
     }
 
     addr_size = ir1_addr_size(pir1);
-    return adjust_dest(dest_op, arg_dest_op, dest_size, addr_size);
+    IR2_OPND ret_opnd = adjust_dest(dest_op, arg_dest_op,
+                                    dest_size, addr_size);
+
+    if (arg_dest_op && dest_need_itmp) {
+        ra_free_mem_temp(dest_op);
+    }
+
+    return ret_opnd;
 }
 
 void convert_mem_to_specific_gpr(IR1_OPND *opnd, IR2_OPND dest, int dest_size)

@@ -381,6 +381,13 @@ void imm_cache_free_temp_helper(IR2_OPND dest_op)
     imm_log("[free_temp_helper]call but not free\n");
 }
 
+void ra_free_mem_temp(IR2_OPND opnd)
+{
+    if (ir2_opnd_is_itemp(&opnd) && !ir2_opnd_is_imm_reg(&opnd)) {
+        ra_free_temp(opnd);
+    }
+}
+
 IR2_OPND ra_alloc_num_4095(void)
 {
     IR2_OPND num = ra_alloc_itemp();

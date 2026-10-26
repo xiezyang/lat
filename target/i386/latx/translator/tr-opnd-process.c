@@ -248,9 +248,7 @@ void load_ireg_from_ir1_mem(IR2_OPND opnd2, IR1_OPND *opnd1,
     	    lsassert(0);
     	}
     }
-    if (ir2_opnd_is_itemp(&mem_opnd) && !ir2_opnd_is_imm_reg(&mem_opnd)) {
-        ra_free_temp(mem_opnd);
-    }
+    ra_free_mem_temp(mem_opnd);
 }
 
 IR2_OPND load_ireg_from_ir2_mem(IR2_OPND mem_opnd, int mem_imm, int mem_size,
@@ -617,9 +615,7 @@ static void store_ireg_to_ir1_mem(IR2_OPND value_opnd, IR1_OPND *opnd1,
     	    lsassert(0);
     	}
 	}
-    if (ir2_opnd_is_itemp(&mem_opnd) && !ir2_opnd_is_imm_reg(&mem_opnd)) {
-        ra_free_temp(mem_opnd);
-    }
+    ra_free_mem_temp(mem_opnd);
 }
 
 void store_ireg_to_ir1_seg(IR2_OPND seg_value_opnd, IR1_OPND *opnd1)
@@ -949,6 +945,8 @@ static void load_freg_from_ir1_mem(IR2_OPND opnd2, IR1_OPND *opnd1,
     } else {
         load_64_bit_freg_from_ir1_80_bit_mem(opnd2, mem_opnd, mem_imm);
     }
+
+    ra_free_mem_temp(mem_opnd);
 }
 
 /* Clear lsenv->mode_trans_mmx_fpu to transfer to MMX mode */
@@ -1185,6 +1183,8 @@ static void store_freg_to_ir1_mem(IR2_OPND opnd2, IR1_OPND *opnd1,
     } else {
         store_64_bit_freg_to_ir1_80_bit_mem(opnd2, mem_opnd, mem_imm);
     }
+
+    ra_free_mem_temp(mem_opnd);
 }
 
 static void store_freg_to_ir1_gpr(IR2_OPND opnd2, IR1_OPND *opnd1)
@@ -1323,6 +1323,7 @@ void load_freg128_from_ir1_mem(IR2_OPND opnd2, IR1_OPND *opnd1){
     IR2_OPND mem_opnd = convert_mem(opnd1, &little_disp);
     gen_test_page_flag(mem_opnd, little_disp, PAGE_READ, 16);
     la_vld(opnd2, mem_opnd, little_disp);
+    ra_free_mem_temp(mem_opnd);
     return;
 }
 
@@ -1336,6 +1337,7 @@ void store_freg128_to_ir1_mem(IR2_OPND opnd2, IR1_OPND *opnd1){
     gen_test_page_flag(mem_opnd, little_disp, PAGE_WRITE | PAGE_WRITE_ORG,
                        16);
     la_vst(opnd2, mem_opnd, little_disp);
+    ra_free_mem_temp(mem_opnd);
     return;
 }
 
@@ -1373,6 +1375,7 @@ void store_freg256_to_ir1_mem(IR2_OPND opnd2, IR1_OPND * opnd1) {
     gen_test_page_flag(mem_opnd, little_disp, PAGE_WRITE | PAGE_WRITE_ORG,
                        32);
     la_xvst(opnd2, mem_opnd, little_disp);
+    ra_free_mem_temp(mem_opnd);
 }
 
 void load_freg256_from_ir1_mem(IR2_OPND opnd2, IR1_OPND * opnd1) {
@@ -1383,6 +1386,7 @@ void load_freg256_from_ir1_mem(IR2_OPND opnd2, IR1_OPND * opnd1) {
     IR2_OPND mem_opnd = convert_mem(opnd1, & little_disp);
     gen_test_page_flag(mem_opnd, little_disp, PAGE_READ, 32);
     la_xvld(opnd2, mem_opnd, little_disp);
+    ra_free_mem_temp(mem_opnd);
 }
 
 IR2_OPND load_freg256_from_ir1(IR1_OPND * opnd1) {
