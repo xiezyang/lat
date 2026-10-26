@@ -1247,6 +1247,8 @@ static bool translate_test_xxcc(IR1_INST *pir1)
         generate_eflag_calculation(src0, src0, src1, curr, true);
         temp = ra_alloc_itemp();
         la_and(temp, src0, src1);
+        ra_free_temp_auto(src0);
+        ra_free_temp_auto(src1);
     }
 
     lsenv->tr_data->curr_ir1_inst = next;
