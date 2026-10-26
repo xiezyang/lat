@@ -167,6 +167,7 @@ bool ld_imm_to_imm_reg(uint64);
 #define ra_free_ftemp(phy_id)   RA_FREE_CODE(ftemp, phy_id)
 void ra_free_all(void);
 bool itemp_is_free(int itemp_num);
+void ra_free_mem_temp(IR2_OPND opnd);
 IR2_OPND ra_alloc_num_4095(void);
 void ra_free_num_4095(IR2_OPND);
 void free_imm_reg(int itemp_num);
