@@ -1,5 +1,13 @@
 if 'x86_64-linux-user' in target_dirs
   latx_integration_tests += [{
+    'name': 'test-instptn-signal-recovery',
+    'runner': find_program('../../test-avx-regressions.py'),
+    'args': [emulators['latx-x86_64'],
+             files('../../instptn-signal-recovery.S')],
+    'env': {'LATX_SOFTFPU': '0'},
+    'timeout': 120,
+  }]
+  latx_integration_tests += [{
     'name': 'test-ymmh-conditional-save',
     'runner': find_program('../../test-avx-regressions.py'),
     'args': [emulators['latx-x86_64'], files('../../ymmh-conditional-save.asm')],
@@ -123,6 +131,14 @@ if 'x86_64-linux-user' in target_dirs
 endif
 
 if 'i386-linux-user' in target_dirs
+  latx_integration_tests += [{
+    'name': 'test-instptn-signal-recovery-i386',
+    'runner': find_program('../../test-avx-regressions.py'),
+    'args': ['--guest-bits', '32', emulators['latx-i386'],
+             files('../../instptn-signal-recovery-i386.S')],
+    'env': {'LATX_SOFTFPU': '0'},
+    'timeout': 120,
+  }]
   latx_integration_tests += [{
     'name': 'test-ymmh-conditional-save-i386',
     'runner': find_program('../../test-avx-regressions.py'),
