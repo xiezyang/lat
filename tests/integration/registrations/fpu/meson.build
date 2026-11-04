@@ -66,8 +66,43 @@ if 'x86_64-linux-user' in target_dirs
   endforeach
 endif
 
+if 'i386-linux-user' in target_dirs
+  latx_integration_tests += [{
+    'name': 'test-x87-extended-round-scale-i386',
+    'runner': find_program('../../test-x87-extended-round-scale.sh'),
+    'args': [emulators['latx-i386'], files('../../x87-extended-round-scale.asm')],
+    'timeout': 120,
+  }]
+  latx_integration_tests += [{
+    'name': 'test-x87-fist16-i386',
+    'runner': find_program('../../test-x87-fist16.sh'),
+    'args': [emulators['latx-i386'], files('../../x87-fist16.asm')],
+    'timeout': 120,
+  }]
+endif
+
 foreach arch : ['x86_64', 'i386']
   if arch + '-linux-user' in target_dirs
+    latx_integration_tests += [{
+      'name': 'test-x87-sqrt-flags-' + arch,
+      'runner': find_program('../../test-x87-sqrt-flags.sh'),
+      'args': [
+        emulators['latx-' + arch],
+        files('../../x87-sqrt-flags.asm'),
+        arch,
+      ],
+      'timeout': 120,
+    }]
+    latx_integration_tests += [{
+      'name': 'test-float-options-default-' + arch,
+      'runner': find_program('../../test-float-options-default.sh'),
+      'args': [
+        emulators['latx-' + arch],
+        files('../../float-options-default.asm'),
+        arch,
+      ],
+      'timeout': 180,
+    }]
     latx_integration_tests += [{
       'name': 'test-fpu-mode-boundary-' + arch,
       'runner': find_program('../../test-fpu-mode-boundary.sh'),
