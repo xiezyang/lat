@@ -96,6 +96,7 @@ uint32_t latx_unlink_cpu;
 int option_softfpu;
 uint64_t option_softfpu_fast;
 int option_float80;
+int option_128cal;
 int option_stack;
 int option_prlimit;
 int option_fputag;

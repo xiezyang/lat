@@ -112,6 +112,7 @@ extern uint32_t latx_unlink_cpu;
 extern int option_softfpu;
 extern uint64_t option_softfpu_fast;
 extern int option_float80;
+extern int option_128cal;
 extern int option_stack;
 
 /* Native x87 FAST operations share FCSR with SSE and cannot use the

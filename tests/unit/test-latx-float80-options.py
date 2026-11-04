@@ -35,13 +35,20 @@ class FloatOptionsTest(unittest.TestCase):
             "x86fdiv.ld": 0x716e8000,
             "x86fcom.ld": 0x71740000,
             "x86fucom.ld": 0x71748000,
+            "x86fadd.ss": 0x72ac4000,
+            "x86fadd.sd": 0x72ac4400,
+            "x86fsub.ss": 0x72ac4800,
+            "x86fsub.sd": 0x72ac4c00,
+            "x86fmul.ss": 0x72ac5000,
+            "x86fmul.sd": 0x72ac5400,
         }
         for name, opcode in expected.items():
             with self.subTest(name=name):
                 template = templates[name]
                 self.assertEqual(int(template["opcode"], 16), opcode)
                 self.assertEqual(template["opnd"][:2], ["fpr_vd", "fpr_vj"])
-                self.assertEqual(len(template["opnd"]), 3)
+                self.assertEqual(len(template["opnd"]), 2 if name[-2:] in
+                                 ("ss", "sd") else 3)
 
     def test_stack_codegen_guards(self):
         spec = importlib.util.spec_from_file_location("convert", LATX / "convert.py")

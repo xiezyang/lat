@@ -696,12 +696,17 @@ bool translate_addsd(IR1_INST *pir1)
             clear_xmm_high64(dest);
         }
     } else{
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_fadd_d(temp, dest, src);
-        if (option_enable_lasx) {
-            la_xvinsve0_d(dest, temp, 0);
+        if (option_128cal & 0x1) {
+            la_x86fadd_sd(dest, src);
+            return true;
         } else {
-            la_vextrins_d(dest, temp, 0);
+            IR2_OPND temp = ra_alloc_ftemp();
+            la_fadd_d(temp, dest, src);
+            if (option_enable_lasx) {
+                la_xvinsve0_d(dest, temp, 0);
+            } else {
+                la_vextrins_d(dest, temp, 0);
+            }
         }
     }
     return true;
@@ -716,12 +721,17 @@ bool translate_addss(IR1_INST *pir1)
     if (SHBR_ON_32(pir1)) {
         la_fadd_s(dest, dest, src);
     } else{
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_fadd_s(temp, dest, src);
-        if (option_enable_lasx) {
-            la_xvinsve0_w(dest, temp, 0);
+        if (option_128cal & 0x2) {
+            la_x86fadd_ss(dest, src);
+            return true;
         } else {
-            la_vextrins_w(dest, temp, 0);
+            IR2_OPND temp = ra_alloc_ftemp();
+            la_fadd_s(temp, dest, src);
+            if (option_enable_lasx) {
+                la_xvinsve0_w(dest, temp, 0);
+            } else {
+                la_vextrins_w(dest, temp, 0);
+            }
         }
     }
     return true;
@@ -1068,12 +1078,17 @@ bool translate_mulsd(IR1_INST *pir1)
             clear_xmm_high64(dest);
         }
     } else{
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_fmul_d(temp, dest, src);
-        if (option_enable_lasx) {
-            la_xvinsve0_d(dest, temp, 0);
+        if (option_128cal & 0x10) {
+            la_x86fmul_sd(dest, src);
+            return true;
         } else {
-            la_vextrins_d(dest, temp, 0);
+            IR2_OPND temp = ra_alloc_ftemp();
+            la_fmul_d(temp, dest, src);
+            if (option_enable_lasx) {
+                la_xvinsve0_d(dest, temp, 0);
+            } else {
+                la_vextrins_d(dest, temp, 0);
+            }
         }
     }
     return true;
@@ -1088,12 +1103,17 @@ bool translate_mulss(IR1_INST *pir1)
     if (SHBR_ON_32(pir1)) {
         la_fmul_s(dest, dest, src);
     } else{
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_fmul_s(temp, dest, src);
-        if (option_enable_lasx) {
-            la_xvinsve0_w(dest, temp, 0);
+        if (option_128cal & 0x20) {
+            la_x86fmul_ss(dest, src);
+            return true;
         } else {
-            la_vextrins_w(dest, temp, 0);
+            IR2_OPND temp = ra_alloc_ftemp();
+            la_fmul_s(temp, dest, src);
+            if (option_enable_lasx) {
+                la_xvinsve0_w(dest, temp, 0);
+            } else {
+                la_vextrins_w(dest, temp, 0);
+            }
         }
     }
 
@@ -1701,12 +1721,17 @@ bool translate_subss(IR1_INST *pir1)
     if (SHBR_ON_32(pir1)) {
         la_fsub_s(dest, dest, src);
     } else{
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_fsub_s(temp, dest, src);
-        if (option_enable_lasx) {
-            la_xvinsve0_w(dest, temp, 0);
+        if (option_128cal & 0x8) {
+            la_x86fsub_ss(dest, src);
+            return true;
         } else {
-            la_vextrins_w(dest, temp, 0);
+            IR2_OPND temp = ra_alloc_ftemp();
+            la_fsub_s(temp, dest, src);
+            if (option_enable_lasx) {
+                la_xvinsve0_w(dest, temp, 0);
+            } else {
+                la_vextrins_w(dest, temp, 0);
+            }
         }
     }
 
@@ -1726,12 +1751,17 @@ bool translate_subsd(IR1_INST *pir1)
             clear_xmm_high64(dest);
         }
     } else{
-        IR2_OPND temp = ra_alloc_ftemp();
-        la_fsub_d(temp, dest, src);
-        if (option_enable_lasx) {
-            la_xvinsve0_d(dest, temp, 0);
+        if (option_128cal & 0x4) {
+            la_x86fsub_sd(dest, src);
+            return true;
         } else {
-            la_vextrins_d(dest, temp, 0);
+            IR2_OPND temp = ra_alloc_ftemp();
+            la_fsub_d(temp, dest, src);
+            if (option_enable_lasx) {
+                la_xvinsve0_d(dest, temp, 0);
+            } else {
+                la_vextrins_d(dest, temp, 0);
+            }
         }
     }
     return true;

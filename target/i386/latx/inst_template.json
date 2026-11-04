@@ -20647,6 +20647,48 @@
             "imm_ui8"
         ]
     },
+    "x86fadd.ss": {
+        "opcode": "0x72ac4000",
+        "opnd": [
+            "fpr_vd",
+            "fpr_vj"
+        ]
+    },
+    "x86fadd.sd": {
+        "opcode": "0x72ac4400",
+        "opnd": [
+            "fpr_vd",
+            "fpr_vj"
+        ]
+    },
+    "x86fsub.ss": {
+        "opcode": "0x72ac4800",
+        "opnd": [
+            "fpr_vd",
+            "fpr_vj"
+        ]
+    },
+    "x86fsub.sd": {
+        "opcode": "0x72ac4c00",
+        "opnd": [
+            "fpr_vd",
+            "fpr_vj"
+        ]
+    },
+    "x86fmul.ss": {
+        "opcode": "0x72ac5000",
+        "opnd": [
+            "fpr_vd",
+            "fpr_vj"
+        ]
+    },
+    "x86fmul.sd": {
+        "opcode": "0x72ac5400",
+        "opnd": [
+            "fpr_vd",
+            "fpr_vj"
+        ]
+    },
     "ill": {
         "opcode": "-1",
         "opnd": [
