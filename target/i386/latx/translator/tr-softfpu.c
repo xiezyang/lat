@@ -257,6 +257,18 @@ static void la_fpu_pop(void)
     IR2_OPND top_opnd = ra_alloc_itemp();
     IR2_OPND temp = ra_alloc_itemp();
 
+    IR2_OPND done = ra_alloc_label();
+    if (option_float80) {
+        IR2_OPND masked = ra_alloc_label();
+        la_ld_hu(temp, env_ir2_opnd, lsenv_offset_of_control_word(lsenv));
+        la_andi(temp, temp, 1 << X87_SR_OFF_DE);
+        la_bne(temp, zero_ir2_opnd, masked);
+        la_ld_hu(temp, env_ir2_opnd, lsenv_offset_of_status_word(lsenv));
+        la_andi(temp, temp, 1 << X87_SR_OFF_DE);
+        la_bne(temp, zero_ir2_opnd, done);
+        la_label(masked);
+    }
+
     if (option_stack) {
         la_x86mftop(top_opnd);
         la_x86inctop();
@@ -272,6 +284,7 @@ static void la_fpu_pop(void)
     li_d(temp, 1);
     la_st_b(temp, top_opnd, lsenv_offset_of_tag_word(lsenv));
 
+    la_label(done);
     ra_free_temp(temp);
     ra_free_temp(top_opnd);
 }
@@ -455,6 +468,17 @@ static void la_update_sw_by_fcsr(IR2_OPND sw_opnd)
     la_beq(temp1, zero_ir2_opnd, label_D);
     la_ori(sw_opnd, sw_opnd, 0x1 << X87_SR_OFF_DE);
     la_label(label_D);
+
+    /* An unmasked D is pending until a waiting x87 instruction reports it. */
+    IR2_OPND masked_d = ra_alloc_label();
+    la_andi(temp1, sw_opnd, 1 << X87_SR_OFF_DE);
+    la_beq(temp1, zero_ir2_opnd, masked_d);
+    la_ld_hu(temp1, env_ir2_opnd, lsenv_offset_of_control_word(lsenv));
+    la_andi(temp1, temp1, 1 << X87_SR_OFF_DE);
+    la_bne(temp1, zero_ir2_opnd, masked_d);
+    li_d(temp1, (1 << 7) | (1 << 15));
+    la_or(sw_opnd, sw_opnd, temp1);
+    la_label(masked_d);
 
     la_st_h(sw_opnd, env_ir2_opnd, status_offset);
     ra_free_temp(fcsr);
@@ -677,9 +701,115 @@ static bool translate_f2xm1_softfpu(IR1_INST *pir1)
     return true;
 }
 
+static void gen_float80_unmasked(IR1_INST *pir1, IR2_OPND dest,
+                                 IR2_OPND a, IR2_OPND b, int op)
+{
+    int offset = offsetof(CPUX86State, native_fp80);
+    IR2_OPND temp = ra_alloc_ftemp();
+    IR2_OPND memory_d = ra_alloc_itemp();
+    bool memory_operand = false;
+
+    lsassert(offset + 16 <= 0x7ff);
+    /* Ordinary VST/VLD do not apply the hardware x87 TOP mapping. */
+    la_x86fmov_ld(temp, a);
+    la_vst(temp, env_ir2_opnd, offset);
+    la_x86fmov_ld(temp, b);
+    la_vst(temp, env_ir2_opnd, offset + 16);
+    for (int i = 0; i < ir1_opnd_num(pir1); ++i) {
+        memory_operand |= ir1_opnd_is_mem(ir1_get_opnd(pir1, i));
+    }
+    if (memory_operand) {
+        la_movfcsr2gr(memory_d, fcsr_ir2_opnd);
+        la_bstrpick_w(memory_d, memory_d, FCSR_OFF_CAUSE_D, FCSR_OFF_CAUSE_D);
+    } else {
+        la_ori(memory_d, zero_ir2_opnd, 0);
+    }
+    la_st_b(memory_d, env_ir2_opnd, offsetof(CPUX86State, ft0_denormal));
+    ra_free_temp(memory_d);
+    gen_softfpu_helper_prologue(pir1);
+    gen_softfpu_helper2i((ADDR)helper_latx_float80, op);
+    gen_softfpu_helper_epilogue(pir1);
+    la_vld(temp, env_ir2_opnd, offset);
+    la_x86fmov_ld(dest, temp);
+    ra_free_temp(temp);
+}
+
+/* A real32/real64 memory load is one part of the guest instruction.  Its
+ * provisional D must not survive a higher-priority NaN/invalid/divide-zero
+ * result; preserve D that was already sticky before this instruction.
+ */
+static void reconcile_float80_denormal(IR2_OPND result, bool compare)
+{
+    IR2_OPND value = ra_alloc_itemp();
+    IR2_OPND fcsr = ra_alloc_itemp();
+    IR2_OPND restore = ra_alloc_label();
+    IR2_OPND done = ra_alloc_label();
+    IR2_OPND temp = ra_alloc_ftemp();
+
+    la_movfcsr2gr(fcsr, fcsr_ir2_opnd);
+    la_bstrpick_w(value, fcsr, FCSR_OFF_CAUSE_Z, FCSR_OFF_CAUSE_Z);
+    la_bne(value, zero_ir2_opnd, restore);
+    la_x86fmov_ld(temp, result);
+    if (compare) {
+        la_movfr2gr_d(value, temp);
+        la_addi_d(value, value, -7);
+        la_bne(value, zero_ir2_opnd, done);
+    } else {
+        la_vpickve2gr_du(value, temp, 1);
+        la_bstrpick_d(value, value, 14, 0);
+        li_d(fcsr, 0x7fff);
+        la_bne(value, fcsr, done);
+        la_movfr2gr_d(value, temp);
+        la_slli_d(value, value, 1);
+        la_beq(value, zero_ir2_opnd, done);
+    }
+    la_label(restore);
+    la_movfcsr2gr(fcsr, fcsr_ir2_opnd);
+    la_ld_hu(value, env_ir2_opnd, lsenv_offset_of_status_word(lsenv));
+    la_bstrpick_w(value, value, X87_SR_OFF_DE, X87_SR_OFF_DE);
+    la_bstrins_w(fcsr, value, FCSR_OFF_FLAGS_D, FCSR_OFF_FLAGS_D);
+    la_movgr2fcsr(fcsr_ir2_opnd, fcsr);
+    la_label(done);
+    ra_free_temp(temp);
+    ra_free_temp(fcsr);
+    ra_free_temp(value);
+}
+
 static void la_calcute_float80(IR1_INST *pir1, IR2_OPND float80_dest,
                                IR2_OPND src_opnd)
 {
+    IR2_OPND native_path = ra_alloc_label();
+    IR2_OPND done = ra_alloc_label();
+    int op = -1;
+
+    switch (ir1_opcode(pir1)) {
+    case dt_X86_INS_FADD: case dt_X86_INS_FADDP: case dt_X86_INS_FIADD:
+        op = LATX_FP80_ADD; break;
+    case dt_X86_INS_FSUB: case dt_X86_INS_FSUBP: case dt_X86_INS_FISUB:
+        op = LATX_FP80_SUB; break;
+    case dt_X86_INS_FSUBR: case dt_X86_INS_FSUBRP: case dt_X86_INS_FISUBR:
+        op = LATX_FP80_RSUB; break;
+    case dt_X86_INS_FMUL: case dt_X86_INS_FMULP: case dt_X86_INS_FIMUL:
+        op = LATX_FP80_MUL; break;
+    case dt_X86_INS_FDIV: case dt_X86_INS_FDIVP: case dt_X86_INS_FIDIV:
+        op = LATX_FP80_DIV; break;
+    case dt_X86_INS_FDIVR: case dt_X86_INS_FDIVRP: case dt_X86_INS_FIDIVR:
+        op = LATX_FP80_RDIV; break;
+    case dt_X86_INS_FSQRT:
+        op = LATX_FP80_SQRT; break;
+    default: break;
+    }
+    if (op >= 0) {
+        IR2_OPND cw = ra_alloc_itemp();
+        la_ld_hu(cw, env_ir2_opnd, lsenv_offset_of_control_word(lsenv));
+        la_andi(cw, cw, 1 << X87_SR_OFF_DE);
+        la_bne(cw, zero_ir2_opnd, native_path);
+        ra_free_temp(cw);
+        /* D is a precomputation exception: preserve operands and defer #MF. */
+        gen_float80_unmasked(pir1, float80_dest, float80_dest, src_opnd, op);
+        la_b(done);
+    }
+    la_label(native_path);
     switch (ir1_opcode(pir1)) {
     case dt_X86_INS_FADD:
     case dt_X86_INS_FADDP:
@@ -724,9 +854,11 @@ static void la_calcute_float80(IR1_INST *pir1, IR2_OPND float80_dest,
         lsassert(0);
         break;
     }
+    reconcile_float80_denormal(float80_dest, false);
     IR2_OPND sw_opnd = ra_alloc_itemp();
     la_update_sw_by_fcsr(sw_opnd);
     ra_free_temp(sw_opnd);
+    la_label(done);
 }
 
 static void gen_float80_ST0_MEM(IR1_INST *pir1, IR2_OPND mem_opnd,
@@ -1473,24 +1605,46 @@ static void la_fcom_ST0_FT0(IR1_INST *pir1, bool is_eflags, bool is_quiet)
     } else {
         IR2_OPND src_opnd = ra_alloc_ftemp();
         ft0 = ra_alloc_ftemp();
-        load_freg_from_ir1_2(src_opnd, opnd0, IS_CONVERT);
-        la_x86fcvt_ld_d(ft0, src_opnd);
+        IR2_OPND mem = convert_mem_no_offset(opnd0);
+        if (ir1_opnd_size(opnd0) == 32) {
+            la_fld_s(src_opnd, mem, 0);
+            la_x86fcvt_ld_s(ft0, src_opnd);
+        } else {
+            la_fld_d(src_opnd, mem, 0);
+            la_x86fcvt_ld_d(ft0, src_opnd);
+        }
         ra_free_temp(src_opnd);
     }
 
     IR2_OPND dest = ra_alloc_ftemp();
 
     IR2_OPND fpus_eflags = ra_alloc_itemp();
-    if (is_eflags) {
-        la_x86mfflag(fpus_eflags, 0x3f);
-    } else {
-        la_ld_h(fpus_eflags, env_ir2_opnd, lsenv_offset_of_status_word(lsenv));
-    }
-
+    IR2_OPND native_path = ra_alloc_label();
+    IR2_OPND compared = ra_alloc_label();
+    IR2_OPND done = ra_alloc_label();
+    IR2_OPND cw = ra_alloc_itemp();
+    la_ld_hu(cw, env_ir2_opnd, lsenv_offset_of_control_word(lsenv));
+    la_andi(cw, cw, 1 << X87_SR_OFF_DE);
+    la_bne(cw, zero_ir2_opnd, native_path);
+    gen_float80_unmasked(pir1, dest, st0, ft0,
+                        is_quiet ? LATX_FP80_UCOM : LATX_FP80_COM);
+    la_ld_hu(cw, env_ir2_opnd, lsenv_offset_of_status_word(lsenv));
+    la_andi(cw, cw, 1 << X87_SR_OFF_DE);
+    la_bne(cw, zero_ir2_opnd, done);
+    la_b(compared);
+    la_label(native_path);
     if (is_quiet) {
         la_x86fucom_ld(dest, st0, ft0);
     } else {
         la_x86fcom_ld(dest, st0, ft0);
+    }
+
+    la_label(compared);
+    reconcile_float80_denormal(dest, true);
+    if (is_eflags) {
+        la_x86mfflag(fpus_eflags, 0x3f);
+    } else {
+        la_ld_h(fpus_eflags, env_ir2_opnd, lsenv_offset_of_status_word(lsenv));
     }
 
     IR2_OPND temp0 = ra_alloc_itemp();
@@ -1526,13 +1680,16 @@ static void la_fcom_ST0_FT0(IR1_INST *pir1, bool is_eflags, bool is_quiet)
                                 lsenv_offset_of_status_word(lsenv));
     }
 
-    IR2_OPND sw_opnd = ra_alloc_itemp();
-    la_update_sw_by_fcsr(sw_opnd);
-    ra_free_temp(sw_opnd);
+    /* Condition-code temporaries are dead before merging exception status. */
+    ra_free_temp(cw);
     ra_free_temp(temp2);
     ra_free_temp(temp1);
     ra_free_temp(temp0);
     ra_free_temp(fpus_eflags);
+    IR2_OPND sw_opnd = ra_alloc_itemp();
+    la_update_sw_by_fcsr(sw_opnd);
+    ra_free_temp(sw_opnd);
+    la_label(done);
     ra_free_temp(dest);
     if (!option_stack) {
         ra_free_temp(st0);
@@ -2595,6 +2752,34 @@ static bool translate_fld1_softfpu(IR1_INST *pir1)
     return true;
 }
 
+static void record_load_denormal(IR2_OPND source, int bits)
+{
+    IR2_OPND raw = ra_alloc_itemp();
+    IR2_OPND temp = ra_alloc_itemp();
+    IR2_OPND sw = ra_alloc_itemp();
+    IR2_OPND done = ra_alloc_label();
+    IR2_OPND masked = ra_alloc_label();
+
+    la_movfr2gr_d(raw, source);
+    la_bstrpick_d(temp, raw, bits == 32 ? 30 : 62, bits == 32 ? 23 : 52);
+    la_bne(temp, zero_ir2_opnd, done);
+    la_bstrpick_d(temp, raw, bits == 32 ? 22 : 51, 0);
+    la_beq(temp, zero_ir2_opnd, done);
+    la_ld_hu(sw, env_ir2_opnd, lsenv_offset_of_status_word(lsenv));
+    la_ori(sw, sw, 1 << X87_SR_OFF_DE);
+    la_ld_hu(temp, env_ir2_opnd, lsenv_offset_of_control_word(lsenv));
+    la_andi(temp, temp, 1 << X87_SR_OFF_DE);
+    la_bne(temp, zero_ir2_opnd, masked);
+    li_d(temp, (1 << 7) | (1 << 15));
+    la_or(sw, sw, temp);
+    la_label(masked);
+    la_st_h(sw, env_ir2_opnd, lsenv_offset_of_status_word(lsenv));
+    la_label(done);
+    ra_free_temp(sw);
+    ra_free_temp(temp);
+    ra_free_temp(raw);
+}
+
 static bool translate_fld_softfpu(IR1_INST *pir1)
 {
     if (option_softfpu == 2 && (!option_float80 || (option_float80 & 0xcc00))) {
@@ -2643,6 +2828,9 @@ static bool translate_fld_softfpu(IR1_INST *pir1)
 
             if (opnd_size == 32) {
                 la_fld_s(src_opnd, mem_opnd, 0);
+                if (!option_float80) {
+                    record_load_denormal(src_opnd, 32);
+                }
 
                 if (option_float80 & 0x400) {
                     if (option_stack) {
@@ -2657,6 +2845,9 @@ static bool translate_fld_softfpu(IR1_INST *pir1)
                 }
             } else if (opnd_size == 64) {
                 la_fld_d(src_opnd, mem_opnd, 0);
+                if (!option_float80) {
+                    record_load_denormal(src_opnd, 64);
+                }
                 if (option_float80 & 0x800) {
                     if (option_stack) {
                         la_fpu_push();
@@ -2686,6 +2877,13 @@ static bool translate_fld_softfpu(IR1_INST *pir1)
                 }
                 ra_free_temp(high_itemp);
             }
+        }
+
+        if ((opnd_size == 32 && (option_float80 & 0x400)) ||
+            (opnd_size == 64 && (option_float80 & 0x800))) {
+            IR2_OPND sw_opnd = ra_alloc_itemp();
+            la_update_sw_by_fcsr(sw_opnd);
+            ra_free_temp(sw_opnd);
         }
 
         if (!option_stack) {
@@ -2771,9 +2969,8 @@ static bool translate_fldenv_softfpu(IR1_INST *pir1)
         la_st_h(cw_opnd, env_ir2_opnd, lsenv_offset_of_control_word(lsenv));
         la_update_fp_status(cw_opnd);
 
-        IR2_OPND tag_save = ra_alloc_itemp();
+        ra_free_temp(mem_opnd);
         IR2_OPND itemp = ra_alloc_itemp();
-        IR2_OPND itemp2 = ra_alloc_itemp();
         /* restore top */
         la_bstrpick_d(itemp, sw_opnd, 13, 11);
         if (option_stack) {
@@ -2811,10 +3008,14 @@ static bool translate_fldenv_softfpu(IR1_INST *pir1)
 
         la_label(label_exit);
         la_st_h(sw_opnd, env_ir2_opnd, lsenv_offset_of_status_word(lsenv));
+        ra_free_temp(cw_opnd);
         if (option_float80) {
             update_fcsr_by_sw(sw_opnd);
         }
+        ra_free_temp(sw_opnd);
 
+        IR2_OPND tag_save = ra_alloc_itemp();
+        IR2_OPND itemp2 = ra_alloc_itemp();
         li_wu(tag_save, 0);
         li_wu(itemp2, 0x3);
 
@@ -2830,13 +3031,10 @@ static bool translate_fldenv_softfpu(IR1_INST *pir1)
         la_st_d(tag_save, env_ir2_opnd, lsenv_offset_of_tag_word(lsenv));
 
 
-        ra_free_temp(cw_opnd);
-        ra_free_temp(sw_opnd);
         ra_free_temp(tag_opnd);
         ra_free_temp(tag_save);
         ra_free_temp(itemp);
         ra_free_temp(itemp2);
-        ra_free_temp(mem_opnd);
 
     } else {
         gen_softfpu_helper3i((ADDR)helper_fldenv, mem_opnd, data32);

@@ -1213,6 +1213,12 @@ typedef union {
 
 #ifdef CONFIG_LATX
 enum {
+    LATX_FP80_ADD, LATX_FP80_SUB, LATX_FP80_RSUB, LATX_FP80_MUL,
+    LATX_FP80_DIV, LATX_FP80_RDIV, LATX_FP80_SQRT,
+    LATX_FP80_COM, LATX_FP80_UCOM,
+};
+
+enum {
     LATX_FPU_MODE_MMX,
     LATX_FPU_MODE_X87,
     /* Reload the MMX view on reentry; the restored env stays authoritative. */
@@ -1477,6 +1483,10 @@ typedef struct CPUX86State {
     uint16_t fpuc;
     uint8_t fptags[8];   /* 0 = valid, 1 = empty */
     FPReg fpregs[8];
+#ifdef CONFIG_LATX
+    /* Per-CPU helper operands; separate from architectural x87/MMX state. */
+    FPReg native_fp80[2];
+#endif
     /* KVM-only so far */
     uint16_t fpop;
     uint64_t fpip;
@@ -1487,6 +1497,9 @@ typedef struct CPUX86State {
     /* emulator internal variables */
     float_status fp_status;
     floatx80 ft0;
+#ifdef CONFIG_LATX
+    bool ft0_denormal;
+#endif
 
     float_status mmx_status; /* for 3DNow! float ops */
     float_status sse_status;

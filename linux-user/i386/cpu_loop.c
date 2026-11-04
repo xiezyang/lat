@@ -325,6 +325,7 @@ void cpu_loop(CPUX86State *env)
         {
         /* EXCP10_COPR is raised by soft float */
 #define FPUS_IE (1 << 0)
+#define FPUS_DE (1 << 1)
 #define FPUS_ZE (1 << 2)
 #define FPUS_OE (1 << 3)
 #define FPUS_UE (1 << 4)
@@ -337,6 +338,8 @@ void cpu_loop(CPUX86State *env)
             } else if (env->fpus & FPUS_OE) {
                 si_code = TARGET_FPE_FLTOVF;
             } else if (env->fpus & FPUS_UE) {
+                si_code = TARGET_FPE_FLTUND;
+            } else if (env->fpus & FPUS_DE) {
                 si_code = TARGET_FPE_FLTUND;
             } else if (env->fpus & FPUS_PE) {
                 si_code = TARGET_FPE_FLTRES;

@@ -117,6 +117,9 @@ static inline void fpush(CPUX86State *env)
 
 static inline void fpop(CPUX86State *env)
 {
+    if ((env->fpus & FPUS_DE) && !(env->fpuc & FPUS_DE)) {
+        return;
+    }
     env->fptags[env->fpstt] = 1; /* invalidate stack entry */
     env->fpstt = (env->fpstt + 1) & 7;
 }
@@ -194,6 +197,44 @@ static void fpu_set_exception(CPUX86State *env, int mask)
     }
 }
 
+/* x87 D concerns input operands, including pseudo-denormals.  Conversions
+ * to integer/single/double and register moves do not report this exception.
+ * Keep the check here rather than in generic SoftFloat, whose internal
+ * intermediate values and other target architectures have different rules.
+ */
+static bool fpu_check_denormal(CPUX86State *env, floatx80 a, floatx80 b,
+                               uint8_t old_flags)
+{
+    if (!floatx80_invalid_encoding(a) && !floatx80_invalid_encoding(b) &&
+        !floatx80_is_any_nan(a) && !floatx80_is_any_nan(b) &&
+        ((floatx80_is_zero_or_denormal(a) && !floatx80_is_zero(a)) ||
+         (floatx80_is_zero_or_denormal(b) && !floatx80_is_zero(b)))) {
+        float_raise(float_flag_input_denormal, &env->fp_status);
+        if (!(env->fpuc & FPUS_DE)) {
+            fpu_set_exception(env, FPUS_DE);
+            float_raise(old_flags, &env->fp_status);
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool fpu_check_denormal_ft0(CPUX86State *env, floatx80 a, floatx80 b,
+                                   uint8_t old_flags)
+{
+#ifdef CONFIG_LATX
+    bool memory_denormal = env->ft0_denormal;
+    env->ft0_denormal = false;
+    if (memory_denormal && !floatx80_invalid_encoding(a) &&
+        !floatx80_invalid_encoding(b) && !floatx80_is_any_nan(a) &&
+        !floatx80_is_any_nan(b)) {
+        return fpu_check_denormal(env, make_floatx80(0, 1), floatx80_zero,
+                                  old_flags);
+    }
+#endif
+    return fpu_check_denormal(env, a, b, old_flags);
+}
+
 static inline uint8_t save_exception_flags(CPUX86State *env)
 {
     uint8_t old_flags = get_float_exception_flags(&env->fp_status);
@@ -204,6 +245,12 @@ static inline uint8_t save_exception_flags(CPUX86State *env)
 static void merge_exception_flags(CPUX86State *env, uint8_t old_flags)
 {
     uint8_t new_flags = get_float_exception_flags(&env->fp_status);
+
+    /* Invalid and divide-by-zero take priority over a new D exception. */
+    if (new_flags & (float_flag_invalid | float_flag_divbyzero)) {
+        new_flags &= ~float_flag_input_denormal;
+        set_float_exception_flags(new_flags, &env->fp_status);
+    }
     float_raise(old_flags, &env->fp_status);
     fpu_set_exception(env,
                       ((new_flags & float_flag_invalid ? FPUS_IE : 0) |
@@ -214,9 +261,15 @@ static void merge_exception_flags(CPUX86State *env, uint8_t old_flags)
                        (new_flags & float_flag_input_denormal ? FPUS_DE : 0)));
 }
 
-static inline floatx80 helper_fdiv(CPUX86State *env, floatx80 a, floatx80 b)
+static inline floatx80 helper_fdiv(CPUX86State *env, floatx80 a, floatx80 b,
+                                    bool memory_operand)
 {
     uint8_t old_flags = save_exception_flags(env);
+    if (!floatx80_is_zero(b) &&
+        (memory_operand ? fpu_check_denormal_ft0(env, a, b, old_flags) :
+                          fpu_check_denormal(env, a, b, old_flags))) {
+        return a;
+    }
     floatx80 ret = floatx80_div(a, b, &env->fp_status);
     merge_exception_flags(env, old_flags);
     return ret;
@@ -234,6 +287,47 @@ static void fpu_raise_exception(CPUX86State *env, uintptr_t retaddr)
 #endif
 }
 
+#ifdef CONFIG_LATX
+void helper_latx_float80(CPUX86State *env, uint32_t op)
+{
+    floatx80 a = env->native_fp80[0].d;
+    floatx80 b = env->native_fp80[1].d;
+    floatx80 result;
+    uint8_t old_flags;
+    bool check_d;
+
+    helper_fwait(env);
+    old_flags = save_exception_flags(env);
+    check_d = (op != LATX_FP80_DIV || !floatx80_is_zero(b)) &&
+              (op != LATX_FP80_RDIV || !floatx80_is_zero(a)) &&
+              (op != LATX_FP80_SQRT || !floatx80_is_neg(a));
+    if (check_d && fpu_check_denormal_ft0(env, a, b, old_flags)) {
+        return;
+    }
+    switch (op) {
+    case LATX_FP80_ADD: result = floatx80_add(a, b, &env->fp_status); break;
+    case LATX_FP80_SUB: result = floatx80_sub(a, b, &env->fp_status); break;
+    case LATX_FP80_RSUB: result = floatx80_sub(b, a, &env->fp_status); break;
+    case LATX_FP80_MUL: result = floatx80_mul(a, b, &env->fp_status); break;
+    case LATX_FP80_DIV: result = floatx80_div(a, b, &env->fp_status); break;
+    case LATX_FP80_RDIV: result = floatx80_div(b, a, &env->fp_status); break;
+    case LATX_FP80_SQRT: result = floatx80_sqrt(a, &env->fp_status); break;
+    case LATX_FP80_COM:
+    case LATX_FP80_UCOM: {
+        static const unsigned int cc[] = {1, 4, 0, 7};
+        FloatRelation relation = op == LATX_FP80_COM ?
+            floatx80_compare(a, b, &env->fp_status) :
+            floatx80_compare_quiet(a, b, &env->fp_status);
+        result = make_floatx80(0, cc[relation + 1]);
+        break;
+    }
+    default: g_assert_not_reached();
+    }
+    env->native_fp80[0].d = result;
+    merge_exception_flags(env, old_flags);
+}
+#endif
+
 void helper_flds_FT0(CPUX86State *env, uint32_t val)
 {
     uint8_t old_flags = save_exception_flags(env);
@@ -243,6 +337,9 @@ void helper_flds_FT0(CPUX86State *env, uint32_t val)
     } u;
 
     u.i = val;
+#ifdef CONFIG_LATX
+    env->ft0_denormal = !(val & 0x7f800000U) && (val & 0x007fffffU);
+#endif
     FT0 = float32_to_floatx80(u.f, &env->fp_status);
     merge_exception_flags(env, old_flags);
 }
@@ -256,12 +353,18 @@ void helper_fldl_FT0(CPUX86State *env, uint64_t val)
     } u;
 
     u.i = val;
+#ifdef CONFIG_LATX
+    env->ft0_denormal = !(val & UINT64_C(0x7ff0000000000000)) && (val & UINT64_C(0x000fffffffffffff));
+#endif
     FT0 = float64_to_floatx80(u.f, &env->fp_status);
     merge_exception_flags(env, old_flags);
 }
 
 void helper_fildl_FT0(CPUX86State *env, int32_t val)
 {
+#ifdef CONFIG_LATX
+    env->ft0_denormal = false;
+#endif
     FT0 = int32_to_floatx80(val, &env->fp_status);
 }
 
@@ -276,6 +379,9 @@ void helper_flds_ST0(CPUX86State *env, uint32_t val)
 
     new_fpstt = (env->fpstt - 1) & 7;
     u.i = val;
+    if (!(val & 0x7f800000U) && (val & 0x007fffffU)) {
+        float_raise(float_flag_input_denormal, &env->fp_status);
+    }
     env->fpregs[new_fpstt].d = float32_to_floatx80(u.f, &env->fp_status);
     env->fpstt = new_fpstt;
     env->fptags[new_fpstt] = 0; /* validate stack entry */
@@ -293,6 +399,9 @@ void helper_fldl_ST0(CPUX86State *env, uint64_t val)
 
     new_fpstt = (env->fpstt - 1) & 7;
     u.i = val;
+    if (!(val & UINT64_C(0x7ff0000000000000)) && (val & UINT64_C(0x000fffffffffffff))) {
+        float_raise(float_flag_input_denormal, &env->fp_status);
+    }
     env->fpregs[new_fpstt].d = float64_to_floatx80(u.f, &env->fp_status);
     env->fpstt = new_fpstt;
     env->fptags[new_fpstt] = 0; /* validate stack entry */
@@ -489,6 +598,9 @@ void helper_fmov_ST0_FT0(CPUX86State *env)
 
 void helper_fmov_FT0_STN(CPUX86State *env, int st_index)
 {
+#ifdef CONFIG_LATX
+    env->ft0_denormal = false;
+#endif
     FT0 = ST(st_index);
 }
 
@@ -518,6 +630,9 @@ static const int fcom_ccval[4] = {0x0100, 0x4000, 0x0000, 0x4500};
 void helper_fcom_ST0_FT0(CPUX86State *env)
 {
     uint8_t old_flags = save_exception_flags(env);
+    if (fpu_check_denormal_ft0(env, ST0, FT0, old_flags)) {
+        return;
+    }
     FloatRelation ret;
 
     ret = floatx80_compare(ST0, FT0, &env->fp_status);
@@ -528,6 +643,9 @@ void helper_fcom_ST0_FT0(CPUX86State *env)
 void helper_fucom_ST0_FT0(CPUX86State *env)
 {
     uint8_t old_flags = save_exception_flags(env);
+    if (fpu_check_denormal_ft0(env, ST0, FT0, old_flags)) {
+        return;
+    }
     FloatRelation ret;
 
     ret = floatx80_compare_quiet(ST0, FT0, &env->fp_status);
@@ -540,6 +658,9 @@ static const int fcomi_ccval[4] = {CC_C, CC_Z, 0, CC_Z | CC_P | CC_C};
 void helper_fcomi_ST0_FT0(CPUX86State *env)
 {
     uint8_t old_flags = save_exception_flags(env);
+    if (fpu_check_denormal_ft0(env, ST0, FT0, old_flags)) {
+        return;
+    }
     int eflags;
     FloatRelation ret;
 
@@ -561,6 +682,9 @@ void helper_fcomi_ST0_FT0(CPUX86State *env)
 void helper_fucomi_ST0_FT0(CPUX86State *env)
 {
     uint8_t old_flags = save_exception_flags(env);
+    if (fpu_check_denormal_ft0(env, ST0, FT0, old_flags)) {
+        return;
+    }
     int eflags;
     FloatRelation ret;
 
@@ -582,6 +706,9 @@ void helper_fucomi_ST0_FT0(CPUX86State *env)
 void helper_fadd_ST0_FT0(CPUX86State *env)
 {
     uint8_t old_flags = save_exception_flags(env);
+    if (fpu_check_denormal_ft0(env, ST0, FT0, old_flags)) {
+        return;
+    }
     ST0 = floatx80_add(ST0, FT0, &env->fp_status);
     merge_exception_flags(env, old_flags);
 }
@@ -589,6 +716,9 @@ void helper_fadd_ST0_FT0(CPUX86State *env)
 void helper_fmul_ST0_FT0(CPUX86State *env)
 {
     uint8_t old_flags = save_exception_flags(env);
+    if (fpu_check_denormal_ft0(env, ST0, FT0, old_flags)) {
+        return;
+    }
     ST0 = floatx80_mul(ST0, FT0, &env->fp_status);
     merge_exception_flags(env, old_flags);
 }
@@ -596,6 +726,9 @@ void helper_fmul_ST0_FT0(CPUX86State *env)
 void helper_fsub_ST0_FT0(CPUX86State *env)
 {
     uint8_t old_flags = save_exception_flags(env);
+    if (fpu_check_denormal_ft0(env, ST0, FT0, old_flags)) {
+        return;
+    }
     ST0 = floatx80_sub(ST0, FT0, &env->fp_status);
     merge_exception_flags(env, old_flags);
 }
@@ -603,18 +736,21 @@ void helper_fsub_ST0_FT0(CPUX86State *env)
 void helper_fsubr_ST0_FT0(CPUX86State *env)
 {
     uint8_t old_flags = save_exception_flags(env);
+    if (fpu_check_denormal_ft0(env, ST0, FT0, old_flags)) {
+        return;
+    }
     ST0 = floatx80_sub(FT0, ST0, &env->fp_status);
     merge_exception_flags(env, old_flags);
 }
 
 void helper_fdiv_ST0_FT0(CPUX86State *env)
 {
-    ST0 = helper_fdiv(env, ST0, FT0);
+    ST0 = helper_fdiv(env, ST0, FT0, true);
 }
 
 void helper_fdivr_ST0_FT0(CPUX86State *env)
 {
-    ST0 = helper_fdiv(env, FT0, ST0);
+    ST0 = helper_fdiv(env, FT0, ST0, true);
 }
 
 /* fp operations between STN and ST0 */
@@ -622,6 +758,9 @@ void helper_fdivr_ST0_FT0(CPUX86State *env)
 void helper_fadd_STN_ST0(CPUX86State *env, int st_index)
 {
     uint8_t old_flags = save_exception_flags(env);
+    if (fpu_check_denormal(env, ST(st_index), ST0, old_flags)) {
+        return;
+    }
     ST(st_index) = floatx80_add(ST(st_index), ST0, &env->fp_status);
     merge_exception_flags(env, old_flags);
 }
@@ -629,6 +768,9 @@ void helper_fadd_STN_ST0(CPUX86State *env, int st_index)
 void helper_fmul_STN_ST0(CPUX86State *env, int st_index)
 {
     uint8_t old_flags = save_exception_flags(env);
+    if (fpu_check_denormal(env, ST(st_index), ST0, old_flags)) {
+        return;
+    }
     ST(st_index) = floatx80_mul(ST(st_index), ST0, &env->fp_status);
     merge_exception_flags(env, old_flags);
 }
@@ -636,6 +778,9 @@ void helper_fmul_STN_ST0(CPUX86State *env, int st_index)
 void helper_fsub_STN_ST0(CPUX86State *env, int st_index)
 {
     uint8_t old_flags = save_exception_flags(env);
+    if (fpu_check_denormal(env, ST(st_index), ST0, old_flags)) {
+        return;
+    }
     ST(st_index) = floatx80_sub(ST(st_index), ST0, &env->fp_status);
     merge_exception_flags(env, old_flags);
 }
@@ -643,6 +788,9 @@ void helper_fsub_STN_ST0(CPUX86State *env, int st_index)
 void helper_fsubr_STN_ST0(CPUX86State *env, int st_index)
 {
     uint8_t old_flags = save_exception_flags(env);
+    if (fpu_check_denormal(env, ST(st_index), ST0, old_flags)) {
+        return;
+    }
     ST(st_index) = floatx80_sub(ST0, ST(st_index), &env->fp_status);
     merge_exception_flags(env, old_flags);
 }
@@ -652,7 +800,7 @@ void helper_fdiv_STN_ST0(CPUX86State *env, int st_index)
     floatx80 *p;
 
     p = &ST(st_index);
-    *p = helper_fdiv(env, *p, ST0);
+    *p = helper_fdiv(env, *p, ST0, false);
 }
 
 void helper_fdivr_STN_ST0(CPUX86State *env, int st_index)
@@ -660,7 +808,7 @@ void helper_fdivr_STN_ST0(CPUX86State *env, int st_index)
     floatx80 *p;
 
     p = &ST(st_index);
-    *p = helper_fdiv(env, ST0, *p);
+    *p = helper_fdiv(env, ST0, *p, false);
 }
 
 /* misc FPU operations */
@@ -750,6 +898,9 @@ void helper_fldz_ST0(CPUX86State *env)
 
 void helper_fldz_FT0(CPUX86State *env)
 {
+#ifdef CONFIG_LATX
+    env->ft0_denormal = false;
+#endif
     FT0 = floatx80_zero;
 }
 
@@ -1165,6 +1316,9 @@ static const struct f2xm1_data f2xm1_table[65] = {
 void helper_f2xm1(CPUX86State *env)
 {
     uint8_t old_flags = save_exception_flags(env);
+    if (fpu_check_denormal(env, ST0, floatx80_zero, old_flags)) {
+        return;
+    }
     uint64_t sig = extractFloatx80Frac(ST0);
     int32_t exp = extractFloatx80Exp(ST0);
     bool sign = extractFloatx80Sign(ST0);
@@ -1326,6 +1480,10 @@ void helper_f2xm1(CPUX86State *env)
 void helper_fptan(CPUX86State *env)
 {
 #ifdef CONFIG_LATX
+    uint8_t old_flags = save_exception_flags(env);
+    if (fpu_check_denormal(env, ST0, floatx80_zero, old_flags)) {
+        return;
+    }
     fenv_t saved_host_env;
     if (latx_softfpu_sse_sync_enabled()) {
         fegetenv(&saved_host_env);
@@ -1345,6 +1503,7 @@ void helper_fptan(CPUX86State *env)
     if (latx_softfpu_sse_sync_enabled()) {
         fesetenv(&saved_host_env);
     }
+    merge_exception_flags(env, old_flags);
 #else
     double fptemp = floatx80_to_double(env, ST0);
 
@@ -1420,6 +1579,9 @@ static const struct fpatan_data fpatan_table[9] = {
 void helper_fpatan(CPUX86State *env)
 {
     uint8_t old_flags = save_exception_flags(env);
+    if (fpu_check_denormal(env, ST0, ST1, old_flags)) {
+        return;
+    }
     uint64_t arg0_sig = extractFloatx80Frac(ST0);
     int32_t arg0_exp = extractFloatx80Exp(ST0);
     bool arg0_sign = extractFloatx80Sign(ST0);
@@ -1857,6 +2019,9 @@ void helper_fpatan(CPUX86State *env)
 void helper_fxtract(CPUX86State *env)
 {
     uint8_t old_flags = save_exception_flags(env);
+    if (fpu_check_denormal(env, ST0, floatx80_zero, old_flags)) {
+        return;
+    }
     CPU_LDoubleU temp;
 
     temp.d = ST0;
@@ -1906,6 +2071,10 @@ void helper_fxtract(CPUX86State *env)
 static void helper_fprem_common(CPUX86State *env, bool mod)
 {
     uint8_t old_flags = save_exception_flags(env);
+    if (!floatx80_is_zero(ST1) && !floatx80_is_infinity(ST0) &&
+        fpu_check_denormal(env, ST0, ST1, old_flags)) {
+        return;
+    }
     uint64_t quotient;
     CPU_LDoubleU temp0, temp1;
     int exp0, exp1, expdiff;
@@ -2101,6 +2270,9 @@ static void helper_fyl2x_common(CPUX86State *env, floatx80 arg, int32_t *exp,
 void helper_fyl2xp1(CPUX86State *env)
 {
     uint8_t old_flags = save_exception_flags(env);
+    if (fpu_check_denormal(env, ST0, ST1, old_flags)) {
+        return;
+    }
     uint64_t arg0_sig = extractFloatx80Frac(ST0);
     int32_t arg0_exp = extractFloatx80Exp(ST0);
     bool arg0_sign = extractFloatx80Sign(ST0);
@@ -2199,6 +2371,10 @@ void helper_fyl2xp1(CPUX86State *env)
 void helper_fyl2x(CPUX86State *env)
 {
     uint8_t old_flags = save_exception_flags(env);
+    if (!floatx80_is_neg(ST0) && !floatx80_is_zero(ST0) &&
+        fpu_check_denormal(env, ST0, ST1, old_flags)) {
+        return;
+    }
     uint64_t arg0_sig = extractFloatx80Frac(ST0);
     int32_t arg0_exp = extractFloatx80Exp(ST0);
     bool arg0_sign = extractFloatx80Sign(ST0);
@@ -2346,6 +2522,10 @@ void helper_fyl2x(CPUX86State *env)
 void helper_fsqrt(CPUX86State *env)
 {
     uint8_t old_flags = save_exception_flags(env);
+    if (!floatx80_is_neg(ST0) &&
+        fpu_check_denormal(env, ST0, floatx80_zero, old_flags)) {
+        return;
+    }
     if (floatx80_is_neg(ST0)) {
         env->fpus &= ~0x4700;  /* (C3,C2,C1,C0) <-- 0000 */
         env->fpus |= 0x400;
@@ -2357,6 +2537,10 @@ void helper_fsqrt(CPUX86State *env)
 void helper_fsincos(CPUX86State *env)
 {
 #ifdef CONFIG_LATX
+    uint8_t old_flags = save_exception_flags(env);
+    if (fpu_check_denormal(env, ST0, floatx80_zero, old_flags)) {
+        return;
+    }
     fenv_t saved_host_env;
     if (latx_softfpu_sse_sync_enabled()) {
         fegetenv(&saved_host_env);
@@ -2375,6 +2559,7 @@ void helper_fsincos(CPUX86State *env)
     if (latx_softfpu_sse_sync_enabled()) {
         fesetenv(&saved_host_env);
     }
+    merge_exception_flags(env, old_flags);
 #else
     double fptemp = floatx80_to_double(env, ST0);
 
@@ -2399,6 +2584,9 @@ void helper_eflagtf(CPUX86State *env)
 void helper_frndint(CPUX86State *env)
 {
     uint8_t old_flags = save_exception_flags(env);
+    if (fpu_check_denormal(env, ST0, floatx80_zero, old_flags)) {
+        return;
+    }
     ST0 = floatx80_round_to_int(ST0, &env->fp_status);
     merge_exception_flags(env, old_flags);
 }
@@ -2406,6 +2594,9 @@ void helper_frndint(CPUX86State *env)
 void helper_fscale(CPUX86State *env)
 {
     uint8_t old_flags = save_exception_flags(env);
+    if (fpu_check_denormal(env, ST0, ST1, old_flags)) {
+        return;
+    }
     if (floatx80_invalid_encoding(ST1) || floatx80_invalid_encoding(ST0)) {
         float_raise(float_flag_invalid, &env->fp_status);
         ST0 = floatx80_default_nan(&env->fp_status);
@@ -2457,6 +2648,10 @@ void helper_fscale(CPUX86State *env)
 void helper_fsin(CPUX86State *env)
 {
 #ifdef CONFIG_LATX
+    uint8_t old_flags = save_exception_flags(env);
+    if (fpu_check_denormal(env, ST0, floatx80_zero, old_flags)) {
+        return;
+    }
     fenv_t saved_host_env;
     if (latx_softfpu_sse_sync_enabled()) {
         fegetenv(&saved_host_env);
@@ -2473,6 +2668,7 @@ void helper_fsin(CPUX86State *env)
     if (latx_softfpu_sse_sync_enabled()) {
         fesetenv(&saved_host_env);
     }
+    merge_exception_flags(env, old_flags);
 #else
     double fptemp = floatx80_to_double(env, ST0);
 
@@ -2489,6 +2685,10 @@ void helper_fsin(CPUX86State *env)
 void helper_fcos(CPUX86State *env)
 {
 #ifdef CONFIG_LATX
+    uint8_t old_flags = save_exception_flags(env);
+    if (fpu_check_denormal(env, ST0, floatx80_zero, old_flags)) {
+        return;
+    }
     fenv_t saved_host_env;
     if (latx_softfpu_sse_sync_enabled()) {
         fegetenv(&saved_host_env);
@@ -2505,6 +2705,7 @@ void helper_fcos(CPUX86State *env)
     if (latx_softfpu_sse_sync_enabled()) {
         fesetenv(&saved_host_env);
     }
+    merge_exception_flags(env, old_flags);
 #else
     double fptemp = floatx80_to_double(env, ST0);
 
