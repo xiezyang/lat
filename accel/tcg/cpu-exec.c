@@ -1194,7 +1194,8 @@ int cpu_exec(CPUState *cpu)
          * possibly active LBT TOP mapping.  Clear both copies after the jump,
          * before physical FPRs are loaded on the next entry.
          */
-        if (!option_softfpu && (env->fcsr & LBT_FCSR_TOP_MODE_MASK)) {
+        if ((!option_softfpu || option_stack) &&
+            (env->fcsr & LBT_FCSR_TOP_MODE_MASK)) {
             env->fcsr &= ~LBT_FCSR_TOP_MODE_MASK;
             /* x86clrtm: use its encoding for older assemblers. */
             __asm__ volatile(".word 0x00008028" : : : "memory");

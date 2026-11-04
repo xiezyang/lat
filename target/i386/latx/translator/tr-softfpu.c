@@ -295,6 +295,10 @@ static IR2_OPND get_stn_opnd_addr(int stn)
 
 static void save_float80_to_stn(IR2_OPND stm_opnd, int stn)
 {
+    if (option_stack) {
+        la_x86fmov_ld(ra_alloc_st(stn), stm_opnd);
+        return;
+    }
     IR2_OPND stn_opnd_addr = get_stn_opnd_addr(stn);
 
     la_vst(stm_opnd, stn_opnd_addr, 0);
@@ -304,6 +308,10 @@ static void save_float80_to_stn(IR2_OPND stm_opnd, int stn)
 
 static void get_float80_from_stn(IR2_OPND stm_opnd, int stn)
 {
+    if (option_stack) {
+        la_x86fmov_ld(stm_opnd, ra_alloc_st(stn));
+        return;
+    }
     IR2_OPND stn_opnd_addr = get_stn_opnd_addr(stn);
 
     la_vld(stm_opnd, stn_opnd_addr, 0);
@@ -317,7 +325,7 @@ static void fmov_STN_STM(int stn, int stm)
         return;
     }
 
-    if (option_stack && option_float80 & 0x8000) {
+    if (option_stack) {
         IR2_OPND stn_opnd = ra_alloc_st(stn);
         IR2_OPND stm_opnd = ra_alloc_st(stm);
 		la_x86fmov_ld(stn_opnd, stm_opnd);
@@ -441,16 +449,12 @@ static void la_update_sw_by_fcsr(IR2_OPND sw_opnd)
     la_beq(temp1, zero_ir2_opnd, label_P);
     la_ori(sw_opnd, sw_opnd, 0x1 << X87_SR_OFF_PE);
     la_label(label_P);
-    /* Inexact-Result (Precision) Exception */
+    /* Denormal operand exception. */
     IR2_OPND label_D = ra_alloc_label();
     la_bstrpick_w(temp1, fcsr, FCSR_OFF_FLAGS_D, FCSR_OFF_FLAGS_D);
     la_beq(temp1, zero_ir2_opnd, label_D);
     la_ori(sw_opnd, sw_opnd, 0x1 << X87_SR_OFF_DE);
     la_label(label_D);
-
-    /* clean exception flags in fcsr */
-    //la_bstrins_w(fcsr, zero_ir2_opnd, FCSR_OFF_FLAGS_D, FCSR_OFF_FLAGS_I);
-    la_movgr2fcsr(fcsr_ir2_opnd, fcsr);
 
     la_st_h(sw_opnd, env_ir2_opnd, status_offset);
     ra_free_temp(fcsr);
@@ -1513,15 +1517,29 @@ static void la_fcom_ST0_FT0(IR1_INST *pir1, bool is_eflags, bool is_quiet)
     la_or(fpus_eflags, fpus_eflags, temp0);
 
     if (is_eflags) {
+        /* FCOMI clears OF/SF/AF as well as replacing ZF/PF/CF. */
+        li_d(temp1, ~(uint64_t)(CC_O | CC_S | CC_A));
+        la_and(fpus_eflags, fpus_eflags, temp1);
         la_x86mtflag(fpus_eflags, 0x3f);
     } else {
         la_st_h(fpus_eflags, env_ir2_opnd,
                                 lsenv_offset_of_status_word(lsenv));
     }
 
-//    IR2_OPND sw_opnd = ra_alloc_itemp();
-//    la_update_sw_by_fcsr(sw_opnd);
-//    ra_free_temp(sw_opnd);
+    IR2_OPND sw_opnd = ra_alloc_itemp();
+    la_update_sw_by_fcsr(sw_opnd);
+    ra_free_temp(sw_opnd);
+    ra_free_temp(temp2);
+    ra_free_temp(temp1);
+    ra_free_temp(temp0);
+    ra_free_temp(fpus_eflags);
+    ra_free_temp(dest);
+    if (!option_stack) {
+        ra_free_temp(st0);
+    }
+    if (!option_stack || stn == -1) {
+        ra_free_temp(ft0);
+    }
 }
 
 static bool translate_fcom_softfpu(IR1_INST *pir1)
@@ -2035,7 +2053,9 @@ static bool translate_fild_softfpu(IR1_INST *pir1)
     int opnd_size = ir1_opnd_size(opnd0);
     IR2_OPND mem_opnd = convert_mem_no_offset(opnd0);
 
-    if (option_softfpu == 2 && (!option_float80 || (option_float80 & 0xc0))) {
+    if (option_softfpu == 2 &&
+        (!option_float80 || (option_float80 & 0xc0)) &&
+        (!option_stack || (option_float80 & (opnd_size == 64 ? 0x80 : 0x40)))) {
         IR2_OPND src_opnd = ra_alloc_itemp();
         IR2_OPND src_ftemp = ra_alloc_ftemp();
 
@@ -2232,15 +2252,11 @@ static bool translate_fist_softfpu(IR1_INST *pir1)
         la_bstrpick_d(itemp2, itemp, 2, 2);
         la_bne(itemp2, zero_ir2_opnd, label_softfpu);
 
-        IR2_OPND st0_opnd;
+        IR2_OPND st0_opnd = ra_alloc_ftemp();
         IR2_OPND fpr_st0_high_opnd = ra_alloc_ftemp();
 
-        if (!option_stack) {
-            st0_opnd = ra_alloc_ftemp();
-            get_float80_from_stn(st0_opnd, 0);
-        } else {
-            st0_opnd = ra_alloc_st(0);
-        }
+        /* Legacy conversions overwrite their input; preserve hardware ST(0). */
+        get_float80_from_stn(st0_opnd, 0);
         IR2_OPND fpr_st0_low_opnd = st0_opnd;
         if (!(option_float80 & 0x10)) {
             la_vextrins_h(fpr_st0_high_opnd, fpr_st0_low_opnd, 0x4);
@@ -2262,6 +2278,9 @@ static bool translate_fist_softfpu(IR1_INST *pir1)
                 la_ftint_w_d(st0_opnd, st0_opnd);
                 la_movfr2gr_s(itemp, st0_opnd);
             }
+            /* A 32-bit conversion does not detect signed 16-bit overflow. */
+            la_ext_w_h(itemp2, itemp);
+            la_bne(itemp, itemp2, label_softfpu);
             la_st_h(itemp, mem_opnd, 0);
 
         } else if (opnd_size == 32) {
@@ -2342,19 +2361,14 @@ static bool translate_fistp_softfpu(IR1_INST *pir1)
         la_bstrpick_d(itemp2, itemp, 2, 2);
         la_bne(itemp2, zero_ir2_opnd, label_softfpu);
 
-        IR2_OPND st0_opnd;
+        IR2_OPND st0_opnd = ra_alloc_ftemp();
         IR2_OPND fpr_st0_high_opnd = ra_alloc_ftemp();
 
-        if (!option_stack) {
-            st0_opnd = ra_alloc_ftemp();
-            get_float80_from_stn(st0_opnd, 0);
-        } else {
-            st0_opnd = ra_alloc_st(0);
-        }
+        get_float80_from_stn(st0_opnd, 0);
 
         IR2_OPND fpr_st0_low_opnd = st0_opnd;
 
-        if (!(option_float80 & 0x30)) {
+        if (!(option_float80 & (opnd_size == 64 ? 0x20 : 0x10))) {
             la_vextrins_h(fpr_st0_high_opnd, fpr_st0_low_opnd, 0x4);
             la_movfr2gr_d(itemp, fpr_st0_high_opnd);
             la_bstrpick_d(itemp, itemp, 14, 0);
@@ -2364,9 +2378,6 @@ static bool translate_fistp_softfpu(IR1_INST *pir1)
             if (option_float80 & 0x10) {
                 la_x86ftint_w_ld(fpr_st0_high_opnd, st0_opnd);
                 la_movfr2gr_s(itemp, fpr_st0_high_opnd);
-    //IR2_OPND sw_opnd = ra_alloc_itemp();
-    //la_update_sw_by_fcsr(sw_opnd);
-    //ra_free_temp(sw_opnd);
             } else {
                 li_d(itemp2, FLOAT80_EXPONENT_MAX + FLOAT32_EXPONENT_MAX + 1);
                 la_bge(itemp, itemp2, label_softfpu);
@@ -2375,15 +2386,15 @@ static bool translate_fistp_softfpu(IR1_INST *pir1)
                 la_ftint_w_d(st0_opnd, st0_opnd);
                 la_movfr2gr_s(itemp, st0_opnd);
             }
+            /* Keep the source and TOP intact for the software fallback. */
+            la_ext_w_h(itemp2, itemp);
+            la_bne(itemp, itemp2, label_softfpu);
             la_st_h(itemp, mem_opnd, 0);
 
         } else if (opnd_size == 32) {
             if (option_float80 & 0x10) {
                 la_x86ftint_w_ld(fpr_st0_high_opnd, st0_opnd);
                 la_movfr2gr_s(itemp, fpr_st0_high_opnd);
-    //IR2_OPND sw_opnd = ra_alloc_itemp();
-    //la_update_sw_by_fcsr(sw_opnd);
-    //ra_free_temp(sw_opnd);
             } else {
                 li_d(itemp2, FLOAT80_EXPONENT_MAX + FLOAT32_EXPONENT_MAX + 1);
                 la_bge(itemp, itemp2, label_softfpu);
@@ -2398,9 +2409,6 @@ static bool translate_fistp_softfpu(IR1_INST *pir1)
             if (option_float80 & 0x20) {
                 la_x86ftint_l_ld(fpr_st0_high_opnd, st0_opnd);
                 la_movfr2gr_d(itemp, fpr_st0_high_opnd);
-				IR2_OPND sw_opnd = ra_alloc_itemp();
-				la_update_sw_by_fcsr(sw_opnd);
-				ra_free_temp(sw_opnd);
             } else {
                 li_d(itemp2, FLOAT80_EXPONENT_MAX + FLOAT64_EXPONENT_MAX + 1);
                 la_bge(itemp, itemp2, label_softfpu);
@@ -2412,6 +2420,11 @@ static bool translate_fistp_softfpu(IR1_INST *pir1)
             la_st_d(itemp, mem_opnd, 0);
         }
 
+        if (option_float80 & (opnd_size == 64 ? 0x20 : 0x10)) {
+            IR2_OPND sw_opnd = ra_alloc_itemp();
+            la_update_sw_by_fcsr(sw_opnd);
+            ra_free_temp(sw_opnd);
+        }
         la_fpu_pop();
         la_b(label_exit);
 
@@ -2430,7 +2443,7 @@ static bool translate_fistp_softfpu(IR1_INST *pir1)
 
         /* v0 */
         store_ireg_to_ir1(a0_ir2_opnd, opnd0, false);
-        la_fpu_pop();
+        gen_softfpu_helper1((ADDR)helper_fpop);
         if (local_region) {
             gen_softfpu_helper_epilogue(pir1);
         }
@@ -2588,6 +2601,20 @@ static bool translate_fld_softfpu(IR1_INST *pir1)
         int index = get_src_index(pir1);
         IR1_OPND *opnd0 = ir1_get_opnd(pir1, index);
         int opnd_size = ir1_opnd_size(opnd0);
+
+        if (option_stack && ir1_opnd_is_mem(opnd0) &&
+            ((opnd_size == 32 && !(option_float80 & 0x400)) ||
+             (opnd_size == 64 && !(option_float80 & 0x800)))) {
+            IR2_OPND mem_opnd = convert_mem_no_offset(opnd0);
+            gen_softfpu_helper_prologue(pir1);
+            if (opnd_size == 32) {
+                gen_softfpu_helper2m_32u((ADDR)helper_flds_ST0, mem_opnd);
+            } else {
+                gen_softfpu_helper2m_64((ADDR)helper_fldl_ST0, mem_opnd);
+            }
+            gen_softfpu_helper_epilogue(pir1);
+            return true;
+        }
 
         IR2_OPND st0_opnd;
         IR2_OPND ftemp = ra_alloc_ftemp();
@@ -2750,7 +2777,6 @@ static bool translate_fldenv_softfpu(IR1_INST *pir1)
         /* restore top */
         la_bstrpick_d(itemp, sw_opnd, 13, 11);
         if (option_stack) {
-            //la_x86settm();
             IR2_OPND label_exit = ra_alloc_label();
             int i;
 
@@ -2786,7 +2812,7 @@ static bool translate_fldenv_softfpu(IR1_INST *pir1)
         la_label(label_exit);
         la_st_h(sw_opnd, env_ir2_opnd, lsenv_offset_of_status_word(lsenv));
         if (option_float80) {
-            //update_fcsr_by_sw(sw_opnd);
+            update_fcsr_by_sw(sw_opnd);
         }
 
         li_wu(tag_save, 0);
@@ -3161,6 +3187,14 @@ static bool translate_fnclex_softfpu(IR1_INST *pir1)
         la_slli_d(sw_value, sw_value, 8);
         la_st_h(sw_value, env_ir2_opnd, lsenv_offset_of_status_word(lsenv));
 
+        if (option_float80) {
+            IR2_OPND fcsr = ra_alloc_itemp();
+            la_movfcsr2gr(fcsr, fcsr_ir2_opnd);
+            la_bstrins_w(fcsr, zero_ir2_opnd,
+                         FCSR_OFF_FLAGS_D, FCSR_OFF_FLAGS_I);
+            la_movgr2fcsr(fcsr_ir2_opnd, fcsr);
+            ra_free_temp(fcsr);
+        }
         ra_free_temp(sw_value);
 
     } else {
@@ -3182,6 +3216,15 @@ static bool translate_fninit_softfpu(IR1_INST *pir1)
         la_st_w(temp, env_ir2_opnd, offset);
         la_srli_d(temp, temp, 16);
         la_update_fp_status(temp);
+
+        if (option_float80) {
+            la_movfcsr2gr(temp, fcsr_ir2_opnd);
+            la_bstrins_w(temp, zero_ir2_opnd,
+                         FCSR_OFF_FLAGS_D, FCSR_OFF_FLAGS_I);
+            la_bstrins_w(temp, zero_ir2_opnd,
+                         FCSR_OFF_EN_D, FCSR_OFF_EN_I);
+            la_movgr2fcsr(fcsr_ir2_opnd, temp);
+        }
 
         /* clear top */
         if (option_stack) {
@@ -3238,7 +3281,6 @@ static bool translate_fnstenv_softfpu(IR1_INST *pir1)
         la_slli_w(itemp, itemp, 11);
         la_or(sw_cw_opnd, sw_cw_opnd, itemp);
         if (option_float80) {
-            //la_update_sw_by_fcsr(sw_cw_opnd);
         }
         la_slli_d(sw_cw_opnd, sw_cw_opnd, 16);
 
@@ -3443,7 +3485,6 @@ static bool translate_fnstsw_softfpu(IR1_INST *pir1)
         }
 
         if (option_float80) {
-            //la_update_sw_by_fcsr(sw_opnd);
         }
         ra_free_temp(sw_opnd);
 
@@ -3490,7 +3531,9 @@ static bool translate_fptan_softfpu(IR1_INST *pir1)
 
 static bool translate_frndint_softfpu(IR1_INST *pir1)
 {
+    /* No native 80-bit round instruction: do not narrow extended values. */
     if (option_softfpu == 2 &&
+        !option_float80 &&
         option_softfpu_fast & LATX_SOFTFPU_FAST_FRNDINT) {
         IR2_OPND st0_opnd = ra_alloc_ftemp();
 
@@ -3544,7 +3587,9 @@ static bool translate_frstor_softfpu(IR1_INST *pir1)
 
 static bool translate_fscale_softfpu(IR1_INST *pir1)
 {
+    /* Binary64 scaling cannot preserve the x87 exponent range or precision. */
     if (option_softfpu == 2 &&
+        !option_float80 &&
         option_softfpu_fast & LATX_SOFTFPU_FAST_FSCALE) {
         IR2_OPND st0_opnd = ra_alloc_ftemp();
         IR2_OPND st1_opnd = ra_alloc_ftemp();
@@ -3557,7 +3602,6 @@ static bool translate_fscale_softfpu(IR1_INST *pir1)
         ra_free_temp(st0_opnd);
         ra_free_temp(st1_opnd);
     } else {
-//		printf("in translate_fscale_softfpu: goto helper\n");
         gen_softfpu_helper1((ADDR)helper_fscale);
     }
     return true;
@@ -3590,7 +3634,8 @@ static bool translate_fsqrt_softfpu(IR1_INST *pir1)
         if (option_stack) {
             IR2_OPND st0_opnd = ra_alloc_st(0);
 
-            la_x86fsqrt_ld(st0_opnd, st0_opnd);
+            /* Keep the hardware-stack path's exception status in x87 SW. */
+            la_calcute_float80(pir1, st0_opnd, st0_opnd);
         } else {
             IR2_OPND st0_opnd = ra_alloc_ftemp();
 
@@ -3635,6 +3680,11 @@ static bool translate_fst_softfpu(IR1_INST *pir1)
                 get_float80_from_stn(src_opnd, 0);
                 la_vextrins_h(high_opnd, src_opnd, 0x4);
 
+            }
+
+            if (option_stack) {
+                get_float80_from_stn(src_opnd, 0);
+                la_vextrins_h(high_opnd, src_opnd, 0x4);
             }
 
             if (opnd_size == 80) {

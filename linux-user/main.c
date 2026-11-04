@@ -1585,6 +1585,13 @@ int main(int argc, char **argv, char **envp)
     /* set environment variables */
     options_set(target_argv);
 
+#ifdef CONFIG_LATX
+    if (option_stack && (option_softfpu != 2 || !option_float80)) {
+        fprintf(stderr, "LATX_STACK requires LATX_SOFTFPU=2 and LATX_FLOAT80!=0\n");
+        exit(EXIT_FAILURE);
+    }
+#endif
+
 #if defined(CONFIG_LATX) && defined(TARGET_I386) && TARGET_ABI_BITS == 32
     if (option_mem_test) {
         latx_init_16k_page_checks();

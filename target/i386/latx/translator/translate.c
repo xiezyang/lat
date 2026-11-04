@@ -2383,6 +2383,10 @@ static uint64_t softfpu_fast_mask(IR1_OPCODE opcode)
  */
 static SoftFPURegionClass softfpu_region_class(IR1_OPCODE opcode)
 {
+    if (option_float80 && (opcode == dt_X86_INS_FRNDINT ||
+                           opcode == dt_X86_INS_FSCALE)) {
+        return SOFTFPU_REGION_REQUIRED;
+    }
     uint64_t fast_mask = softfpu_fast_mask(opcode);
 
     if (fast_mask && (option_softfpu_fast & fast_mask) &&
@@ -2492,6 +2496,10 @@ static int softfpu_region_last_required(IR1_INST *first, int count)
 
     lsassert(softfpu_region_class(ir1_opcode(first)) ==
              SOFTFPU_REGION_REQUIRED);
+    if (option_stack) {
+        /* Inline x87 operations need TOP mapping enabled between helpers. */
+        return 0;
+    }
     if (is_softfpu_eflags_insn(ir1_opcode(first))) {
         return 0;
     }

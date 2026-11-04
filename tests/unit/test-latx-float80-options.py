@@ -78,8 +78,10 @@ typedef enum { SOFTFPU_REGION_NONE, SOFTFPU_REGION_REQUIRED,
                SOFTFPU_REGION_TRANSPARENT } SoftFPURegionClass;
 static uint64_t option_softfpu_fast;
 static int option_float80;
+static int option_stack;
 """ + "enum {" + ",".join(names) + "};\n" + defines + "\n" + mask + planner + handler + """
 int main(void) {
+    (void)option_stack;
     handle_arg_latx_softfpu_fast("0x100000000");
     if (option_softfpu_fast != (UINT64_C(1) << 32)) return 1;
     option_float80 = 1;
@@ -97,6 +99,15 @@ int main(void) {
     option_float80 = 1;
     if (softfpu_region_class(dt_X86_INS_FCOMI) !=
         SOFTFPU_REGION_TRANSPARENT) return 7;
+    if (softfpu_region_class(dt_X86_INS_FRNDINT) !=
+        SOFTFPU_REGION_REQUIRED) return 8;
+    if (softfpu_region_class(dt_X86_INS_FSCALE) !=
+        SOFTFPU_REGION_REQUIRED) return 9;
+    option_float80 = 0;
+    if (softfpu_region_class(dt_X86_INS_FRNDINT) !=
+        SOFTFPU_REGION_TRANSPARENT) return 10;
+    if (softfpu_region_class(dt_X86_INS_FSCALE) !=
+        SOFTFPU_REGION_TRANSPARENT) return 11;
     return 0;
 }
 """
@@ -108,6 +119,19 @@ int main(void) {
             subprocess.run(cc + ["-std=c99", "-Wall", "-Wextra", "-Werror",
                                  str(c_file), "-o", str(binary)], check=True)
             subprocess.run([str(binary)], check=True)
+
+    def test_integer_store_helper_stack_state(self):
+        source = (LATX / "translator/tr-softfpu.c").read_text()
+        body = function(source, "translate_fistp_softfpu")
+        fallback = body.split("la_label(label_softfpu);", 1)[1]
+        fallback = fallback.split("la_label(label_exit);", 1)[0]
+        self.assertIn("gen_softfpu_helper1((ADDR)helper_fpop);", fallback)
+        self.assertNotIn("la_fpu_pop();", fallback)
+        for name in ("translate_fist_softfpu", "translate_fistp_softfpu"):
+            with self.subTest(name=name):
+                body = function(source, name)
+                self.assertNotIn("st0_opnd = ra_alloc_st(0);", body)
+                self.assertIn("get_float80_from_stn(st0_opnd, 0);", body)
 
 
 if __name__ == "__main__":

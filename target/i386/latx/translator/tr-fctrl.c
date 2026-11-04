@@ -943,9 +943,8 @@ bool translate_fnstenv(IR1_INST *pir1)
     /* Mask all floating-point exceptions */
     la_ori(value, value, X87_CR_EXCP_MASK);
     la_st_h(value, env_ir2_opnd, control_offset);
-    /* Disable FCSR DVZOUI accordingly */
+    /* Disable FCSR exception enables accordingly. */
     la_movfcsr2gr(value , fcsr_ir2_opnd);
-	// if float80 TODO
     la_bstrins_w(value, zero_ir2_opnd,
                             FCSR_OFF_EN_D, FCSR_OFF_EN_I);
     la_movgr2fcsr(fcsr_ir2_opnd, value);
