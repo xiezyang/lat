@@ -122,18 +122,21 @@ typedef struct ENV {
 #define FCSR_OFF_EN_O           2
 #define FCSR_OFF_EN_Z           3
 #define FCSR_OFF_EN_V           4
+#define FCSR_OFF_EN_D           5
 #define FCSR_OFF_FLAGS_I        16
 #define FCSR_OFF_FLAGS_U        17
 #define FCSR_OFF_FLAGS_O        18
 #define FCSR_OFF_FLAGS_Z        19
 #define FCSR_OFF_FLAGS_V        20
+#define FCSR_OFF_FLAGS_D        21
 #define FCSR_OFF_CAUSE_I        24
 #define FCSR_OFF_CAUSE_U        25
 #define FCSR_OFF_CAUSE_O        26
 #define FCSR_OFF_CAUSE_Z        27
 #define FCSR_OFF_CAUSE_V        28
-#define FCSR_ENABLE_SET         0x1f
-#define FCSR_ENABLE_CLEAR       (~0x1f)
+#define FCSR_OFF_CAUSE_D        29
+#define FCSR_ENABLE_SET         0x3f
+#define FCSR_ENABLE_CLEAR       (~0x3f)
 /* RM */
 #define FCSR_OFF_RM             8
 #define FCSR_RM_CLEAR           (~(0x3 << FCSR_OFF_RM))

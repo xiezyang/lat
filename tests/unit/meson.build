@@ -380,3 +380,10 @@ test(
   args: [files('../ci/test_lat_ci_matrix.py'), 'MatrixSelectionTest'],
   suite: 'lat-pr-fast',
 )
+
+test(
+  'test-latx-float80-options',
+  python,
+  args: [files('test-latx-float80-options.py')],
+  suite: 'lat-pr-fast',
+)

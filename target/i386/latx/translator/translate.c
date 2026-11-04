@@ -1977,6 +1977,9 @@ bool ir1_translate(IR1_INST *ir1)
                       lsenv_offset_of_top(lsenv));
             la_st_d(zero_ir2_opnd, env_ir2_opnd,
                       lsenv_offset_of_tag_word(lsenv));
+            if (option_stack) {
+                la_x86mttop(0);
+            }
         }
     }
 
@@ -2283,7 +2286,7 @@ static bool is_softfpu_x87_insn(IR1_OPCODE opcode)
     }
 }
 
-static uint32_t softfpu_fast_mask(IR1_OPCODE opcode)
+static uint64_t softfpu_fast_mask(IR1_OPCODE opcode)
 {
     switch (opcode) {
     case dt_X86_INS_FADDP:
@@ -2335,6 +2338,39 @@ static uint32_t softfpu_fast_mask(IR1_OPCODE opcode)
     case dt_X86_INS_FST:
     case dt_X86_INS_FSTP:
         return LATX_SOFTFPU_FAST_FST;
+    case dt_X86_INS_FCOM:
+        return UINT64_C(1) << 24;
+    case dt_X86_INS_FCOMI:
+        return UINT64_C(1) << 25;
+    case dt_X86_INS_FCOMIP:
+        return UINT64_C(1) << 26;
+    case dt_X86_INS_FCOMP:
+        return UINT64_C(1) << 27;
+    case dt_X86_INS_FCOMPP:
+        return UINT64_C(1) << 28;
+    case dt_X86_INS_FUCOM:
+        return UINT64_C(1) << 29;
+    case dt_X86_INS_FUCOMI:
+        return UINT64_C(1) << 30;
+    case dt_X86_INS_FUCOMIP:
+        return UINT64_C(1) << 31;
+    case dt_X86_INS_FUCOMP:
+        return UINT64_C(1) << 32;
+    case dt_X86_INS_FUCOMPP:
+        return UINT64_C(1) << 33;
+    case dt_X86_INS_FABS:
+        return UINT64_C(1) << 34;
+    case dt_X86_INS_FCHS:
+        return UINT64_C(1) << 35;
+    case dt_X86_INS_FCMOVNB:
+    case dt_X86_INS_FCMOVB:
+    case dt_X86_INS_FCMOVNU:
+    case dt_X86_INS_FCMOVU:
+    case dt_X86_INS_FCMOVE:
+    case dt_X86_INS_FCMOVNE:
+    case dt_X86_INS_FCMOVBE:
+    case dt_X86_INS_FCMOVNBE:
+        return UINT64_C(1) << 36;
     default:
         return 0;
     }
@@ -2347,9 +2383,10 @@ static uint32_t softfpu_fast_mask(IR1_OPCODE opcode)
  */
 static SoftFPURegionClass softfpu_region_class(IR1_OPCODE opcode)
 {
-    uint32_t fast_mask = softfpu_fast_mask(opcode);
+    uint64_t fast_mask = softfpu_fast_mask(opcode);
 
-    if (fast_mask && (option_softfpu_fast & fast_mask)) {
+    if (fast_mask && (option_softfpu_fast & fast_mask) &&
+        (fast_mask < (UINT64_C(1) << 24) || option_float80)) {
         return SOFTFPU_REGION_TRANSPARENT;
     }
 
@@ -3619,7 +3656,7 @@ int generate_native_rotate_fpu_by(void *code_buf_addr)
 /* we have no inst to mov from gpr to top, so we have to be silly */
 void tr_load_top_from_env(void)
 {
-    if (option_softfpu) {
+    if (option_softfpu && !option_stack) {
         return;
     }
 
@@ -4186,7 +4223,7 @@ void tr_save_registers_to_env(uint8 gpr_to_save, uint8 fpr_to_save,
 
     tr_save_gpr_to_env(gpr_to_save);
     /* 2. FPR (MMX) */
-    if (!option_softfpu) {
+    if (!option_softfpu || option_stack) {
         IR2_OPND top_opnd = ra_alloc_itemp();
         la_x86mftop(top_opnd);
         la_st_w(top_opnd, env_ir2_opnd,
@@ -4201,7 +4238,7 @@ void tr_save_registers_to_env(uint8 gpr_to_save, uint8 fpr_to_save,
     IR2_OPND label_fpu = ra_alloc_label();
 
     /* check current mode(mmx/fpu) */
-    if (option_softfpu == 2) {
+    if (option_softfpu == 2 && !option_stack) {
         la_ld_wu(mode_fpu, env_ir2_opnd, lsenv_offset_of_mode_fpu(lsenv));
         la_bne(mode_fpu, zero_ir2_opnd, label_fpu);
     }
@@ -4210,12 +4247,17 @@ void tr_save_registers_to_env(uint8 gpr_to_save, uint8 fpr_to_save,
         if (BITS_ARE_SET(fpr_to_save, 1 << i)) {
             IR2_OPND mmx_opnd = ra_alloc_mmx(i);
 
-            la_fst_d(mmx_opnd, env_ir2_opnd,
-                                lsenv_offset_of_mmx(lsenv, i));
+            if (option_stack) {
+                la_vst(mmx_opnd, env_ir2_opnd,
+                       lsenv_offset_of_mmx(lsenv, i));
+            } else {
+                la_fst_d(mmx_opnd, env_ir2_opnd,
+                         lsenv_offset_of_mmx(lsenv, i));
+            }
         }
     }
 
-    if (option_softfpu == 2) {
+    if (option_softfpu == 2 && !option_stack) {
         la_label(label_fpu);
     }
     ra_free_temp(mode_fpu);
@@ -4286,7 +4328,7 @@ void tr_load_registers_from_env(uint8 gpr_to_load, uint8 fpr_to_load,
     IR2_OPND label_fpu = ra_alloc_label();
 
     /* check current mode(mmx/fpu) */
-    if (option_softfpu == 2) {
+    if (option_softfpu == 2 && !option_stack) {
         la_ld_bu(mode_fpu, env_ir2_opnd, lsenv_offset_of_mode_fpu(lsenv));
         if (fpr_to_load == 0xff) {
             /* A signal restore must initialize MMX without selecting it. */
@@ -4301,12 +4343,17 @@ void tr_load_registers_from_env(uint8 gpr_to_load, uint8 fpr_to_load,
         if (BITS_ARE_SET(fpr_to_load, 1 << i)) {
             IR2_OPND mmx_opnd = ra_alloc_mmx(i);
 
-            la_fld_d(mmx_opnd, env_ir2_opnd,
-                              lsenv_offset_of_mmx(lsenv, i));
+            if (option_stack) {
+                la_vld(mmx_opnd, env_ir2_opnd,
+                       lsenv_offset_of_mmx(lsenv, i));
+            } else {
+                la_fld_d(mmx_opnd, env_ir2_opnd,
+                         lsenv_offset_of_mmx(lsenv, i));
+            }
         }
     }
 
-    if (option_softfpu == 2) {
+    if (option_softfpu == 2 && !option_stack) {
         la_label(label_fpu);
     }
     ra_free_temp(mode_fpu);

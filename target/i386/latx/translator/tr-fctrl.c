@@ -134,6 +134,10 @@ static void update_fcsr_flag(IR2_OPND status_word, IR2_OPND fcsr)
     la_bstrins_w(fcsr, status_word,
                             FCSR_OFF_FLAGS_V, FCSR_OFF_FLAGS_V);
 
+    if (option_float80) {
+        la_bstrpick_w(temp, status_word, X87_SR_OFF_DE, X87_SR_OFF_DE);
+        la_bstrins_w(fcsr, temp, FCSR_OFF_FLAGS_D, FCSR_OFF_FLAGS_D);
+    }
     la_movgr2fcsr(fcsr_ir2_opnd, fcsr);
 
     ra_free_temp(temp);
@@ -188,6 +192,15 @@ static void update_fcsr_enable(IR2_OPND control_word, IR2_OPND fcsr)
         la_bstrins_w(fcsr, temp, FCSR_OFF_EN_V, FCSR_OFF_EN_I);
     }
 
+    if (option_float80) {
+        if (option_enable_fcsr_exc) {
+            la_ori(temp, zero_ir2_opnd, 0);
+        } else {
+            la_bstrpick_w(temp, control_word, X87_CR_OFF_DM, X87_CR_OFF_DM);
+            la_xori(temp, temp, 1);
+        }
+        la_bstrins_w(fcsr, temp, FCSR_OFF_EN_D, FCSR_OFF_EN_D);
+    }
     ra_free_temp(temp);
 
 }
@@ -288,7 +301,7 @@ void update_sw_by_fcsr(IR2_OPND sw_opnd)
     la_bstrins_d(sw_opnd, temp1, 13, 11);
 
     /* clean exception flags in fcsr */
-    la_bstrins_w(fcsr, zero_ir2_opnd, FCSR_OFF_FLAGS_V, FCSR_OFF_FLAGS_I);
+    la_bstrins_w(fcsr, zero_ir2_opnd, FCSR_OFF_FLAGS_D, FCSR_OFF_FLAGS_I);
     la_movgr2fcsr(fcsr_ir2_opnd, fcsr);
 
     la_st_h(sw_opnd, env_ir2_opnd, status_offset);
@@ -930,10 +943,11 @@ bool translate_fnstenv(IR1_INST *pir1)
     /* Mask all floating-point exceptions */
     la_ori(value, value, X87_CR_EXCP_MASK);
     la_st_h(value, env_ir2_opnd, control_offset);
-    /* Disable FCSR VZOUI accordingly */
+    /* Disable FCSR DVZOUI accordingly */
     la_movfcsr2gr(value , fcsr_ir2_opnd);
+	// if float80 TODO
     la_bstrins_w(value, zero_ir2_opnd,
-                            FCSR_OFF_EN_V, FCSR_OFF_EN_I);
+                            FCSR_OFF_EN_D, FCSR_OFF_EN_I);
     la_movgr2fcsr(fcsr_ir2_opnd, value);
 
     update_sw_by_fcsr(value);
@@ -1031,7 +1045,7 @@ bool translate_fnclex(IR1_INST *pir1) {
     la_movfcsr2gr(fcsr0, fcsr_ir2_opnd);
     la_bstrins_d(sw_value, zero_ir2_opnd, X87_SR_OFF_ES, X87_SR_OFF_IE);
     la_bstrins_d(sw_value, zero_ir2_opnd, X87_SR_OFF_B, X87_SR_OFF_B);
-    la_bstrins_d(fcsr0, zero_ir2_opnd, FCSR_OFF_FLAGS_V, FCSR_OFF_FLAGS_I);
+    la_bstrins_d(fcsr0, zero_ir2_opnd, FCSR_OFF_FLAGS_D, FCSR_OFF_FLAGS_I);
     la_movgr2fcsr(fcsr_ir2_opnd, fcsr0);
     la_st_h(sw_value, env_ir2_opnd,
                         lsenv_offset_of_status_word(lsenv));
@@ -1062,7 +1076,7 @@ bool translate_fninit(IR1_INST *pir1) {
     la_st_d(temp, env_ir2_opnd, offset);
 
     la_movfcsr2gr(fcsr0, fcsr_ir2_opnd);
-    /* VZOUI disable */
+    /* DVZOUI disable */
     li_wu(temp, FCSR_ENABLE_CLEAR);
     la_and(fcsr0, fcsr0, temp);
     /* RM = 00 */

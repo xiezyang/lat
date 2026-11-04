@@ -110,7 +110,10 @@ extern uint32_t latx_unlink_cpu;
 #define LATX_SOFTFPU_FAST_FISTP (1U << 22)
 #define LATX_SOFTFPU_FAST_FST (1U << 23)
 extern int option_softfpu;
-extern int option_softfpu_fast;
+extern uint64_t option_softfpu_fast;
+extern int option_float80;
+extern int option_128cal;
+extern int option_stack;
 
 /* Native x87 FAST operations share FCSR with SSE and cannot use the
  * SSE-only exception synchronization path. Keep their existing behavior. */

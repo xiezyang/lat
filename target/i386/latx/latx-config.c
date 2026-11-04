@@ -753,6 +753,10 @@ void latx_lsenv_init(CPUArchState *env)
         qemu_log("[LATX] env init : %p\n", lsenv->cpu_state);
     }
     env->mode_fpu = 1;
+    if (option_float80) {
+        /* x87 precision control defaults to extended precision (PC = 3). */
+        env->fcsr = 3U << 13;
+    }
     env->fpu_clobber = false;
     env->insn_save[0] = 0;
     env->insn_save[1] = 0;

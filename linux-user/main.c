@@ -690,7 +690,22 @@ static void handle_arg_latx_softfpu(const char *arg)
 
 static void handle_arg_latx_softfpu_fast(const char *arg)
 {
-    option_softfpu_fast = strtol(arg, NULL, 0);
+    option_softfpu_fast = strtoull(arg, NULL, 0);
+}
+
+static void handle_arg_latx_stack(const char *arg)
+{
+    option_stack = strtol(arg, NULL, 0);
+}
+
+static void handle_arg_latx_float80(const char *arg)
+{
+    option_float80 = strtol(arg, NULL, 0);
+}
+
+static void handle_arg_latx_128cal(const char *arg)
+{
+    option_128cal = strtol(arg, NULL, 0);
 }
 
 static void handle_arg_latx_prlimit(const char *arg)
@@ -1011,6 +1026,12 @@ static const struct qemu_argument arg_table[] = {
     "",           "enable softfpu"},
     {"latx-softfpu-fast",    "LATX_SOFTFPU_FAST",     true,  handle_arg_latx_softfpu_fast,
     "",           "enable softfpu fast"},
+    {"latx-stack",    "LATX_STACK",     true, handle_arg_latx_stack,
+    "",           "enable hardware x87 stack"},
+    {"latx-float80",    "LATX_FLOAT80",     true, handle_arg_latx_float80,
+    "",           "select hardware float80 operations"},
+    {"latx-128cal",    "LATX_128CAL",     true, handle_arg_latx_128cal,
+    "",           "select scalar SSE high-preserve operations"},
     {"latx-prlimit",    "LATX_PRLIMIT",     true,  handle_arg_latx_prlimit,
     "",           "enable prlimit"},
     {"latx-rounding",    "LATX_ROUNDING_OPT",     true,  handle_arg_latx_rounding,

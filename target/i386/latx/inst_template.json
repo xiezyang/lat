@@ -438,6 +438,138 @@
         "opcode": "0x00008029",
         "opnd": []
     },
+    "x86fadd.ld": {
+        "opcode": "0x716d0000",
+        "opnd": [
+            "fpr_vd",
+            "fpr_vj",
+            "fpr_vk"
+        ]
+    },
+    "x86fsub.ld": {
+        "opcode": "0x716d8000",
+        "opnd": [
+            "fpr_vd",
+            "fpr_vj",
+            "fpr_vk"
+        ]
+    },
+    "x86fmul.ld": {
+        "opcode": "0x716e0000",
+        "opnd": [
+            "fpr_vd",
+            "fpr_vj",
+            "fpr_vk"
+        ]
+    },
+    "x86fdiv.ld": {
+        "opcode": "0x716e8000",
+        "opnd": [
+            "fpr_vd",
+            "fpr_vj",
+            "fpr_vk"
+        ]
+    },
+    "x86ftint.w.ld": {
+        "opcode": "0x716f0000",
+        "opnd": [
+            "fpr_vd",
+            "fpr_vj"
+        ]
+    },
+    "x86ftint.l.ld": {
+        "opcode": "0x716f0400",
+        "opnd": [
+            "fpr_vd",
+            "fpr_vj"
+        ]
+    },
+    "x86ffint.ld.w": {
+        "opcode": "0x716f0800",
+        "opnd": [
+            "fpr_vd",
+            "fpr_vj"
+        ]
+    },
+    "x86ffint.ld.l": {
+        "opcode": "0x716f0c00",
+        "opnd": [
+            "fpr_vd",
+            "fpr_vj"
+        ]
+    },
+    "x86fcvt.s.ld": {
+        "opcode": "0x716f1000",
+        "opnd": [
+            "fpr_vd",
+            "fpr_vj"
+        ]
+    },
+    "x86fcvt.d.ld": {
+        "opcode": "0x716f1400",
+        "opnd": [
+            "fpr_vd",
+            "fpr_vj"
+        ]
+    },
+    "x86fcvt.ld.s": {
+        "opcode": "0x716f1800",
+        "opnd": [
+            "fpr_vd",
+            "fpr_vj"
+        ]
+    },
+    "x86fcvt.ld.d": {
+        "opcode": "0x716f1c00",
+        "opnd": [
+            "fpr_vd",
+            "fpr_vj"
+        ]
+    },
+    "x86fabs.ld": {
+        "opcode": "0x716f2000",
+        "opnd": [
+            "fpr_vd",
+            "fpr_vj"
+        ]
+    },
+    "x86fneg.ld": {
+        "opcode": "0x716f2400",
+        "opnd": [
+            "fpr_vd",
+            "fpr_vj"
+        ]
+    },
+    "x86fsqrt.ld": {
+        "opcode": "0x716f2800",
+        "opnd": [
+            "fpr_vd",
+            "fpr_vj"
+        ]
+    },
+    "x86fmov.ld": {
+        "opcode": "0x716f2c00",
+        "opnd": [
+            "fpr_vd",
+            "fpr_vj"
+        ]
+    },
+    "x86fcom.ld": {
+        "opcode": "0x71740000",
+        "opnd": [
+            "fpr_vd",
+            "fpr_vj",
+            "fpr_vk"
+        ]
+    },
+    "x86fucom.ld": {
+        "opcode": "0x71748000",
+        "opnd": [
+            "fpr_vd",
+            "fpr_vj",
+            "fpr_vk"
+        ]
+    },
     "asrtle.d": {
         "opcode": "0x00010000",
         "opnd": [
@@ -20513,6 +20645,48 @@
             "fpr_xd",
             "fpr_xj",
             "imm_ui8"
+        ]
+    },
+    "x86fadd.ss": {
+        "opcode": "0x72ac4000",
+        "opnd": [
+            "fpr_vd",
+            "fpr_vj"
+        ]
+    },
+    "x86fadd.sd": {
+        "opcode": "0x72ac4400",
+        "opnd": [
+            "fpr_vd",
+            "fpr_vj"
+        ]
+    },
+    "x86fsub.ss": {
+        "opcode": "0x72ac4800",
+        "opnd": [
+            "fpr_vd",
+            "fpr_vj"
+        ]
+    },
+    "x86fsub.sd": {
+        "opcode": "0x72ac4c00",
+        "opnd": [
+            "fpr_vd",
+            "fpr_vj"
+        ]
+    },
+    "x86fmul.ss": {
+        "opcode": "0x72ac5000",
+        "opnd": [
+            "fpr_vd",
+            "fpr_vj"
+        ]
+    },
+    "x86fmul.sd": {
+        "opcode": "0x72ac5400",
+        "opnd": [
+            "fpr_vd",
+            "fpr_vj"
         ]
     },
     "ill": {
