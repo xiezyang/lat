@@ -126,8 +126,13 @@ static void save_fpr(void)
     /* save fpr */
     for (int i = 0; i < 8; i++) {
             IR2_OPND mmx_opnd = ra_alloc_mmx(i);
-            la_fst_d(mmx_opnd, env_ir2_opnd,
-                                lsenv_offset_of_mmx(lsenv, i));
+            if (option_stack) {
+                la_vst(mmx_opnd, env_ir2_opnd,
+                         lsenv_offset_of_mmx(lsenv, i));
+            } else {
+                la_fst_d(mmx_opnd, env_ir2_opnd,
+                         lsenv_offset_of_mmx(lsenv, i));
+            }
     }
 }
 
@@ -136,8 +141,13 @@ static void restore_fpr(void)
     /* restore fpr */
     for (int i = 0; i < 8; i++) {
             IR2_OPND mmx_opnd = ra_alloc_mmx(i);
-            la_fld_d(mmx_opnd, env_ir2_opnd,
-                              lsenv_offset_of_mmx(lsenv, i));
+            if (option_stack) {
+                la_vld(mmx_opnd, env_ir2_opnd,
+                         lsenv_offset_of_mmx(lsenv, i));
+            } else {
+                la_fld_d(mmx_opnd, env_ir2_opnd,
+                         lsenv_offset_of_mmx(lsenv, i));
+            }
     }
 }
 
@@ -225,63 +235,44 @@ static void la_fpu_push(void)
 {
     IR2_OPND top_opnd = ra_alloc_itemp();
 
-    la_ld_w(top_opnd, env_ir2_opnd, lsenv_offset_of_top(lsenv));
-    la_addi_d(top_opnd, top_opnd, -1);
-    la_bstrpick_d(top_opnd, top_opnd, 2, 0);
-    la_st_w(top_opnd, env_ir2_opnd, lsenv_offset_of_top(lsenv));
+    if (option_stack) {
+        la_x86dectop();
+        la_x86mftop(top_opnd);
+    } else {
+        la_ld_w(top_opnd, env_ir2_opnd, lsenv_offset_of_top(lsenv));
+        la_addi_d(top_opnd, top_opnd, -1);
+        la_bstrpick_d(top_opnd, top_opnd, 2, 0);
+        la_st_w(top_opnd, env_ir2_opnd, lsenv_offset_of_top(lsenv));
+    }
 
-    IR2_OPND temp1 = ra_alloc_itemp();
-    IR2_OPND fpu_tag = ra_alloc_itemp();
 
     /* 2. mark st(0) as valid */
-    int tag_offset = lsenv_offset_of_tag_word(lsenv);
-    lsassert(tag_offset <= 0x7ff);
-    la_ld_d(fpu_tag, env_ir2_opnd, tag_offset);
-
-    li_d(temp1, (uint64)(0xffULL));
-    la_slli_d(top_opnd, top_opnd, 3);
-    la_sll_d(temp1, temp1, top_opnd);
-    la_nor(temp1, zero_ir2_opnd, temp1);
-    la_and(fpu_tag, fpu_tag, temp1);
-    la_st_d(fpu_tag, env_ir2_opnd, tag_offset);
-
-    ra_free_temp(fpu_tag);
-    ra_free_temp(temp1);
+    la_add_d(top_opnd, env_ir2_opnd, top_opnd);
+    la_st_b(zero_ir2_opnd, top_opnd, lsenv_offset_of_tag_word(lsenv));
     ra_free_temp(top_opnd);
 }
 
 static void la_fpu_pop(void)
 {
     IR2_OPND top_opnd = ra_alloc_itemp();
-    IR2_OPND temp1 = ra_alloc_itemp();
-    IR2_OPND temp2 = ra_alloc_itemp();
-    IR2_OPND fpu_tag = ra_alloc_itemp();
+    IR2_OPND temp = ra_alloc_itemp();
 
-
-    la_ld_w(top_opnd, env_ir2_opnd, lsenv_offset_of_top(lsenv));
-    la_addi_d(temp1, top_opnd, 1);
-    la_bstrpick_d(temp1, temp1, 2, 0);
-    la_st_w(temp1, env_ir2_opnd, lsenv_offset_of_top(lsenv));
+    if (option_stack) {
+        la_x86mftop(top_opnd);
+        la_x86inctop();
+    } else {
+        la_ld_w(top_opnd, env_ir2_opnd, lsenv_offset_of_top(lsenv));
+        la_addi_d(temp, top_opnd, 1);
+        la_bstrpick_d(temp, temp, 2, 0);
+        la_st_w(temp, env_ir2_opnd, lsenv_offset_of_top(lsenv));
+    }
 
     /* 1. mark st(0) as empty */
-    int tag_offset = lsenv_offset_of_tag_word(lsenv);
-    lsassert(tag_offset <= 0x7ff);
-    la_ld_d(fpu_tag, env_ir2_opnd, tag_offset);
+    la_add_d(top_opnd, env_ir2_opnd, top_opnd);
+    li_d(temp, 1);
+    la_st_b(temp, top_opnd, lsenv_offset_of_tag_word(lsenv));
 
-    li_d(temp1, (uint64)(0xffULL));
-    li_d(temp2, (uint64)(0x1ULL));
-    la_slli_d(top_opnd, top_opnd, 3);
-
-    la_sll_d(temp1, temp1, top_opnd);
-    la_sll_d(temp2, temp2, top_opnd);
-    la_nor(temp1, zero_ir2_opnd, temp1);
-    la_and(fpu_tag, fpu_tag, temp1);
-    la_or(fpu_tag, fpu_tag, temp2);
-    la_st_d(fpu_tag, env_ir2_opnd, tag_offset);
-
-    ra_free_temp(fpu_tag);
-    ra_free_temp(temp1);
-    ra_free_temp(temp2);
+    ra_free_temp(temp);
     ra_free_temp(top_opnd);
 }
 
@@ -325,12 +316,30 @@ static void fmov_STN_STM(int stn, int stm)
     if (stn == stm) {
         return;
     }
-    IR2_OPND stm_opnd = ra_alloc_ftemp();
 
-    get_float80_from_stn(stm_opnd, stm);
-    save_float80_to_stn(stm_opnd, stn);
+    if (option_stack && option_float80 & 0x8000) {
+        IR2_OPND stn_opnd = ra_alloc_st(stn);
+        IR2_OPND stm_opnd = ra_alloc_st(stm);
+		la_x86fmov_ld(stn_opnd, stm_opnd);
 
-    ra_free_temp(stm_opnd);
+    } else {
+        IR2_OPND stm_opnd = ra_alloc_ftemp();
+
+        get_float80_from_stn(stm_opnd, stm);
+        save_float80_to_stn(stm_opnd, stn);
+
+        ra_free_temp(stm_opnd);
+    }
+}
+
+static void update_fcsr_pm(IR2_OPND pc_field)
+{
+    IR2_OPND fcsr = ra_alloc_itemp();
+
+    la_movfcsr2gr(fcsr, fcsr_ir2_opnd);
+    la_bstrins_w(fcsr, pc_field, 14, 13);
+    la_movgr2fcsr(fcsr_ir2_opnd, fcsr);
+    ra_free_temp(fcsr);
 }
 
 static void la_update_fp_status(IR2_OPND cw_opnd)
@@ -349,7 +358,6 @@ static void la_update_fp_status(IR2_OPND cw_opnd)
                             offsetof(float_status, floatx80_rounding_precision);
 
     la_movfcsr2gr(tmp_fcsr, fcsr_ir2_opnd);
-    /* Rounding Control (11, 10)*/
     la_ori(itemp, cw_opnd, 0);
     update_fcsr_rm(itemp, tmp_fcsr);
     la_movgr2fcsr(fcsr_ir2_opnd, tmp_fcsr);
@@ -369,6 +377,9 @@ static void la_update_fp_status(IR2_OPND cw_opnd)
 
     /* Precision Control (9, 8)*/
     la_bstrpick_d(itemp, cw_opnd, 9, 8);
+    if (option_float80) {
+        update_fcsr_pm(itemp);
+    }
     la_beq(itemp, zero_ir2_opnd, label_float32);
     li_wu(tmp_fcsr, 2);
     la_beq(itemp, tmp_fcsr, label_float64);
@@ -385,8 +396,65 @@ static void la_update_fp_status(IR2_OPND cw_opnd)
     la_label(label_precision_done);
     la_st_b(itemp, env_ir2_opnd, round_precision_offset);
 
-    ra_free_temp(itemp);
     ra_free_temp(tmp_fcsr);
+    ra_free_temp(itemp);
+}
+
+static void la_update_sw_by_fcsr(IR2_OPND sw_opnd)
+{
+    int status_offset = lsenv_offset_of_status_word(lsenv);
+    lsassert(status_offset <= 0x7ff);
+    la_ld_h(sw_opnd, env_ir2_opnd, status_offset);
+
+    IR2_OPND fcsr = ra_alloc_itemp();
+    IR2_OPND temp1 = ra_alloc_itemp();
+    la_movfcsr2gr(fcsr, fcsr_ir2_opnd);
+
+    /* update float exceptions from fcsr */
+    /*  invalid-arithmetic-operand exception */
+    IR2_OPND label_I = ra_alloc_label();
+    la_bstrpick_w(temp1, fcsr, FCSR_OFF_FLAGS_V, FCSR_OFF_FLAGS_V);
+    la_beq(temp1, zero_ir2_opnd, label_I);
+    la_ori(sw_opnd, sw_opnd, 0x1 << X87_SR_OFF_IE);
+    la_label(label_I);
+    /* Divide-By-Zero Exception */
+    IR2_OPND label_Z = ra_alloc_label();
+    la_bstrpick_w(temp1, fcsr, FCSR_OFF_FLAGS_Z, FCSR_OFF_FLAGS_Z);
+    la_beq(temp1, zero_ir2_opnd, label_Z);
+    la_ori(sw_opnd, sw_opnd, 0x1 << X87_SR_OFF_ZE);
+    la_label(label_Z);
+    /* Numeric Overflow Exception */
+    IR2_OPND label_O = ra_alloc_label();
+    la_bstrpick_w(temp1, fcsr, FCSR_OFF_FLAGS_O, FCSR_OFF_FLAGS_O);
+    la_beq(temp1, zero_ir2_opnd, label_O);
+    la_ori(sw_opnd, sw_opnd, 0x1 << X87_SR_OFF_OE);
+    la_label(label_O);
+    /* Numeric Underflow Exception */
+    IR2_OPND label_U = ra_alloc_label();
+    la_bstrpick_w(temp1, fcsr, FCSR_OFF_FLAGS_U, FCSR_OFF_FLAGS_U);
+    la_beq(temp1, zero_ir2_opnd, label_U);
+    la_ori(sw_opnd, sw_opnd, 0x1 << X87_SR_OFF_UE);
+    la_label(label_U);
+    /* Inexact-Result (Precision) Exception */
+    IR2_OPND label_P = ra_alloc_label();
+    la_bstrpick_w(temp1, fcsr, FCSR_OFF_FLAGS_I, FCSR_OFF_FLAGS_I);
+    la_beq(temp1, zero_ir2_opnd, label_P);
+    la_ori(sw_opnd, sw_opnd, 0x1 << X87_SR_OFF_PE);
+    la_label(label_P);
+    /* Inexact-Result (Precision) Exception */
+    IR2_OPND label_D = ra_alloc_label();
+    la_bstrpick_w(temp1, fcsr, FCSR_OFF_FLAGS_D, FCSR_OFF_FLAGS_D);
+    la_beq(temp1, zero_ir2_opnd, label_D);
+    la_ori(sw_opnd, sw_opnd, 0x1 << X87_SR_OFF_DE);
+    la_label(label_D);
+
+    /* clean exception flags in fcsr */
+    //la_bstrins_w(fcsr, zero_ir2_opnd, FCSR_OFF_FLAGS_D, FCSR_OFF_FLAGS_I);
+    la_movgr2fcsr(fcsr_ir2_opnd, fcsr);
+
+    la_st_h(sw_opnd, env_ir2_opnd, status_offset);
+    ra_free_temp(fcsr);
+    ra_free_temp(temp1);
 }
 
 static void la_update_fp_status_from_env(void)
@@ -409,6 +477,12 @@ void gen_softfpu_x87_fcsr_enter(void)
     la_movfcsr2gr(fcsr_opnd, fcsr_ir2_opnd);
     update_fcsr_rm(cw_opnd, fcsr_opnd);
     la_movgr2fcsr(fcsr_ir2_opnd, fcsr_opnd);
+    if (option_float80) {
+        la_ld_hu(cw_opnd, env_ir2_opnd,
+                 lsenv_offset_of_control_word(lsenv));
+        la_bstrpick_w(cw_opnd, cw_opnd, 9, 8);
+        update_fcsr_pm(cw_opnd);
+    }
 
     ra_free_temp(cw_opnd);
     ra_free_temp(fcsr_opnd);
@@ -420,6 +494,16 @@ void gen_softfpu_helper_prologue(IR1_INST *pir1)
     save_eflags(pir1);
     save_gpr();
 
+    if (option_stack) {
+        IR2_OPND top_opnd = ra_alloc_itemp();
+        la_x86mftop(top_opnd);
+        la_st_w(top_opnd, env_ir2_opnd,
+                              lsenv_offset_of_top(lsenv));
+        tr_fpu_disable_top_mode();
+        ra_free_temp(top_opnd);
+
+        save_fpr();
+    }
     if (option_softfpu == 1) {
         save_fpr();
     }
@@ -442,6 +526,11 @@ void gen_softfpu_helper_epilogue(IR1_INST *pir1)
     restore_xmm();
     if (option_softfpu == 1) {
         restore_fpr();
+    }
+    if (option_stack) {
+        restore_fpr();
+        tr_fpu_enable_top_mode();
+        tr_load_top_from_env();
     }
     restore_gpr();
     restore_eflags(pir1);
@@ -584,19 +673,165 @@ static bool translate_f2xm1_softfpu(IR1_INST *pir1)
     return true;
 }
 
-static bool translate_fabs_softfpu(IR1_INST *pir1)
+static void la_calcute_float80(IR1_INST *pir1, IR2_OPND float80_dest,
+                               IR2_OPND src_opnd)
 {
-    if (option_softfpu == 2) {
-        IR2_OPND high_opnd = ra_alloc_itemp();
-
-        IR2_OPND stn_opnd_addr = get_stn_opnd_addr(0);
-        la_ld_hu(high_opnd, stn_opnd_addr, 8);
-        la_bstrpick_d(high_opnd, high_opnd, 14, 0);
-        la_st_h(high_opnd, stn_opnd_addr, 8);
-    } else {
-        gen_softfpu_helper1((ADDR)helper_fabs_ST0);
+    switch (ir1_opcode(pir1)) {
+    case dt_X86_INS_FADD:
+    case dt_X86_INS_FADDP:
+    case dt_X86_INS_FIADD:
+        la_x86fadd_ld(float80_dest, float80_dest, src_opnd);
+        break;
+    case dt_X86_INS_FSUB:
+    case dt_X86_INS_FSUBP:
+    case dt_X86_INS_FISUB:
+        la_x86fsub_ld(float80_dest, float80_dest, src_opnd);
+        break;
+    case dt_X86_INS_FSUBR:
+    case dt_X86_INS_FSUBRP:
+    case dt_X86_INS_FISUBR:
+        la_x86fsub_ld(float80_dest, src_opnd, float80_dest);
+        break;
+    case dt_X86_INS_FMUL:
+    case dt_X86_INS_FMULP:
+    case dt_X86_INS_FIMUL:
+        la_x86fmul_ld(float80_dest, float80_dest, src_opnd);
+        break;
+    case dt_X86_INS_FDIV:
+    case dt_X86_INS_FDIVP:
+    case dt_X86_INS_FIDIV:
+        la_x86fdiv_ld(float80_dest, float80_dest, src_opnd);
+        break;
+    case dt_X86_INS_FDIVR:
+    case dt_X86_INS_FDIVRP:
+    case dt_X86_INS_FIDIVR:
+        la_x86fdiv_ld(float80_dest, src_opnd, float80_dest);
+        break;
+    case dt_X86_INS_FABS:
+        la_x86fabs_ld(float80_dest, src_opnd);
+        break;
+    case dt_X86_INS_FCHS:
+        la_x86fneg_ld(float80_dest, src_opnd);
+        break;
+    case dt_X86_INS_FSQRT:
+        la_x86fsqrt_ld(float80_dest, src_opnd);
+        break;
+    default:
+        lsassert(0);
+        break;
     }
-    return true;
+    IR2_OPND sw_opnd = ra_alloc_itemp();
+    la_update_sw_by_fcsr(sw_opnd);
+    ra_free_temp(sw_opnd);
+}
+
+static void gen_float80_ST0_MEM(IR1_INST *pir1, IR2_OPND mem_opnd,
+                                int opnd_size, bool is_integer)
+{
+    IR2_OPND st0_opnd;
+    IR2_OPND src_opnd = ra_alloc_ftemp();
+
+    if (option_stack) {
+        st0_opnd = ra_alloc_st(0);
+    } else {
+        st0_opnd = ra_alloc_ftemp();
+        get_float80_from_stn(st0_opnd, 0);
+    }
+
+    if (opnd_size == 64) {
+        la_fld_d(src_opnd, mem_opnd, 0);
+        if (is_integer) {
+            la_x86ffint_ld_l(src_opnd, src_opnd);
+        } else {
+            la_x86fcvt_ld_d(src_opnd, src_opnd);
+        }
+    } else if (opnd_size == 32) {
+        la_fld_s(src_opnd, mem_opnd, 0);
+        if (is_integer) {
+            la_x86ffint_ld_w(src_opnd, src_opnd);
+        } else {
+            la_x86fcvt_ld_s(src_opnd, src_opnd);
+        }
+    } else if (opnd_size == 16) {
+        IR2_OPND itemp = ra_alloc_itemp();
+
+        la_ld_h(itemp, mem_opnd, 0);
+        if (is_integer) {
+            la_movgr2fr_d(src_opnd, itemp);
+            la_x86ffint_ld_w(src_opnd, src_opnd);
+        } else {
+            lsassertm(!is_integer, "convert 16-bit floating point?\n");
+        }
+        ra_free_temp(itemp);
+    } else {
+        lsassert(0);
+    }
+
+    la_calcute_float80(pir1, st0_opnd, src_opnd);
+    if (!option_stack) {
+        save_float80_to_stn(st0_opnd, 0);
+    }
+
+    if (!option_stack) {
+        ra_free_temp(st0_opnd);
+    }
+    ra_free_temp(src_opnd);
+}
+
+static void gen_float80_STN_ST0(IR1_INST *pir1, int opnd_num, int stn)
+{
+    IR2_OPND st0_opnd, stn_opnd;
+    if (option_stack) {
+        st0_opnd = ra_alloc_st(0);
+        stn_opnd = ra_alloc_st(stn);
+    } else {
+        st0_opnd = ra_alloc_ftemp();
+        stn_opnd = ra_alloc_ftemp();
+
+        get_float80_from_stn(stn_opnd, stn);
+        get_float80_from_stn(st0_opnd, 0);
+    }
+
+    if (opnd_num == 1) {
+        la_calcute_float80(pir1, st0_opnd, stn_opnd);
+        if (!option_stack) {
+            save_float80_to_stn(st0_opnd, 0);
+        }
+    } else if (opnd_num == 2) {
+        la_calcute_float80(pir1, stn_opnd, st0_opnd);
+        if (!option_stack) {
+            save_float80_to_stn(stn_opnd, stn);
+        }
+    }
+    if (!option_stack) {
+        ra_free_temp(stn_opnd);
+        ra_free_temp(st0_opnd);
+    }
+}
+
+static void gen_float80_STN_ST0_pop(IR1_INST *pir1, int stn)
+{
+    IR2_OPND st0_opnd, stn_opnd;
+    if (option_stack) {
+        st0_opnd = ra_alloc_st(0);
+        stn_opnd = ra_alloc_st(stn);
+    } else {
+        st0_opnd = ra_alloc_ftemp();
+        stn_opnd = ra_alloc_ftemp();
+        get_float80_from_stn(stn_opnd, stn);
+        get_float80_from_stn(st0_opnd, 0);
+    }
+
+    la_calcute_float80(pir1, stn_opnd, st0_opnd);
+    if (!option_stack) {
+        save_float80_to_stn(stn_opnd, stn);
+    }
+    la_fpu_pop();
+
+    if (!option_stack) {
+        ra_free_temp(stn_opnd);
+        ra_free_temp(st0_opnd);
+    }
 }
 
 static void la_calcute_float64(IR1_INST *pir1, IR2_OPND float80_dest,
@@ -740,13 +975,62 @@ static void gen_float64_STN_ST0_pop(IR1_INST *pir1, int stn)
     ra_free_temp(st0_opnd);
 }
 
+static bool translate_fabs_softfpu(IR1_INST *pir1)
+{
+    if (option_softfpu == 2 && (!option_float80 ||
+        (option_softfpu_fast & 0x400000000))) {
+        if (option_float80 & 0x1000) {
+            if (option_stack) {
+                IR2_OPND st0_opnd = ra_alloc_st(0);
+
+                la_x86fabs_ld(st0_opnd, st0_opnd);
+            } else {
+                IR2_OPND st0_opnd = ra_alloc_ftemp();
+
+                get_float80_from_stn(st0_opnd, 0);
+                la_calcute_float80(pir1, st0_opnd, st0_opnd);
+                save_float80_to_stn(st0_opnd, 0);
+
+                ra_free_temp(st0_opnd);
+            }
+
+        } else {
+            if (option_stack) {
+                gen_softfpu_helper_prologue(pir1);
+                gen_softfpu_helper1((ADDR)helper_fabs_ST0);
+                gen_softfpu_helper_epilogue(pir1);
+            } else {
+                IR2_OPND high_opnd = ra_alloc_itemp();
+
+				IR2_OPND stn_opnd_addr = get_stn_opnd_addr(0);
+				la_ld_hu(high_opnd, stn_opnd_addr, 8);
+				la_bstrpick_d(high_opnd, high_opnd, 14, 0);
+				la_st_h(high_opnd, stn_opnd_addr, 8);
+			}
+        }
+    } else {
+        if (option_softfpu == 2) {
+            gen_softfpu_helper_prologue(pir1);
+        }
+        gen_softfpu_helper1((ADDR)helper_fabs_ST0);
+        if (option_softfpu == 2) {
+            gen_softfpu_helper_epilogue(pir1);
+        }
+    }
+    return true;
+}
+
 static bool translate_faddp_softfpu(IR1_INST *pir1)
 {
     IR1_OPND *src = ir1_get_opnd(pir1, 0);
 	int stn = ir1_opnd_base_reg_num(src);
     if (option_softfpu == 2 &&
         option_softfpu_fast & LATX_SOFTFPU_FAST_FADDP) {
-        gen_float64_STN_ST0_pop(pir1, stn);
+        if (option_float80) {
+            gen_float80_STN_ST0_pop(pir1, stn);
+        } else {
+            gen_float64_STN_ST0_pop(pir1, stn);
+        }
     } else {
         gen_softfpu_helper2i((ADDR)helper_fadd_STN_ST0, stn);
         gen_softfpu_helper1((ADDR)helper_fpop);
@@ -771,7 +1055,11 @@ static bool translate_fadd_softfpu(IR1_INST *pir1)
 
         if (option_softfpu == 2 &&
             option_softfpu_fast & LATX_SOFTFPU_FAST_FADD) {
-            gen_float64_ST0_MEM(pir1, mem_opnd, opnd_size, false);
+            if (option_float80) {
+                gen_float80_ST0_MEM(pir1, mem_opnd, opnd_size, false);
+            } else {
+                gen_float64_ST0_MEM(pir1, mem_opnd, opnd_size, false);
+            }
         } else {
             if (opnd_size == 32) {
                 gen_softfpu_helper2m_32s((ADDR)helper_flds_FT0, mem_opnd);
@@ -786,7 +1074,11 @@ static bool translate_fadd_softfpu(IR1_INST *pir1)
     int stn = ir1_opnd_base_reg_num(src);
     if (option_softfpu == 2 &&
         option_softfpu_fast & LATX_SOFTFPU_FAST_FADD) {
-        gen_float64_STN_ST0(pir1, opnd_num, stn);
+        if (option_float80) {
+            gen_float80_STN_ST0(pir1, opnd_num, stn);
+        } else {
+            gen_float64_STN_ST0(pir1, opnd_num, stn);
+        }
         return true;
     } else {
         if (opnd_num == 1) {
@@ -823,18 +1115,41 @@ static bool translate_fbstp_softfpu(IR1_INST *pir1)
 
 static bool translate_fchs_softfpu(IR1_INST *pir1)
 {
-    if (option_softfpu == 2) {
-        IR2_OPND high_opnd = ra_alloc_itemp();
-        IR2_OPND itemp = ra_alloc_itemp();
+    if (option_softfpu == 2 && (!option_float80 ||
+        (option_softfpu_fast & 0x800000000))) {
+        if (option_float80 & 0x2000) {
+            if (option_stack) {
+                IR2_OPND st0_opnd = ra_alloc_st(0);
 
-        IR2_OPND stn_opnd_addr = get_stn_opnd_addr(0);
+                la_x86fneg_ld(st0_opnd, st0_opnd);
+            } else {
+                IR2_OPND st0_opnd = ra_alloc_ftemp();
 
-        la_ld_hu(high_opnd, stn_opnd_addr, 8);
-        li_wu(itemp, 0x8000);
-        la_xor(high_opnd, high_opnd, itemp);
-        la_st_h(high_opnd, stn_opnd_addr, 8);
+                get_float80_from_stn(st0_opnd, 0);
+                la_calcute_float80(pir1, st0_opnd, st0_opnd);
+                save_float80_to_stn(st0_opnd, 0);
+
+                ra_free_temp(st0_opnd);
+            }
+        } else {
+            IR2_OPND high_opnd = ra_alloc_itemp();
+            IR2_OPND itemp = ra_alloc_itemp();
+
+            IR2_OPND stn_opnd_addr = get_stn_opnd_addr(0);
+
+            la_ld_hu(high_opnd, stn_opnd_addr, 8);
+            li_wu(itemp, 0x8000);
+            la_xor(high_opnd, high_opnd, itemp);
+            la_st_h(high_opnd, stn_opnd_addr, 8);
+        }
     } else {
+        if (option_softfpu == 2) {
+            gen_softfpu_helper_prologue(pir1);
+        }
         gen_softfpu_helper1((ADDR)helper_fchs_ST0);
+        if (option_softfpu == 2) {
+            gen_softfpu_helper_epilogue(pir1);
+        }
     }
     return true;
 }
@@ -848,10 +1163,17 @@ static bool translate_fcmovnb_softfpu(IR1_INST *pir1)
     IR1_OPND *opnd1 = ir1_get_opnd(pir1, 1);
 	int stn = ir1_opnd_base_reg_num(opnd1);
 
-    if (option_softfpu == 2) {
+    if (option_softfpu == 2 && (!option_float80 ||
+        (option_softfpu_fast & 0x1000000000))) {
         fmov_STN_STM(0, stn);
     } else {
+        if (option_softfpu == 2) {
+            gen_softfpu_helper_prologue(pir1);
+        }
         gen_softfpu_helper2i((ADDR)helper_fmov_ST0_STN, stn);
+        if (option_softfpu == 2) {
+            gen_softfpu_helper_epilogue(pir1);
+        }
     }
     la_label(label_exit);
     return true;
@@ -866,10 +1188,17 @@ static bool translate_fcmovb_softfpu(IR1_INST *pir1)
     IR1_OPND *opnd1 = ir1_get_opnd(pir1, 1);
 	int stn = ir1_opnd_base_reg_num(opnd1);
 
-    if (option_softfpu == 2) {
+    if (option_softfpu == 2 && (!option_float80 ||
+        (option_softfpu_fast & 0x1000000000))) {
         fmov_STN_STM(0, stn);
     } else {
+        if (option_softfpu == 2) {
+            gen_softfpu_helper_prologue(pir1);
+        }
         gen_softfpu_helper2i((ADDR)helper_fmov_ST0_STN, stn);
+        if (option_softfpu == 2) {
+            gen_softfpu_helper_epilogue(pir1);
+        }
     }
     la_label(label_exit);
     return true;
@@ -884,10 +1213,17 @@ static bool translate_fcmovnu_softfpu(IR1_INST *pir1)
     IR1_OPND *opnd1 = ir1_get_opnd(pir1, 1);
 	int stn = ir1_opnd_base_reg_num(opnd1);
 
-    if (option_softfpu == 2) {
+    if (option_softfpu == 2 && (!option_float80 ||
+        (option_softfpu_fast & 0x1000000000))) {
         fmov_STN_STM(0, stn);
     } else {
+        if (option_softfpu == 2) {
+            gen_softfpu_helper_prologue(pir1);
+        }
         gen_softfpu_helper2i((ADDR)helper_fmov_ST0_STN, stn);
+        if (option_softfpu == 2) {
+            gen_softfpu_helper_epilogue(pir1);
+        }
     }
     la_label(label_exit);
     return true;
@@ -902,10 +1238,17 @@ static bool translate_fcmovu_softfpu(IR1_INST *pir1)
     IR1_OPND *opnd1 = ir1_get_opnd(pir1, 1);
 	int stn = ir1_opnd_base_reg_num(opnd1);
 
-    if (option_softfpu == 2) {
+    if (option_softfpu == 2 && (!option_float80 ||
+        (option_softfpu_fast & 0x1000000000))) {
         fmov_STN_STM(0, stn);
     } else {
+        if (option_softfpu == 2) {
+            gen_softfpu_helper_prologue(pir1);
+        }
         gen_softfpu_helper2i((ADDR)helper_fmov_ST0_STN, stn);
+        if (option_softfpu == 2) {
+            gen_softfpu_helper_epilogue(pir1);
+        }
     }
     la_label(label_exit);
     return true;
@@ -920,10 +1263,17 @@ static bool translate_fcmove_softfpu(IR1_INST *pir1)
     IR1_OPND *opnd1 = ir1_get_opnd(pir1, 1);
 	int stn = ir1_opnd_base_reg_num(opnd1);
 
-    if (option_softfpu == 2) {
+    if (option_softfpu == 2 && (!option_float80 ||
+        (option_softfpu_fast & 0x1000000000))) {
         fmov_STN_STM(0, stn);
     } else {
+        if (option_softfpu == 2) {
+            gen_softfpu_helper_prologue(pir1);
+        }
         gen_softfpu_helper2i((ADDR)helper_fmov_ST0_STN, stn);
+        if (option_softfpu == 2) {
+            gen_softfpu_helper_epilogue(pir1);
+        }
     }
     la_label(label_exit);
     return true;
@@ -938,10 +1288,17 @@ static bool translate_fcmovne_softfpu(IR1_INST *pir1)
     IR1_OPND *opnd1 = ir1_get_opnd(pir1, 1);
 	int stn = ir1_opnd_base_reg_num(opnd1);
 
-    if (option_softfpu == 2) {
+    if (option_softfpu == 2 && (!option_float80 ||
+        (option_softfpu_fast & 0x1000000000))) {
         fmov_STN_STM(0, stn);
     } else {
+        if (option_softfpu == 2) {
+            gen_softfpu_helper_prologue(pir1);
+        }
         gen_softfpu_helper2i((ADDR)helper_fmov_ST0_STN, stn);
+        if (option_softfpu == 2) {
+            gen_softfpu_helper_epilogue(pir1);
+        }
     }
     la_label(label_exit);
     return true;
@@ -956,10 +1313,17 @@ static bool translate_fcmovbe_softfpu(IR1_INST *pir1)
     IR1_OPND *opnd1 = ir1_get_opnd(pir1, 1);
 	int stn = ir1_opnd_base_reg_num(opnd1);
 
-    if (option_softfpu == 2) {
+    if (option_softfpu == 2 && (!option_float80 ||
+        (option_softfpu_fast & 0x1000000000))) {
         fmov_STN_STM(0, stn);
     } else {
+        if (option_softfpu == 2) {
+            gen_softfpu_helper_prologue(pir1);
+        }
         gen_softfpu_helper2i((ADDR)helper_fmov_ST0_STN, stn);
+        if (option_softfpu == 2) {
+            gen_softfpu_helper_epilogue(pir1);
+        }
     }
     la_label(label_exit);
     return true;
@@ -974,10 +1338,17 @@ static bool translate_fcmovnbe_softfpu(IR1_INST *pir1)
     IR1_OPND *opnd1 = ir1_get_opnd(pir1, 1);
 	int stn = ir1_opnd_base_reg_num(opnd1);
 
-    if (option_softfpu == 2) {
+    if (option_softfpu == 2 && (!option_float80 ||
+        (option_softfpu_fast & 0x1000000000))) {
         fmov_STN_STM(0, stn);
     } else {
+        if (option_softfpu == 2) {
+            gen_softfpu_helper_prologue(pir1);
+        }
         gen_softfpu_helper2i((ADDR)helper_fmov_ST0_STN, stn);
+        if (option_softfpu == 2) {
+            gen_softfpu_helper_epilogue(pir1);
+        }
     }
     la_label(label_exit);
     return true;
@@ -1020,89 +1391,251 @@ static bool translate_fcmovcc_softfpu(IR1_INST *pir1)
     return ret;
 }
 
-static bool translate_fcom_softfpu(IR1_INST *pir1)
+#define C0_BIT (8)
+#define C2_BIT (10)
+#define C3_BIT (14)
+#define BIT_C_F(bitcf) (~(1 << bitcf))
+
+static void la_fcom_ST0_FT0(IR1_INST *pir1, bool is_eflags, bool is_quiet)
 {
+    int C0_CF, C2_PF, C3_ZF;
+    if (is_eflags) {
+        C0_CF = 0;
+        C2_PF = 2;
+        C3_ZF = 6;
+    } else {
+        C0_CF = C0_BIT;
+        C2_PF = C2_BIT;
+        C3_ZF = C3_BIT;
+    }
+
+    /* ir1_opnd */
     int opnd_num = ir1_opnd_num(pir1);
     IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
-    int opnd_size = ir1_opnd_size(opnd0);
-    if (ir1_opnd_is_fpr(opnd0)) {
-        int stn = 1;
-        if (opnd_num) {
+
+    int index;
+    int stn = -1;
+    switch (ir1_opcode(pir1)) {
+        case dt_X86_INS_FCOM:
+        case dt_X86_INS_FCOMP:
+            if (ir1_opnd_is_fpr(opnd0)) {
+                stn = 1;
+                if (opnd_num) {
+                    stn = ir1_opnd_base_reg_num(opnd0);
+                }
+            }
+            break;
+        case dt_X86_INS_FUCOM:
+        case dt_X86_INS_FUCOMP:
+            stn = 1;
+            if (opnd_num) {
+                stn = ir1_opnd_base_reg_num(opnd0);
+            }
+            break;
+        case dt_X86_INS_FCOMPP:
+        case dt_X86_INS_FUCOMPP:
+            stn = 1;
+            break;
+        case dt_X86_INS_FCOMI:
+        case dt_X86_INS_FCOMIP:
+            index = get_src_index(pir1);
+            opnd0 = ir1_get_opnd(pir1, index);
             stn = ir1_opnd_base_reg_num(opnd0);
-        }
-        gen_softfpu_helper2i((ADDR)helper_fmov_FT0_STN, stn);
-        gen_softfpu_helper1((ADDR)helper_fcom_ST0_FT0);
-    } else if (ir1_opnd_is_mem(opnd0) && opnd_size == 32) {
-        IR2_OPND mem_opnd = convert_mem_no_offset(opnd0);
-        gen_softfpu_helper2m_32s((ADDR)helper_flds_FT0, mem_opnd);
-        gen_softfpu_helper1((ADDR)helper_fcom_ST0_FT0);
-    } else if (ir1_opnd_is_mem(opnd0) && opnd_size == 64) {
-        IR2_OPND mem_opnd = convert_mem_no_offset(opnd0);
-        gen_softfpu_helper2m_64((ADDR)helper_fldl_FT0, mem_opnd);
-        gen_softfpu_helper1((ADDR)helper_fcom_ST0_FT0);
+            break;
+        case dt_X86_INS_FUCOMI:
+        case dt_X86_INS_FUCOMIP:
+            stn = ir1_opnd_base_reg_num(opnd0);
+            break;
+        default:
+            break;
+    }
+
+
+    IR2_OPND st0, ft0;
+    if (option_stack) {
+        st0 = ra_alloc_st(0);
     } else {
-        lsassert(0);
-        return false;
-	}
-    return true;
+        st0 = ra_alloc_ftemp();
+        get_float80_from_stn(st0, 0);
+     }
+
+    if (stn != -1) {
+        if (option_stack) {
+            ft0 = ra_alloc_st(stn);
+        } else {
+            ft0 = ra_alloc_ftemp();
+            get_float80_from_stn(ft0, stn);
+        }
+    } else {
+        IR2_OPND src_opnd = ra_alloc_ftemp();
+        ft0 = ra_alloc_ftemp();
+        load_freg_from_ir1_2(src_opnd, opnd0, IS_CONVERT);
+        la_x86fcvt_ld_d(ft0, src_opnd);
+        ra_free_temp(src_opnd);
+    }
+
+    IR2_OPND dest = ra_alloc_ftemp();
+
+    IR2_OPND fpus_eflags = ra_alloc_itemp();
+    if (is_eflags) {
+        la_x86mfflag(fpus_eflags, 0x3f);
+    } else {
+        la_ld_h(fpus_eflags, env_ir2_opnd, lsenv_offset_of_status_word(lsenv));
+    }
+
+    if (is_quiet) {
+        la_x86fucom_ld(dest, st0, ft0);
+    } else {
+        la_x86fcom_ld(dest, st0, ft0);
+    }
+
+    IR2_OPND temp0 = ra_alloc_itemp();
+    IR2_OPND temp1 = ra_alloc_itemp();
+    IR2_OPND temp2 = ra_alloc_itemp();
+    la_vpickve2gr_du(temp2, dest, 0);
+    /* set C0 */
+    la_andi(temp0, temp2, 1);
+    la_slli_d(temp0, temp0, C0_CF);
+    li_d(temp1, BIT_C_F(C0_CF));
+    la_and(fpus_eflags, fpus_eflags, temp1);
+    la_or(fpus_eflags, fpus_eflags, temp0);
+    /* set C2 */
+    la_andi(temp0, temp2, 2);
+    la_slli_d(temp0, temp0, C2_PF - 1);
+    li_d(temp1, BIT_C_F(C2_PF));
+    la_and(fpus_eflags, fpus_eflags, temp1);
+    la_or(fpus_eflags, fpus_eflags, temp0);
+    /* set C3 */
+    la_andi(temp0, temp2, 4);
+    la_slli_d(temp0, temp0, C3_ZF - 2);
+    li_d(temp1, BIT_C_F(C3_ZF));
+    la_and(fpus_eflags, fpus_eflags, temp1);
+    la_or(fpus_eflags, fpus_eflags, temp0);
+
+    if (is_eflags) {
+        la_x86mtflag(fpus_eflags, 0x3f);
+    } else {
+        la_st_h(fpus_eflags, env_ir2_opnd,
+                                lsenv_offset_of_status_word(lsenv));
+    }
+
+//    IR2_OPND sw_opnd = ra_alloc_itemp();
+//    la_update_sw_by_fcsr(sw_opnd);
+//    ra_free_temp(sw_opnd);
+}
+
+static bool translate_fcom_softfpu(IR1_INST *pir1)
+{
+    if (option_softfpu == 2 && option_float80 && (option_softfpu_fast & 0x1000000)) {
+        la_fcom_ST0_FT0(pir1, false, false);
+        return true;
+    } else {
+        int opnd_num = ir1_opnd_num(pir1);
+        IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
+        int opnd_size = ir1_opnd_size(opnd0);
+        if (ir1_opnd_is_fpr(opnd0)) {
+            int stn = 1;
+            if (opnd_num) {
+                stn = ir1_opnd_base_reg_num(opnd0);
+            }
+            gen_softfpu_helper2i((ADDR)helper_fmov_FT0_STN, stn);
+            gen_softfpu_helper1((ADDR)helper_fcom_ST0_FT0);
+        } else if (ir1_opnd_is_mem(opnd0) && opnd_size == 32) {
+            IR2_OPND mem_opnd = convert_mem_no_offset(opnd0);
+            gen_softfpu_helper2m_32s((ADDR)helper_flds_FT0, mem_opnd);
+            gen_softfpu_helper1((ADDR)helper_fcom_ST0_FT0);
+        } else if (ir1_opnd_is_mem(opnd0) && opnd_size == 64) {
+            IR2_OPND mem_opnd = convert_mem_no_offset(opnd0);
+            gen_softfpu_helper2m_64((ADDR)helper_fldl_FT0, mem_opnd);
+            gen_softfpu_helper1((ADDR)helper_fcom_ST0_FT0);
+        } else {
+            lsassert(0);
+            return false;
+        }
+        return true;
+    }
 }
 
 static bool translate_fcomi_softfpu(IR1_INST *pir1)
 {
-    int index = get_src_index(pir1);
-    IR1_OPND *opnd0 = ir1_get_opnd(pir1, index);
-    int stn = ir1_opnd_base_reg_num(opnd0);
-    gen_softfpu_helper2i((ADDR)helper_fmov_FT0_STN, stn);
-    gen_softfpu_helper1((ADDR)helper_fcomi_ST0_FT0);
-    return true;
+    if (option_softfpu == 2 && option_float80 && (option_softfpu_fast & 0x2000000)) {
+        la_fcom_ST0_FT0(pir1, true, false);
+        return true;
+    } else {
+        int index = get_src_index(pir1);
+        IR1_OPND *opnd0 = ir1_get_opnd(pir1, index);
+        int stn = ir1_opnd_base_reg_num(opnd0);
+        gen_softfpu_helper2i((ADDR)helper_fmov_FT0_STN, stn);
+        gen_softfpu_helper1((ADDR)helper_fcomi_ST0_FT0);
+        return true;
+    }
 }
 
 static bool translate_fcomip_softfpu(IR1_INST *pir1)
 {
-    int index = get_src_index(pir1);
-    IR1_OPND *opnd0 = ir1_get_opnd(pir1, index);
-    int stn = ir1_opnd_base_reg_num(opnd0);
-    gen_softfpu_helper2i((ADDR)helper_fmov_FT0_STN, stn);
-    gen_softfpu_helper1((ADDR)helper_fcomi_ST0_FT0);
-    gen_softfpu_helper1((ADDR)helper_fpop);
-    return true;
+    if (option_softfpu == 2 && option_float80 && (option_softfpu_fast & 0x4000000)) {
+        la_fcom_ST0_FT0(pir1, true, false);
+        la_fpu_pop();
+        return true;
+    } else {
+        int index = get_src_index(pir1);
+        IR1_OPND *opnd0 = ir1_get_opnd(pir1, index);
+        int stn = ir1_opnd_base_reg_num(opnd0);
+        gen_softfpu_helper2i((ADDR)helper_fmov_FT0_STN, stn);
+        gen_softfpu_helper1((ADDR)helper_fcomi_ST0_FT0);
+        gen_softfpu_helper1((ADDR)helper_fpop);
+        return true;
+    }
 }
 
 static bool translate_fcomp_softfpu(IR1_INST *pir1)
 {
-    int opnd_num = ir1_opnd_num(pir1);
-    IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
-    int opnd_size = ir1_opnd_size(opnd0);
-    if (ir1_opnd_is_fpr(opnd0)) {
-        int stn = 1;
-        if (opnd_num) {
-            stn = ir1_opnd_base_reg_num(opnd0);
-        }
-        gen_softfpu_helper2i((ADDR)helper_fmov_FT0_STN, stn);
-        gen_softfpu_helper1((ADDR)helper_fcom_ST0_FT0);
-    } else if (ir1_opnd_is_mem(opnd0) && opnd_size == 32) {
-        IR2_OPND mem_opnd = convert_mem_no_offset(opnd0);
-        gen_softfpu_helper2m_32s((ADDR)helper_flds_FT0, mem_opnd);
-        gen_softfpu_helper1((ADDR)helper_fcom_ST0_FT0);
-    } else if (ir1_opnd_is_mem(opnd0) && opnd_size == 64) {
-        IR2_OPND mem_opnd = convert_mem_no_offset(opnd0);
-        gen_softfpu_helper2m_64((ADDR)helper_fldl_FT0, mem_opnd);
-        gen_softfpu_helper1((ADDR)helper_fcom_ST0_FT0);
+    if (option_softfpu == 2 && option_float80 && (option_softfpu_fast & 0x8000000)) {
+        la_fcom_ST0_FT0(pir1, false, false);
+        la_fpu_pop();
+        return true;
     } else {
-        lsassert(0);
-        return false;
-	}
-    gen_softfpu_helper1((ADDR)helper_fpop);
-    return true;
+        int opnd_num = ir1_opnd_num(pir1);
+        IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
+        int opnd_size = ir1_opnd_size(opnd0);
+        if (ir1_opnd_is_fpr(opnd0)) {
+            int stn = 1;
+            if (opnd_num) {
+                stn = ir1_opnd_base_reg_num(opnd0);
+            }
+            gen_softfpu_helper2i((ADDR)helper_fmov_FT0_STN, stn);
+            gen_softfpu_helper1((ADDR)helper_fcom_ST0_FT0);
+        } else if (ir1_opnd_is_mem(opnd0) && opnd_size == 32) {
+            IR2_OPND mem_opnd = convert_mem_no_offset(opnd0);
+            gen_softfpu_helper2m_32s((ADDR)helper_flds_FT0, mem_opnd);
+            gen_softfpu_helper1((ADDR)helper_fcom_ST0_FT0);
+        } else if (ir1_opnd_is_mem(opnd0) && opnd_size == 64) {
+            IR2_OPND mem_opnd = convert_mem_no_offset(opnd0);
+            gen_softfpu_helper2m_64((ADDR)helper_fldl_FT0, mem_opnd);
+            gen_softfpu_helper1((ADDR)helper_fcom_ST0_FT0);
+        } else {
+            lsassert(0);
+            return false;
+        }
+        gen_softfpu_helper1((ADDR)helper_fpop);
+        return true;
+    }
 }
 
 static bool translate_fcompp_softfpu(IR1_INST *pir1)
 {
-    gen_softfpu_helper2i((ADDR)helper_fmov_FT0_STN, 1);
-    gen_softfpu_helper1((ADDR)helper_fcom_ST0_FT0);
-    gen_softfpu_helper1((ADDR)helper_fpop);
-    gen_softfpu_helper1((ADDR)helper_fpop);
-    return true;
+    if (option_softfpu == 2 && option_float80 && (option_softfpu_fast & 0x10000000)) {
+        la_fcom_ST0_FT0(pir1, false, false);
+        la_fpu_pop();
+        la_fpu_pop();
+        return true;
+    } else {
+        gen_softfpu_helper2i((ADDR)helper_fmov_FT0_STN, 1);
+        gen_softfpu_helper1((ADDR)helper_fcom_ST0_FT0);
+        gen_softfpu_helper1((ADDR)helper_fpop);
+        gen_softfpu_helper1((ADDR)helper_fpop);
+        return true;
+    }
 }
 
 static bool translate_fcos_softfpu(IR1_INST *pir1)
@@ -1114,12 +1647,16 @@ static bool translate_fcos_softfpu(IR1_INST *pir1)
 static bool translate_fdecstp_softfpu(IR1_INST *pir1)
 {
     if (option_softfpu == 2) {
-        IR2_OPND top_opnd = ra_alloc_itemp();
+        if (option_stack) {
+            la_x86dectop();
+        } else {
+            IR2_OPND top_opnd = ra_alloc_itemp();
 
-        la_ld_w(top_opnd, env_ir2_opnd, lsenv_offset_of_top(lsenv));
-        la_addi_d(top_opnd, top_opnd, -1);
-        la_bstrpick_d(top_opnd, top_opnd, 2, 0);
-        la_st_w(top_opnd, env_ir2_opnd, lsenv_offset_of_top(lsenv));
+            la_ld_w(top_opnd, env_ir2_opnd, lsenv_offset_of_top(lsenv));
+            la_addi_d(top_opnd, top_opnd, -1);
+            la_bstrpick_d(top_opnd, top_opnd, 2, 0);
+            la_st_w(top_opnd, env_ir2_opnd, lsenv_offset_of_top(lsenv));
+        }
 
         /* increments the top-of-stack pointer */
         IR2_OPND value_status = ra_alloc_itemp();
@@ -1150,7 +1687,11 @@ static bool translate_fdiv_softfpu(IR1_INST *pir1)
         IR2_OPND mem_opnd = convert_mem_no_offset(src);
         if (option_softfpu == 2 &&
             option_softfpu_fast & LATX_SOFTFPU_FAST_FDIV) {
-            gen_float64_ST0_MEM(pir1, mem_opnd, opnd_size, false);
+            if (option_float80) {
+                gen_float80_ST0_MEM(pir1, mem_opnd, opnd_size, false);
+            } else {
+                gen_float64_ST0_MEM(pir1, mem_opnd, opnd_size, false);
+            }
         } else {
             if (opnd_size == 32) {
                 gen_softfpu_helper2m_32s((ADDR)helper_flds_FT0, mem_opnd);
@@ -1165,7 +1706,11 @@ static bool translate_fdiv_softfpu(IR1_INST *pir1)
     int stn = ir1_opnd_base_reg_num(src);
     if (option_softfpu == 2 &&
         option_softfpu_fast & LATX_SOFTFPU_FAST_FDIV) {
-        gen_float64_STN_ST0(pir1, opnd_num, stn);
+        if (option_float80) {
+            gen_float80_STN_ST0(pir1, opnd_num, stn);
+        } else {
+            gen_float64_STN_ST0(pir1, opnd_num, stn);
+        }
         return true;
     } else {
         if (opnd_num == 1) {
@@ -1187,7 +1732,11 @@ static bool translate_fdivp_softfpu(IR1_INST *pir1)
 	int stn = ir1_opnd_base_reg_num(src);
     if (option_softfpu == 2 &&
         option_softfpu_fast & LATX_SOFTFPU_FAST_FDIVP) {
-        gen_float64_STN_ST0_pop(pir1, stn);
+        if (option_float80) {
+            gen_float80_STN_ST0_pop(pir1, stn);
+        } else {
+            gen_float64_STN_ST0_pop(pir1, stn);
+        }
     } else {
         gen_softfpu_helper2i((ADDR)helper_fdiv_STN_ST0, stn);
         gen_softfpu_helper1((ADDR)helper_fpop);
@@ -1206,7 +1755,11 @@ static bool translate_fdivr_softfpu(IR1_INST *pir1)
         IR2_OPND mem_opnd = convert_mem_no_offset(src);
         if (option_softfpu == 2 &&
             option_softfpu_fast & LATX_SOFTFPU_FAST_FDIVR) {
-            gen_float64_ST0_MEM(pir1, mem_opnd, opnd_size, false);
+            if (option_float80) {
+                gen_float80_ST0_MEM(pir1, mem_opnd, opnd_size, false);
+            } else {
+                gen_float64_ST0_MEM(pir1, mem_opnd, opnd_size, false);
+            }
         } else {
             if (opnd_size == 32) {
                 gen_softfpu_helper2m_32s((ADDR)helper_flds_FT0, mem_opnd);
@@ -1221,7 +1774,11 @@ static bool translate_fdivr_softfpu(IR1_INST *pir1)
     int stn = ir1_opnd_base_reg_num(src);
     if (option_softfpu == 2 &&
         option_softfpu_fast & LATX_SOFTFPU_FAST_FDIVR) {
-        gen_float64_STN_ST0(pir1, opnd_num, stn);
+        if (option_float80) {
+            gen_float80_STN_ST0(pir1, opnd_num, stn);
+        } else {
+            gen_float64_STN_ST0(pir1, opnd_num, stn);
+        }
         return true;
     } else {
         if (opnd_num == 1) {
@@ -1243,7 +1800,11 @@ static bool translate_fdivrp_softfpu(IR1_INST *pir1)
 	int stn = ir1_opnd_base_reg_num(src);
     if (option_softfpu == 2 &&
         option_softfpu_fast & LATX_SOFTFPU_FAST_FDIVRP) {
-        gen_float64_STN_ST0_pop(pir1, stn);
+        if (option_float80) {
+            gen_float80_STN_ST0_pop(pir1, stn);
+        } else {
+            gen_float64_STN_ST0_pop(pir1, stn);
+        }
     } else {
         gen_softfpu_helper2i((ADDR)helper_fdivr_STN_ST0, stn);
         gen_softfpu_helper1((ADDR)helper_fpop);
@@ -1261,7 +1822,11 @@ static bool translate_ffree_softfpu(IR1_INST *pir1)
         IR1_OPND *sti_reg = ir1_get_opnd(pir1, 0);
 
         /* get TOP */
-        la_ld_wu(top_opnd, env_ir2_opnd, lsenv_offset_of_top(lsenv));
+        if (option_stack) {
+            la_x86mftop(top_opnd);
+        } else {
+            la_ld_wu(top_opnd, env_ir2_opnd, lsenv_offset_of_top(lsenv));
+        }
 
         /* get fpu tag word */
         int tag_offset = lsenv_offset_of_tag_word(lsenv);
@@ -1356,7 +1921,11 @@ static bool translate_fiadd_softfpu(IR1_INST *pir1)
 
     if (option_softfpu == 2 &&
         option_softfpu_fast & LATX_SOFTFPU_FAST_FIADD) {
-        gen_float64_ST0_MEM(pir1, mem_opnd, opnd_size, true);
+        if (option_float80) {
+            gen_float80_ST0_MEM(pir1, mem_opnd, opnd_size, true);
+        } else {
+            gen_float64_ST0_MEM(pir1, mem_opnd, opnd_size, true);
+        }
     } else {
         if (opnd_size == 32) {
             gen_softfpu_helper2m_32s((ADDR)helper_fildl_FT0, mem_opnd);
@@ -1414,7 +1983,11 @@ static bool translate_fidiv_softfpu(IR1_INST *pir1)
 
     if (option_softfpu == 2 &&
         option_softfpu_fast & LATX_SOFTFPU_FAST_FIDIV) {
-        gen_float64_ST0_MEM(pir1, mem_opnd, opnd_size, true);
+        if (option_float80) {
+            gen_float80_ST0_MEM(pir1, mem_opnd, opnd_size, true);
+        } else {
+            gen_float64_ST0_MEM(pir1, mem_opnd, opnd_size, true);
+        }
     } else {
         if (opnd_size == 32) {
             gen_softfpu_helper2m_32s((ADDR)helper_fildl_FT0, mem_opnd);
@@ -1437,7 +2010,11 @@ static bool translate_fidivr_softfpu(IR1_INST *pir1)
 
     if (option_softfpu == 2 &&
         option_softfpu_fast & LATX_SOFTFPU_FAST_FIDIVR) {
-        gen_float64_ST0_MEM(pir1, mem_opnd, opnd_size, true);
+        if (option_float80) {
+            gen_float80_ST0_MEM(pir1, mem_opnd, opnd_size, true);
+        } else {
+            gen_float64_ST0_MEM(pir1, mem_opnd, opnd_size, true);
+        }
     } else {
         if (opnd_size == 32) {
             gen_softfpu_helper2m_32s((ADDR)helper_fildl_FT0, mem_opnd);
@@ -1458,11 +2035,16 @@ static bool translate_fild_softfpu(IR1_INST *pir1)
     int opnd_size = ir1_opnd_size(opnd0);
     IR2_OPND mem_opnd = convert_mem_no_offset(opnd0);
 
-    if (option_softfpu == 2) {
+    if (option_softfpu == 2 && (!option_float80 || (option_float80 & 0xc0))) {
         IR2_OPND src_opnd = ra_alloc_itemp();
         IR2_OPND src_ftemp = ra_alloc_ftemp();
 
-        IR2_OPND st0_opnd = ra_alloc_ftemp();
+        IR2_OPND st0_opnd;
+        if (option_stack) {
+            st0_opnd = ra_alloc_st(0);
+        } else {
+            st0_opnd = ra_alloc_ftemp();
+        }
         IR2_OPND ftemp_opnd = ra_alloc_ftemp();
 
         IR2_OPND label_exit = ra_alloc_label();
@@ -1473,30 +2055,40 @@ static bool translate_fild_softfpu(IR1_INST *pir1)
             IR2_OPND label_positive = ra_alloc_label();
 
             la_ld_d(src_opnd, mem_opnd, 0);
-            la_ori(itemp1, src_opnd, 0);
-            la_bge(itemp1, zero_ir2_opnd, label_positive);
-            la_sub_d(itemp1, zero_ir2_opnd, src_opnd);
+            if (option_float80 & 0x80) {
+                la_movgr2fr_d(src_ftemp, src_opnd);
+                if (option_stack) {
+                    la_fpu_push();
+                }
+                la_x86ffint_ld_l(st0_opnd, src_ftemp);
+            } else {
+                la_ori(itemp1, src_opnd, 0);
+                la_bge(itemp1, zero_ir2_opnd, label_positive);
+                la_sub_d(itemp1, zero_ir2_opnd, src_opnd);
 
-            /* src_opnd >=0 */
-            la_label(label_positive);
-            la_clz_d(itemp1, itemp1);
-            li_d(itemp2, 12);
-            la_bge(itemp1, itemp2, label_hard);
+                /* src_opnd >=0 */
+                la_label(label_positive);
+                la_clz_d(itemp1, itemp1);
+                li_d(itemp2, 12);
+                la_bge(itemp1, itemp2, label_hard);
 
-            bool local_region =
-                !lsenv->tr_data->softfpu_region_active;
-            if (local_region) {
-                gen_softfpu_helper_prologue(pir1);
+                bool local_region = !lsenv->tr_data->softfpu_region_active;
+                if (local_region) {
+                    gen_softfpu_helper_prologue(pir1);
+                }
+                gen_softfpu_helper2m_64((ADDR)helper_fildll_ST0, mem_opnd);
+                if (local_region) {
+                    gen_softfpu_helper_epilogue(pir1);
+                }
+                la_b(label_exit);
+
+                la_label(label_hard);
+                la_movgr2fr_d(src_ftemp, src_opnd);
+                la_ffint_d_l(src_ftemp, src_ftemp);
+            la_fcvt_ld_d(st0_opnd, src_ftemp);
+            la_fcvt_ud_d(ftemp_opnd, src_ftemp);
+            la_vextrins_h(st0_opnd, ftemp_opnd, 0x40);
             }
-            gen_softfpu_helper2m_64((ADDR)helper_fildll_ST0, mem_opnd);
-            if (local_region) {
-                gen_softfpu_helper_epilogue(pir1);
-            }
-            la_b(label_exit);
-
-            la_label(label_hard);
-            la_movgr2fr_d(src_ftemp, src_opnd);
-            la_ffint_d_l(src_ftemp, src_ftemp);
 
             ra_free_temp(itemp1);
             ra_free_temp(itemp2);
@@ -1504,23 +2096,44 @@ static bool translate_fild_softfpu(IR1_INST *pir1)
         } else if (opnd_size == 32) {
             la_ld_w(src_opnd, mem_opnd, 0);
             la_movgr2fr_d(src_ftemp, src_opnd);
-            la_ffint_d_w(src_ftemp, src_ftemp);
+            if (option_float80 & 0x40) {
+                if (option_stack) {
+                    la_fpu_push();
+                }
+                la_x86ffint_ld_w(st0_opnd, src_ftemp);
+            } else {
+                la_ffint_d_w(src_ftemp, src_ftemp);
+            la_fcvt_ld_d(st0_opnd, src_ftemp);
+            la_fcvt_ud_d(ftemp_opnd, src_ftemp);
+            la_vextrins_h(st0_opnd, ftemp_opnd, 0x40);
+            }
         } else {
             la_ld_h(src_opnd, mem_opnd, 0);
             la_movgr2fr_d(src_ftemp, src_opnd);
-            la_ffint_d_w(src_ftemp, src_ftemp);
+            if (option_float80 & 0x40) {
+                if (option_stack) {
+                    la_fpu_push();
+                }
+                la_x86ffint_ld_w(st0_opnd, src_ftemp);
+            } else {
+                la_ffint_d_w(src_ftemp, src_ftemp);
+            la_fcvt_ld_d(st0_opnd, src_ftemp);
+            la_fcvt_ud_d(ftemp_opnd, src_ftemp);
+            la_vextrins_h(st0_opnd, ftemp_opnd, 0x40);
+            }
         }
 
-        la_fcvt_ld_d(st0_opnd, src_ftemp);
-        la_fcvt_ud_d(ftemp_opnd, src_ftemp);
-        la_vextrins_h(st0_opnd, ftemp_opnd, 0x40);
 
-        la_fpu_push();
-        save_float80_to_stn(st0_opnd, 0);
+        if (!option_stack) {
+            la_fpu_push();
+            save_float80_to_stn(st0_opnd, 0);
+        }
 
         la_label(label_exit);
 
     } else {
+		if (option_softfpu == 2)
+			gen_softfpu_helper_prologue(pir1);
         if (opnd_size == 64) {
             gen_softfpu_helper2m_64((ADDR)helper_fildll_ST0, mem_opnd);
         } else if (opnd_size == 32) {
@@ -1528,6 +2141,8 @@ static bool translate_fild_softfpu(IR1_INST *pir1)
         } else {
             gen_softfpu_helper2m_16s((ADDR)helper_fildl_ST0, mem_opnd);
         }
+		if (option_softfpu == 2)
+			gen_softfpu_helper_epilogue(pir1);
     }
 
     return true;
@@ -1542,7 +2157,11 @@ static bool translate_fimul_softfpu(IR1_INST *pir1)
 
     if (option_softfpu == 2 &&
         option_softfpu_fast & LATX_SOFTFPU_FAST_FIMUL) {
-        gen_float64_ST0_MEM(pir1, mem_opnd, opnd_size, true);
+        if (option_float80) {
+            gen_float80_ST0_MEM(pir1, mem_opnd, opnd_size, true);
+        } else {
+            gen_float64_ST0_MEM(pir1, mem_opnd, opnd_size, true);
+        }
     } else {
         if (opnd_size == 32) {
             gen_softfpu_helper2m_32s((ADDR)helper_fildl_FT0, mem_opnd);
@@ -1559,12 +2178,16 @@ static bool translate_fimul_softfpu(IR1_INST *pir1)
 static bool translate_fincstp_softfpu(IR1_INST *pir1)
 {
     if (option_softfpu == 2) {
-        IR2_OPND top_opnd = ra_alloc_itemp();
+        if (option_stack) {
+            la_x86inctop();
+        } else {
+            IR2_OPND top_opnd = ra_alloc_itemp();
 
-        la_ld_w(top_opnd, env_ir2_opnd, lsenv_offset_of_top(lsenv));
-        la_addi_d(top_opnd, top_opnd, 1);
-        la_bstrpick_d(top_opnd, top_opnd, 2, 0);
-        la_st_w(top_opnd, env_ir2_opnd, lsenv_offset_of_top(lsenv));
+            la_ld_w(top_opnd, env_ir2_opnd, lsenv_offset_of_top(lsenv));
+            la_addi_d(top_opnd, top_opnd, 1);
+            la_bstrpick_d(top_opnd, top_opnd, 2, 0);
+            la_st_w(top_opnd, env_ir2_opnd, lsenv_offset_of_top(lsenv));
+        }
 
         /* increments the top-of-stack pointer */
         IR2_OPND value_status = ra_alloc_itemp();
@@ -1609,27 +2232,50 @@ static bool translate_fist_softfpu(IR1_INST *pir1)
         la_bstrpick_d(itemp2, itemp, 2, 2);
         la_bne(itemp2, zero_ir2_opnd, label_softfpu);
 
-        IR2_OPND fpr_st0_low_opnd = ra_alloc_ftemp();
+        IR2_OPND st0_opnd;
         IR2_OPND fpr_st0_high_opnd = ra_alloc_ftemp();
-        IR2_OPND st0_opnd = fpr_st0_low_opnd;
 
-        get_float80_from_stn(fpr_st0_low_opnd, 0);
-        la_vextrins_h(fpr_st0_high_opnd, fpr_st0_low_opnd, 0x4);
-        la_movfr2gr_d(itemp, fpr_st0_high_opnd);
-        la_bstrpick_d(itemp, itemp, 14, 0);
-        li_d(itemp2, FLOAT80_EXPONENT_MAX + FLOAT32_EXPONENT_MAX + 1);
-        la_bge(itemp, itemp2, label_softfpu);
+        if (!option_stack) {
+            st0_opnd = ra_alloc_ftemp();
+            get_float80_from_stn(st0_opnd, 0);
+        } else {
+            st0_opnd = ra_alloc_st(0);
+        }
+        IR2_OPND fpr_st0_low_opnd = st0_opnd;
+        if (!(option_float80 & 0x10)) {
+            la_vextrins_h(fpr_st0_high_opnd, fpr_st0_low_opnd, 0x4);
+            la_movfr2gr_d(itemp, fpr_st0_high_opnd);
+            la_bstrpick_d(itemp, itemp, 14, 0);
+            li_d(itemp2, FLOAT80_EXPONENT_MAX + FLOAT32_EXPONENT_MAX + 1);
+            la_bge(itemp, itemp2, label_softfpu);
+        }
 
         if (opnd_size == 16) {
-            la_fcvt_d_ld(st0_opnd, fpr_st0_low_opnd, fpr_st0_high_opnd);
-            la_ftint_w_d(st0_opnd, st0_opnd);
-            la_movfr2gr_s(itemp, st0_opnd);
+            if (option_float80 & 0x10) {
+                la_x86ftint_w_ld(fpr_st0_high_opnd, st0_opnd);
+                la_movfr2gr_s(itemp, fpr_st0_high_opnd);
+                IR2_OPND sw_opnd = ra_alloc_itemp();
+                la_update_sw_by_fcsr(sw_opnd);
+                ra_free_temp(sw_opnd);
+            } else {
+                la_fcvt_d_ld(st0_opnd, fpr_st0_low_opnd, fpr_st0_high_opnd);
+                la_ftint_w_d(st0_opnd, st0_opnd);
+                la_movfr2gr_s(itemp, st0_opnd);
+            }
             la_st_h(itemp, mem_opnd, 0);
 
         } else if (opnd_size == 32) {
-            la_fcvt_d_ld(st0_opnd, fpr_st0_low_opnd, fpr_st0_high_opnd);
-            la_ftint_w_d(st0_opnd, st0_opnd);
-            la_movfr2gr_s(itemp, st0_opnd);
+            if (option_float80 & 0x10) {
+                la_x86ftint_w_ld(fpr_st0_high_opnd, st0_opnd);
+                la_movfr2gr_s(itemp, fpr_st0_high_opnd);
+				IR2_OPND sw_opnd = ra_alloc_itemp();
+				la_update_sw_by_fcsr(sw_opnd);
+				ra_free_temp(sw_opnd);
+            } else {
+                la_fcvt_d_ld(st0_opnd, fpr_st0_low_opnd, fpr_st0_high_opnd);
+                la_ftint_w_d(st0_opnd, st0_opnd);
+                la_movfr2gr_s(itemp, st0_opnd);
+            }
             la_st_w(itemp, mem_opnd, 0);
 
         }
@@ -1696,40 +2342,73 @@ static bool translate_fistp_softfpu(IR1_INST *pir1)
         la_bstrpick_d(itemp2, itemp, 2, 2);
         la_bne(itemp2, zero_ir2_opnd, label_softfpu);
 
-        IR2_OPND fpr_st0_low_opnd = ra_alloc_ftemp();
+        IR2_OPND st0_opnd;
         IR2_OPND fpr_st0_high_opnd = ra_alloc_ftemp();
-        IR2_OPND st0_opnd = fpr_st0_low_opnd;
 
-        get_float80_from_stn(fpr_st0_low_opnd, 0);
-        la_vextrins_h(fpr_st0_high_opnd, fpr_st0_low_opnd, 0x4);
-        la_movfr2gr_d(itemp, fpr_st0_high_opnd);
-        la_bstrpick_d(itemp, itemp, 14, 0);
+        if (!option_stack) {
+            st0_opnd = ra_alloc_ftemp();
+            get_float80_from_stn(st0_opnd, 0);
+        } else {
+            st0_opnd = ra_alloc_st(0);
+        }
+
+        IR2_OPND fpr_st0_low_opnd = st0_opnd;
+
+        if (!(option_float80 & 0x30)) {
+            la_vextrins_h(fpr_st0_high_opnd, fpr_st0_low_opnd, 0x4);
+            la_movfr2gr_d(itemp, fpr_st0_high_opnd);
+            la_bstrpick_d(itemp, itemp, 14, 0);
+        }
 
         if (opnd_size == 16) {
-            li_d(itemp2, FLOAT80_EXPONENT_MAX + FLOAT32_EXPONENT_MAX + 1);
-            la_bge(itemp, itemp2, label_softfpu);
+            if (option_float80 & 0x10) {
+                la_x86ftint_w_ld(fpr_st0_high_opnd, st0_opnd);
+                la_movfr2gr_s(itemp, fpr_st0_high_opnd);
+    //IR2_OPND sw_opnd = ra_alloc_itemp();
+    //la_update_sw_by_fcsr(sw_opnd);
+    //ra_free_temp(sw_opnd);
+            } else {
+                li_d(itemp2, FLOAT80_EXPONENT_MAX + FLOAT32_EXPONENT_MAX + 1);
+                la_bge(itemp, itemp2, label_softfpu);
 
-            la_fcvt_d_ld(st0_opnd, fpr_st0_low_opnd, fpr_st0_high_opnd);
-            la_ftint_w_d(st0_opnd, st0_opnd);
-            la_movfr2gr_s(itemp, st0_opnd);
+                la_fcvt_d_ld(st0_opnd, fpr_st0_low_opnd, fpr_st0_high_opnd);
+                la_ftint_w_d(st0_opnd, st0_opnd);
+                la_movfr2gr_s(itemp, st0_opnd);
+            }
             la_st_h(itemp, mem_opnd, 0);
 
         } else if (opnd_size == 32) {
-            li_d(itemp2, FLOAT80_EXPONENT_MAX + FLOAT32_EXPONENT_MAX + 1);
-            la_bge(itemp, itemp2, label_softfpu);
+            if (option_float80 & 0x10) {
+                la_x86ftint_w_ld(fpr_st0_high_opnd, st0_opnd);
+                la_movfr2gr_s(itemp, fpr_st0_high_opnd);
+    //IR2_OPND sw_opnd = ra_alloc_itemp();
+    //la_update_sw_by_fcsr(sw_opnd);
+    //ra_free_temp(sw_opnd);
+            } else {
+                li_d(itemp2, FLOAT80_EXPONENT_MAX + FLOAT32_EXPONENT_MAX + 1);
+                la_bge(itemp, itemp2, label_softfpu);
 
-            la_fcvt_d_ld(st0_opnd, fpr_st0_low_opnd, fpr_st0_high_opnd);
-            la_ftint_w_d(st0_opnd, st0_opnd);
-            la_movfr2gr_s(itemp, st0_opnd);
+                la_fcvt_d_ld(st0_opnd, fpr_st0_low_opnd, fpr_st0_high_opnd);
+                la_ftint_w_d(st0_opnd, st0_opnd);
+                la_movfr2gr_s(itemp, st0_opnd);
+            }
             la_st_w(itemp, mem_opnd, 0);
 
         } else if (opnd_size == 64) {
-            li_d(itemp2, FLOAT80_EXPONENT_MAX + FLOAT64_EXPONENT_MAX + 1);
-            la_bge(itemp, itemp2, label_softfpu);
+            if (option_float80 & 0x20) {
+                la_x86ftint_l_ld(fpr_st0_high_opnd, st0_opnd);
+                la_movfr2gr_d(itemp, fpr_st0_high_opnd);
+				IR2_OPND sw_opnd = ra_alloc_itemp();
+				la_update_sw_by_fcsr(sw_opnd);
+				ra_free_temp(sw_opnd);
+            } else {
+                li_d(itemp2, FLOAT80_EXPONENT_MAX + FLOAT64_EXPONENT_MAX + 1);
+                la_bge(itemp, itemp2, label_softfpu);
 
-            la_fcvt_d_ld(st0_opnd, fpr_st0_low_opnd, fpr_st0_high_opnd);
-            la_ftint_l_d(st0_opnd, st0_opnd);
-            la_movfr2gr_d(itemp, st0_opnd);
+                la_fcvt_d_ld(st0_opnd, fpr_st0_low_opnd, fpr_st0_high_opnd);
+                la_ftint_l_d(st0_opnd, st0_opnd);
+                la_movfr2gr_d(itemp, st0_opnd);
+            }
             la_st_d(itemp, mem_opnd, 0);
         }
 
@@ -1826,7 +2505,11 @@ static bool translate_fisub_softfpu(IR1_INST *pir1)
 
     if (option_softfpu == 2 &&
         option_softfpu_fast & LATX_SOFTFPU_FAST_FISUB) {
-        gen_float64_ST0_MEM(pir1, mem_opnd, opnd_size, true);
+        if (option_float80) {
+            gen_float80_ST0_MEM(pir1, mem_opnd, opnd_size, true);
+        } else {
+            gen_float64_ST0_MEM(pir1, mem_opnd, opnd_size, true);
+        }
     } else {
         if (opnd_size == 32) {
             gen_softfpu_helper2m_32s((ADDR)helper_fildl_FT0, mem_opnd);
@@ -1849,7 +2532,11 @@ static bool translate_fisubr_softfpu(IR1_INST *pir1)
 
     if (option_softfpu == 2 &&
         option_softfpu_fast & LATX_SOFTFPU_FAST_FISUBR) {
-        gen_float64_ST0_MEM(pir1, mem_opnd, opnd_size, true);
+        if (option_float80) {
+            gen_float80_ST0_MEM(pir1, mem_opnd, opnd_size, true);
+        } else {
+            gen_float64_ST0_MEM(pir1, mem_opnd, opnd_size, true);
+        }
     } else {
         if (opnd_size == 32) {
             gen_softfpu_helper2m_32s((ADDR)helper_fildl_FT0, mem_opnd);
@@ -1865,7 +2552,7 @@ static bool translate_fisubr_softfpu(IR1_INST *pir1)
 
 static bool translate_fld1_softfpu(IR1_INST *pir1)
 {
-    if (option_softfpu == 2) {
+    if (option_softfpu == 2 && (!option_float80 || (option_float80 & 0x8000))) {
         IR2_OPND st0_opnd = ra_alloc_ftemp();
         IR2_OPND ftemp = ra_alloc_ftemp();
         IR2_OPND itemp = ra_alloc_itemp();
@@ -1877,28 +2564,51 @@ static bool translate_fld1_softfpu(IR1_INST *pir1)
         la_movgr2fr_d(ftemp, itemp);
         la_vextrins_h(st0_opnd, ftemp, 0x40);
 
-        save_float80_to_stn(st0_opnd, 0);
+        if (option_stack && option_float80 & 0x8000) {
+            IR2_OPND st0 = ra_alloc_st(0);
+
+			la_x86fmov_ld(st0, st0_opnd);
+        } else {
+            save_float80_to_stn(st0_opnd, 0);
+        }
     } else {
+		if (option_softfpu == 2)
+			gen_softfpu_helper_prologue(pir1);
         gen_softfpu_helper1((ADDR)helper_fpush);
         gen_softfpu_helper1((ADDR)helper_fld1_ST0);
+		if (option_softfpu == 2)
+			gen_softfpu_helper_epilogue(pir1);
     }
     return true;
 }
 
 static bool translate_fld_softfpu(IR1_INST *pir1)
 {
-    if (option_softfpu == 2) {
+    if (option_softfpu == 2 && (!option_float80 || (option_float80 & 0xcc00))) {
         int index = get_src_index(pir1);
         IR1_OPND *opnd0 = ir1_get_opnd(pir1, index);
         int opnd_size = ir1_opnd_size(opnd0);
 
-        IR2_OPND st0_opnd = ra_alloc_ftemp();
+        IR2_OPND st0_opnd;
         IR2_OPND ftemp = ra_alloc_ftemp();
+        if (option_stack) {
+            st0_opnd = ra_alloc_st(0);
+        } else {
+            st0_opnd = ra_alloc_ftemp();
+        }
 
         if (ir1_opnd_is_fpr(opnd0)) {
-            get_float80_from_stn(st0_opnd, ir1_opnd_base_reg_num(opnd0));
-            la_fpu_push();
-            save_float80_to_stn(st0_opnd, 0);
+            if (option_stack) {
+                IR2_OPND stn_opnd = ra_alloc_st(ir1_opnd_base_reg_num(opnd0));
+
+                la_x86fneg_ld(ftemp, stn_opnd);
+                la_fpu_push();
+                la_x86fneg_ld(st0_opnd, ftemp);
+            } else {
+                get_float80_from_stn(st0_opnd, ir1_opnd_base_reg_num(opnd0));
+                la_fpu_push();
+                save_float80_to_stn(st0_opnd, 0);
+            }
             return true;
         } else {
             IR2_OPND mem_opnd = convert_mem_no_offset(opnd0);
@@ -1907,40 +2617,70 @@ static bool translate_fld_softfpu(IR1_INST *pir1)
             if (opnd_size == 32) {
                 la_fld_s(src_opnd, mem_opnd, 0);
 
-                la_fcvt_d_s(src_opnd, src_opnd);
-                la_fcvt_ud_d(ftemp, src_opnd);
-                la_fcvt_ld_d(st0_opnd, src_opnd);
-                la_vextrins_h(st0_opnd, ftemp, 0x40);
+                if (option_float80 & 0x400) {
+                    if (option_stack) {
+                        la_fpu_push();
+                    }
+                    la_x86fcvt_ld_s(st0_opnd, src_opnd);
+                } else {
+                    la_fcvt_d_s(src_opnd, src_opnd);
+                    la_fcvt_ud_d(ftemp, src_opnd);
+                    la_fcvt_ld_d(st0_opnd, src_opnd);
+                    la_vextrins_h(st0_opnd, ftemp, 0x40);
+                }
             } else if (opnd_size == 64) {
                 la_fld_d(src_opnd, mem_opnd, 0);
-                la_fcvt_ud_d(ftemp, src_opnd);
-                la_fcvt_ld_d(st0_opnd, src_opnd);
-                la_vextrins_h(st0_opnd, ftemp, 0x40);
+                if (option_float80 & 0x800) {
+                    if (option_stack) {
+                        la_fpu_push();
+                    }
+                    la_x86fcvt_ld_d(st0_opnd, src_opnd);
+                } else {
+                    la_fcvt_ud_d(ftemp, src_opnd);
+                    la_fcvt_ld_d(st0_opnd, src_opnd);
+                    la_vextrins_h(st0_opnd, ftemp, 0x40);
+                }
             } else if (opnd_size == 80) {
                 IR2_OPND high_itemp = ra_alloc_itemp();
-                la_fld_d(st0_opnd, mem_opnd, 0);
-                la_ld_hu(high_itemp, mem_opnd, 8);
-                la_movgr2fr_d(ftemp, high_itemp);
-                la_vextrins_h(st0_opnd, ftemp, 0x40);
+                if (option_stack) {
+                    la_fld_d(src_opnd, mem_opnd, 0);
+                    la_ld_hu(high_itemp, mem_opnd, 8);
+                    la_movgr2fr_d(ftemp, high_itemp);
+                    la_vextrins_h(src_opnd, ftemp, 0x40);
 
+                    la_fpu_push();
+					la_x86fmov_ld(st0_opnd, src_opnd);
+                } else {
+                    la_fld_d(st0_opnd, mem_opnd, 0);
+                    la_ld_hu(high_itemp, mem_opnd, 8);
+                    la_movgr2fr_d(ftemp, high_itemp);
+                    la_vextrins_h(st0_opnd, ftemp, 0x40);
+
+                }
                 ra_free_temp(high_itemp);
             }
         }
 
-        la_fpu_push();
-        save_float80_to_stn(st0_opnd, 0);
+        if (!option_stack) {
+            la_fpu_push();
+            save_float80_to_stn(st0_opnd, 0);
+        }
 
-        ra_free_temp(st0_opnd);
         ra_free_temp(ftemp);
     } else {
         int index = get_src_index(pir1);
         IR1_OPND *opnd0 = ir1_get_opnd(pir1, index);
         int opnd_size = ir1_opnd_size(opnd0);
 
+		if (option_softfpu == 2)
+			gen_softfpu_helper_prologue(pir1);
         if (ir1_opnd_is_fpr(opnd0)) {
             gen_softfpu_helper1((ADDR)helper_fpush);
             gen_softfpu_helper2i((ADDR)helper_fmov_ST0_STN,
                     (ir1_opnd_base_reg_num(opnd0) + 1) & 7);
+            if (option_softfpu == 2) {
+                gen_softfpu_helper_epilogue(pir1);
+            }
             return true;
         }
 
@@ -1953,6 +2693,8 @@ static bool translate_fld_softfpu(IR1_INST *pir1)
         } else if (opnd_size == 80) {
             gen_softfpu_helper2m_ptr((ADDR)helper_fldt_ST0, mem_opnd);
         }
+		if (option_softfpu == 2)
+			gen_softfpu_helper_epilogue(pir1);
     }
     return true;
 }
@@ -2007,7 +2749,21 @@ static bool translate_fldenv_softfpu(IR1_INST *pir1)
         IR2_OPND itemp2 = ra_alloc_itemp();
         /* restore top */
         la_bstrpick_d(itemp, sw_opnd, 13, 11);
-        la_st_w(itemp, env_ir2_opnd, lsenv_offset_of_top(lsenv));
+        if (option_stack) {
+            //la_x86settm();
+            IR2_OPND label_exit = ra_alloc_label();
+            int i;
+
+            for (i = 0; i < 8; i++) {
+                la_x86mttop(i);
+                la_beq(itemp, zero_ir2_opnd, label_exit);
+                la_addi_w(itemp, itemp, -1);
+            }
+            la_label(label_exit);
+
+        } else {
+            la_st_w(itemp, env_ir2_opnd, lsenv_offset_of_top(lsenv));
+        }
 
         /* restore fpus */
         li_d(itemp, 0x47ff);
@@ -2029,6 +2785,9 @@ static bool translate_fldenv_softfpu(IR1_INST *pir1)
 
         la_label(label_exit);
         la_st_h(sw_opnd, env_ir2_opnd, lsenv_offset_of_status_word(lsenv));
+        if (option_float80) {
+            //update_fcsr_by_sw(sw_opnd);
+        }
 
         li_wu(tag_save, 0);
         li_wu(itemp2, 0x3);
@@ -2065,7 +2824,7 @@ static bool translate_fldenv_softfpu(IR1_INST *pir1)
 
 static bool translate_fldl2e_softfpu(IR1_INST *pir1)
 {
-    if (option_softfpu == 2) {
+    if (option_softfpu == 2 && (!option_float80 || (option_float80 & 0x8000))) {
         IR2_OPND st0_opnd = ra_alloc_ftemp();
         IR2_OPND ftemp = ra_alloc_ftemp();
         IR2_OPND itemp = ra_alloc_itemp();
@@ -2090,11 +2849,21 @@ static bool translate_fldl2e_softfpu(IR1_INST *pir1)
         la_label(label_exit);
         la_movgr2fr_d(st0_opnd, itemp);
         la_vextrins_h(st0_opnd, ftemp, 0x40);
-        save_float80_to_stn(st0_opnd, 0);
+        if (option_stack) {
+            IR2_OPND st0 = ra_alloc_st(0);
+
+			la_x86fmov_ld(st0, st0_opnd);
+        } else {
+            save_float80_to_stn(st0_opnd, 0);
+        }
 
     } else {
+		if (option_softfpu == 2)
+			gen_softfpu_helper_prologue(pir1);
         gen_softfpu_helper1((ADDR)helper_fpush);
         gen_softfpu_helper1((ADDR)helper_fldl2e_ST0);
+		if (option_softfpu == 2)
+			gen_softfpu_helper_epilogue(pir1);
 
     }
     return true;
@@ -2102,7 +2871,7 @@ static bool translate_fldl2e_softfpu(IR1_INST *pir1)
 
 static bool translate_fldl2t_softfpu(IR1_INST *pir1)
 {
-    if (option_softfpu == 2) {
+    if (option_softfpu == 2 && (!option_float80 || (option_float80 & 0x8000))) {
         IR2_OPND st0_opnd = ra_alloc_ftemp();
         IR2_OPND ftemp = ra_alloc_ftemp();
         IR2_OPND itemp = ra_alloc_itemp();
@@ -2127,10 +2896,20 @@ static bool translate_fldl2t_softfpu(IR1_INST *pir1)
         la_label(label_exit);
         la_movgr2fr_d(st0_opnd, itemp);
         la_vextrins_h(st0_opnd, ftemp, 0x40);
-        save_float80_to_stn(st0_opnd, 0);
+        if (option_stack) {
+            IR2_OPND st0 = ra_alloc_st(0);
+
+			la_x86fmov_ld(st0, st0_opnd);
+        } else {
+            save_float80_to_stn(st0_opnd, 0);
+        }
     } else {
+		if (option_softfpu == 2)
+			gen_softfpu_helper_prologue(pir1);
         gen_softfpu_helper1((ADDR)helper_fpush);
         gen_softfpu_helper1((ADDR)helper_fldl2t_ST0);
+		if (option_softfpu == 2)
+			gen_softfpu_helper_epilogue(pir1);
 
     }
     return true;
@@ -2138,7 +2917,7 @@ static bool translate_fldl2t_softfpu(IR1_INST *pir1)
 
 static bool translate_fldlg2_softfpu(IR1_INST *pir1)
 {
-    if (option_softfpu == 2) {
+    if (option_softfpu == 2 && (!option_float80 || (option_float80 & 0x8000))) {
         IR2_OPND st0_opnd = ra_alloc_ftemp();
         IR2_OPND ftemp = ra_alloc_ftemp();
         IR2_OPND itemp = ra_alloc_itemp();
@@ -2163,11 +2942,21 @@ static bool translate_fldlg2_softfpu(IR1_INST *pir1)
         la_label(label_exit);
         la_movgr2fr_d(st0_opnd, itemp);
         la_vextrins_h(st0_opnd, ftemp, 0x40);
-        save_float80_to_stn(st0_opnd, 0);
+        if (option_stack) {
+            IR2_OPND st0 = ra_alloc_st(0);
+
+			la_x86fmov_ld(st0, st0_opnd);
+        } else {
+            save_float80_to_stn(st0_opnd, 0);
+        }
 
     }  else {
+		if (option_softfpu == 2)
+			gen_softfpu_helper_prologue(pir1);
         gen_softfpu_helper1((ADDR)helper_fpush);
         gen_softfpu_helper1((ADDR)helper_fldlg2_ST0);
+		if (option_softfpu == 2)
+			gen_softfpu_helper_epilogue(pir1);
 
     }
     return true;
@@ -2175,7 +2964,7 @@ static bool translate_fldlg2_softfpu(IR1_INST *pir1)
 
 static bool translate_fldln2_softfpu(IR1_INST *pir1)
 {
-    if (option_softfpu == 2) {
+    if (option_softfpu == 2 && (!option_float80 || (option_float80 & 0x8000))) {
         IR2_OPND st0_opnd = ra_alloc_ftemp();
         IR2_OPND ftemp = ra_alloc_ftemp();
         IR2_OPND itemp = ra_alloc_itemp();
@@ -2200,11 +2989,21 @@ static bool translate_fldln2_softfpu(IR1_INST *pir1)
         la_label(label_exit);
         la_movgr2fr_d(st0_opnd, itemp);
         la_vextrins_h(st0_opnd, ftemp, 0x40);
-        save_float80_to_stn(st0_opnd, 0);
+        if (option_stack) {
+            IR2_OPND st0 = ra_alloc_st(0);
+
+			la_x86fmov_ld(st0, st0_opnd);
+        } else {
+            save_float80_to_stn(st0_opnd, 0);
+        }
 
     } else {
+		if (option_softfpu == 2)
+			gen_softfpu_helper_prologue(pir1);
         gen_softfpu_helper1((ADDR)helper_fpush);
         gen_softfpu_helper1((ADDR)helper_fldln2_ST0);
+		if (option_softfpu == 2)
+			gen_softfpu_helper_epilogue(pir1);
 
     }
     return true;
@@ -2212,7 +3011,7 @@ static bool translate_fldln2_softfpu(IR1_INST *pir1)
 
 static bool translate_fldpi_softfpu(IR1_INST *pir1)
 {
-    if (option_softfpu == 2) {
+    if (option_softfpu == 2 && (!option_float80 || (option_float80 & 0x8000))) {
         IR2_OPND st0_opnd = ra_alloc_ftemp();
         IR2_OPND ftemp = ra_alloc_ftemp();
         IR2_OPND itemp = ra_alloc_itemp();
@@ -2237,11 +3036,21 @@ static bool translate_fldpi_softfpu(IR1_INST *pir1)
         la_label(label_exit);
         la_movgr2fr_d(st0_opnd, itemp);
         la_vextrins_h(st0_opnd, ftemp, 0x40);
-        save_float80_to_stn(st0_opnd, 0);
+        if (option_stack) {
+            IR2_OPND st0 = ra_alloc_st(0);
+
+            la_x86fmov_ld(st0, st0_opnd);
+        } else {
+            save_float80_to_stn(st0_opnd, 0);
+        }
 
     } else {
+		if (option_softfpu == 2)
+			gen_softfpu_helper_prologue(pir1);
         gen_softfpu_helper1((ADDR)helper_fpush);
         gen_softfpu_helper1((ADDR)helper_fldpi_ST0);
+		if (option_softfpu == 2)
+			gen_softfpu_helper_epilogue(pir1);
 
     }
     return true;
@@ -2249,16 +3058,26 @@ static bool translate_fldpi_softfpu(IR1_INST *pir1)
 
 static bool translate_fldz_softfpu(IR1_INST *pir1)
 {
-    if (option_softfpu == 2) {
+    if (option_softfpu == 2 && (!option_float80 || (option_float80 & 0x8000))) {
         IR2_OPND st0_opnd = ra_alloc_ftemp();
 
         la_fpu_push();
         la_vandi_b(st0_opnd, st0_opnd, 0);
-        save_float80_to_stn(st0_opnd, 0);
+        if (option_stack) {
+            IR2_OPND st0 = ra_alloc_st(0);
+
+			la_x86fmov_ld(st0, st0_opnd);
+        } else {
+            save_float80_to_stn(st0_opnd, 0);
+        }
 
     } else {
+		if (option_softfpu == 2)
+			gen_softfpu_helper_prologue(pir1);
         gen_softfpu_helper1((ADDR)helper_fpush);
         gen_softfpu_helper1((ADDR)helper_fldz_ST0);
+		if (option_softfpu == 2)
+			gen_softfpu_helper_epilogue(pir1);
 
     }
     return true;
@@ -2275,7 +3094,11 @@ static bool translate_fmul_softfpu(IR1_INST *pir1)
         IR2_OPND mem_opnd = convert_mem_no_offset(src);
         if (option_softfpu == 2 &&
             option_softfpu_fast & LATX_SOFTFPU_FAST_FMUL) {
-            gen_float64_ST0_MEM(pir1, mem_opnd, opnd_size, false);
+            if (option_float80) {
+                gen_float80_ST0_MEM(pir1, mem_opnd, opnd_size, false);
+            } else {
+                gen_float64_ST0_MEM(pir1, mem_opnd, opnd_size, false);
+            }
         } else {
             if (opnd_size == 32) {
                 gen_softfpu_helper2m_32s((ADDR)helper_flds_FT0, mem_opnd);
@@ -2290,7 +3113,11 @@ static bool translate_fmul_softfpu(IR1_INST *pir1)
     int stn = ir1_opnd_base_reg_num(src);
     if (option_softfpu == 2 &&
         option_softfpu_fast & LATX_SOFTFPU_FAST_FMUL) {
-        gen_float64_STN_ST0(pir1, opnd_num, stn);
+        if (option_float80) {
+            gen_float80_STN_ST0(pir1, opnd_num, stn);
+        } else {
+            gen_float64_STN_ST0(pir1, opnd_num, stn);
+        }
         return true;
     } else {
         if (opnd_num == 1) {
@@ -2312,7 +3139,11 @@ static bool translate_fmulp_softfpu(IR1_INST *pir1)
 	int stn = ir1_opnd_base_reg_num(src);
     if (option_softfpu == 2 &&
         option_softfpu_fast & LATX_SOFTFPU_FAST_FMULP) {
-        gen_float64_STN_ST0_pop(pir1, stn);
+        if (option_float80) {
+            gen_float80_STN_ST0_pop(pir1, stn);
+        } else {
+            gen_float64_STN_ST0_pop(pir1, stn);
+        }
     } else {
         gen_softfpu_helper2i((ADDR)helper_fmul_STN_ST0, stn);
         gen_softfpu_helper1((ADDR)helper_fpop);
@@ -2353,7 +3184,12 @@ static bool translate_fninit_softfpu(IR1_INST *pir1)
         la_update_fp_status(temp);
 
         /* clear top */
-        la_st_w(zero_ir2_opnd, env_ir2_opnd, lsenv_offset_of_top(lsenv));
+        if (option_stack) {
+            la_x86settm();
+            la_x86mttop(0);
+        } else {
+            la_st_w(zero_ir2_opnd, env_ir2_opnd, lsenv_offset_of_top(lsenv));
+        }
 
         /* set fptags */
         offset = lsenv_offset_of_tag_word(lsenv);
@@ -2394,9 +3230,16 @@ static bool translate_fnstenv_softfpu(IR1_INST *pir1)
         li_d(itemp, 0xc7ff);
         la_and(sw_cw_opnd, sw_cw_opnd, itemp);
 
-        la_ld_wu(itemp, env_ir2_opnd, lsenv_offset_of_top(lsenv));
+        if (option_stack) {
+            la_x86mftop(itemp);
+        } else {
+            la_ld_wu(itemp, env_ir2_opnd, lsenv_offset_of_top(lsenv));
+        }
         la_slli_w(itemp, itemp, 11);
         la_or(sw_cw_opnd, sw_cw_opnd, itemp);
+        if (option_float80) {
+            //la_update_sw_by_fcsr(sw_cw_opnd);
+        }
         la_slli_d(sw_cw_opnd, sw_cw_opnd, 16);
 
         offset = lsenv_offset_of_control_word(lsenv);
@@ -2409,6 +3252,9 @@ static bool translate_fnstenv_softfpu(IR1_INST *pir1)
         la_ld_d(tag_opnd, env_ir2_opnd, offset);
 
         li_d(tag_save, 0);
+        if (option_stack) {
+            tr_fpu_disable_top_mode();
+        }
         for (int i = 7; i >= 0; i--) {
             IR2_OPND label_exit = ra_alloc_label();
             IR2_OPND label_empty = ra_alloc_label();
@@ -2419,10 +3265,23 @@ static bool translate_fnstenv_softfpu(IR1_INST *pir1)
             la_bstrpick_d(itemp, tag_opnd, 8 * (i + 1) - 1, 8 * i);
             la_bne(itemp, zero_ir2_opnd, label_empty);
 
-            offset = lsenv_offset_of_fpr(lsenv, i);
-            lsassert(offset <= 0x7ff);
-            la_ld_d(gpr_stn_low_opnd, env_ir2_opnd, offset);
-            la_ld_hu(gpr_stn_high_opnd, env_ir2_opnd, offset + 8);
+            if (option_stack) {
+                IR2_OPND sti_opnd = ra_alloc_st(i);
+                IR2_OPND ftemp = ra_alloc_ftemp();
+
+                la_vextrins_h(ftemp, sti_opnd, 0x4);
+                la_movfr2gr_d(gpr_stn_high_opnd, ftemp);
+                la_bstrpick_d(gpr_stn_high_opnd, gpr_stn_high_opnd, 15, 0);
+                la_movfr2gr_d(gpr_stn_low_opnd, sti_opnd);
+
+                ra_free_temp(ftemp);
+
+            } else {
+                offset = lsenv_offset_of_fpr(lsenv, i);
+                lsassert(offset <= 0x7ff);
+                la_ld_d(gpr_stn_low_opnd, env_ir2_opnd, offset);
+                la_ld_hu(gpr_stn_high_opnd, env_ir2_opnd, offset + 8);
+            }
 
 
             la_bne(gpr_stn_high_opnd, zero_ir2_opnd, label_no_zero);
@@ -2449,6 +3308,9 @@ static bool translate_fnstenv_softfpu(IR1_INST *pir1)
             la_ori(tag_save, tag_save, 3);
 
             la_label(label_exit);
+        }
+        if (option_stack) {
+            tr_fpu_enable_top_mode();
         }
 
         if (data32) {
@@ -2559,7 +3421,11 @@ static bool translate_fnstsw_softfpu(IR1_INST *pir1)
         lsassert(status_offset <= 0x7ff);
         la_ld_h(sw_opnd, env_ir2_opnd, status_offset);
 
-        la_ld_wu(top_opnd, env_ir2_opnd, lsenv_offset_of_top(lsenv));
+        if (option_stack) {
+            la_x86mftop(top_opnd);
+        } else {
+            la_ld_wu(top_opnd, env_ir2_opnd, lsenv_offset_of_top(lsenv));
+        }
         la_slli_w(top_opnd, top_opnd, 11);
 
         la_lu12i_w(tmp_opnd, 0xc);
@@ -2576,6 +3442,9 @@ static bool translate_fnstsw_softfpu(IR1_INST *pir1)
             store_ireg_to_ir1(sw_opnd, opnd0, false);
         }
 
+        if (option_float80) {
+            //la_update_sw_by_fcsr(sw_opnd);
+        }
         ra_free_temp(sw_opnd);
 
     } else {
@@ -2688,6 +3557,7 @@ static bool translate_fscale_softfpu(IR1_INST *pir1)
         ra_free_temp(st0_opnd);
         ra_free_temp(st1_opnd);
     } else {
+//		printf("in translate_fscale_softfpu: goto helper\n");
         gen_softfpu_helper1((ADDR)helper_fscale);
     }
     return true;
@@ -2717,13 +3587,23 @@ static bool translate_fsqrt_softfpu(IR1_INST *pir1)
 {
     if (option_softfpu == 2 &&
         option_softfpu_fast & LATX_SOFTFPU_FAST_FSQRT) {
-        IR2_OPND st0_opnd = ra_alloc_ftemp();
+        if (option_stack) {
+            IR2_OPND st0_opnd = ra_alloc_st(0);
 
-        get_float80_from_stn(st0_opnd, 0);
-        la_calcute_float64(pir1, st0_opnd, st0_opnd, false);
-        save_float80_to_stn(st0_opnd, 0);
+            la_x86fsqrt_ld(st0_opnd, st0_opnd);
+        } else {
+            IR2_OPND st0_opnd = ra_alloc_ftemp();
 
-        ra_free_temp(st0_opnd);
+            get_float80_from_stn(st0_opnd, 0);
+            if (option_float80) {
+                la_calcute_float80(pir1, st0_opnd, st0_opnd);
+            } else {
+                la_calcute_float64(pir1, st0_opnd, st0_opnd, false);
+            }
+            save_float80_to_stn(st0_opnd, 0);
+
+            ra_free_temp(st0_opnd);
+        }
     } else {
         gen_softfpu_helper1((ADDR)helper_fsqrt);
     }
@@ -2744,31 +3624,64 @@ static bool translate_fst_softfpu(IR1_INST *pir1)
         } else {
             IR2_OPND mem_opnd = convert_mem_no_offset(opnd0);
 
-            IR2_OPND low_opnd = ra_alloc_ftemp();
+            IR2_OPND st0_opnd;
+            IR2_OPND src_opnd = ra_alloc_ftemp();
             IR2_OPND high_opnd = ra_alloc_ftemp();
 
-            get_float80_from_stn(low_opnd, 0);
-            la_vextrins_h(high_opnd, low_opnd, 0x4);
+            if (option_stack) {
+                st0_opnd = ra_alloc_st(0);
+            } else {
+                st0_opnd = ra_alloc_ftemp();
+                get_float80_from_stn(src_opnd, 0);
+                la_vextrins_h(high_opnd, src_opnd, 0x4);
+
+            }
 
             if (opnd_size == 80) {
                 IR2_OPND gpr_high_opnd = ra_alloc_itemp();
 
+                if (option_stack) {
+					la_x86fmov_ld(src_opnd, st0_opnd);
+                    la_vextrins_h(high_opnd, src_opnd, 0x4);
+                }
                 la_movfr2gr_d(gpr_high_opnd, high_opnd);
-                la_fst_d(low_opnd, mem_opnd, 0);
+                la_fst_d(src_opnd, mem_opnd, 0);
                 la_st_h(gpr_high_opnd, mem_opnd, 8);
-                ra_free_temp(low_opnd);
+                ra_free_temp(src_opnd);
                 ra_free_temp(high_opnd);
                 ra_free_temp(gpr_high_opnd);
                 return true;
             }
 
             if (opnd_size == 32) {
-                la_fcvt_d_ld(low_opnd, low_opnd, high_opnd);
-                la_fcvt_s_d(low_opnd, low_opnd);
-                la_fst_s(low_opnd, mem_opnd, 0);
+                if (option_float80 & 0x100) {
+                    if (option_stack) {
+                        la_x86fcvt_s_ld(src_opnd, st0_opnd);
+                    } else {
+                        la_x86fcvt_s_ld(src_opnd, src_opnd);
+                    }
+					IR2_OPND sw_opnd = ra_alloc_itemp();
+					la_update_sw_by_fcsr(sw_opnd);
+					ra_free_temp(sw_opnd);
+                } else {
+                    la_fcvt_d_ld(src_opnd, src_opnd, high_opnd);
+                    la_fcvt_s_d(src_opnd, src_opnd);
+                }
+                la_fst_s(src_opnd, mem_opnd, 0);
             } else if (opnd_size == 64) {
-                la_fcvt_d_ld(low_opnd, low_opnd, high_opnd);
-                la_fst_d(low_opnd, mem_opnd, 0);
+                if (option_float80 & 0x200) {
+                    if (option_stack) {
+                        la_x86fcvt_d_ld(src_opnd, st0_opnd);
+                    } else {
+                        la_x86fcvt_d_ld(src_opnd, src_opnd);
+                    }
+    IR2_OPND sw_opnd = ra_alloc_itemp();
+    la_update_sw_by_fcsr(sw_opnd);
+    ra_free_temp(sw_opnd);
+                } else {
+                    la_fcvt_d_ld(src_opnd, src_opnd, high_opnd);
+                }
+                la_fst_d(src_opnd, mem_opnd, 0);
             }
         }
 
@@ -2870,7 +3783,11 @@ static bool translate_fsub_softfpu(IR1_INST *pir1)
         IR2_OPND mem_opnd = convert_mem_no_offset(src);
         if (option_softfpu == 2 &&
             option_softfpu_fast & LATX_SOFTFPU_FAST_FSUB) {
-            gen_float64_ST0_MEM(pir1, mem_opnd, opnd_size, false);
+            if (option_float80) {
+                gen_float80_ST0_MEM(pir1, mem_opnd, opnd_size, false);
+            } else {
+                gen_float64_ST0_MEM(pir1, mem_opnd, opnd_size, false);
+            }
         } else {
             if (opnd_size == 32) {
                 gen_softfpu_helper2m_32s((ADDR)helper_flds_FT0, mem_opnd);
@@ -2885,7 +3802,11 @@ static bool translate_fsub_softfpu(IR1_INST *pir1)
     int stn = ir1_opnd_base_reg_num(src);
     if (option_softfpu == 2 &&
         option_softfpu_fast & LATX_SOFTFPU_FAST_FSUB) {
-        gen_float64_STN_ST0(pir1, opnd_num, stn);
+        if (option_float80) {
+            gen_float80_STN_ST0(pir1, opnd_num, stn);
+        } else {
+            gen_float64_STN_ST0(pir1, opnd_num, stn);
+        }
         return true;
     } else {
         if (opnd_num == 1) {
@@ -2907,7 +3828,11 @@ static bool translate_fsubp_softfpu(IR1_INST *pir1)
 	int stn = ir1_opnd_base_reg_num(src);
     if (option_softfpu == 2 &&
         option_softfpu_fast & LATX_SOFTFPU_FAST_FSUBP) {
-        gen_float64_STN_ST0_pop(pir1, stn);
+        if (option_float80) {
+            gen_float80_STN_ST0_pop(pir1, stn);
+        } else {
+            gen_float64_STN_ST0_pop(pir1, stn);
+        }
     } else {
         gen_softfpu_helper2i((ADDR)helper_fsub_STN_ST0, stn);
         gen_softfpu_helper1((ADDR)helper_fpop);
@@ -2926,7 +3851,11 @@ static bool translate_fsubr_softfpu(IR1_INST *pir1)
         IR2_OPND mem_opnd = convert_mem_no_offset(src);
         if (option_softfpu == 2 &&
             option_softfpu_fast & LATX_SOFTFPU_FAST_FSUBR) {
-            gen_float64_ST0_MEM(pir1, mem_opnd, opnd_size, false);
+            if (option_float80) {
+                gen_float80_ST0_MEM(pir1, mem_opnd, opnd_size, false);
+            } else {
+                gen_float64_ST0_MEM(pir1, mem_opnd, opnd_size, false);
+            }
         } else {
             if (opnd_size == 32) {
                 gen_softfpu_helper2m_32s((ADDR)helper_flds_FT0, mem_opnd);
@@ -2941,7 +3870,11 @@ static bool translate_fsubr_softfpu(IR1_INST *pir1)
     int stn = ir1_opnd_base_reg_num(src);
     if (option_softfpu == 2 &&
         option_softfpu_fast & LATX_SOFTFPU_FAST_FSUBR) {
-        gen_float64_STN_ST0(pir1, opnd_num, stn);
+        if (option_float80) {
+            gen_float80_STN_ST0(pir1, opnd_num, stn);
+        } else {
+            gen_float64_STN_ST0(pir1, opnd_num, stn);
+        }
         return true;
     } else {
         if (opnd_num == 1) {
@@ -2963,7 +3896,11 @@ static bool translate_fsubrp_softfpu(IR1_INST *pir1)
 	int stn = ir1_opnd_base_reg_num(src);
     if (option_softfpu == 2 &&
         option_softfpu_fast & LATX_SOFTFPU_FAST_FSUBRP) {
-        gen_float64_STN_ST0_pop(pir1, stn);
+        if (option_float80) {
+            gen_float80_STN_ST0_pop(pir1, stn);
+        } else {
+            gen_float64_STN_ST0_pop(pir1, stn);
+        }
     } else {
         gen_softfpu_helper2i((ADDR)helper_fsubr_STN_ST0, stn);
         gen_softfpu_helper1((ADDR)helper_fpop);
@@ -2980,62 +3917,91 @@ static bool translate_ftst_softfpu(IR1_INST *pir1)
 
 static bool translate_fucom_softfpu(IR1_INST *pir1)
 {
-    int opnd_num = ir1_opnd_num(pir1);
-    int stn = 1;
-    if (opnd_num) {
-        IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
-        stn = ir1_opnd_base_reg_num(opnd0);
+    if (option_softfpu == 2 && option_float80 && (option_softfpu_fast & 0x20000000)) {
+        la_fcom_ST0_FT0(pir1, false, true);
+        return true;
+    } else {
+        int opnd_num = ir1_opnd_num(pir1);
+        int stn = 1;
+        if (opnd_num) {
+            IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
+            stn = ir1_opnd_base_reg_num(opnd0);
+        }
+        gen_softfpu_helper2i((ADDR)helper_fmov_FT0_STN, stn);
+        gen_softfpu_helper1((ADDR)helper_fucom_ST0_FT0);
+        return true;
     }
-    gen_softfpu_helper2i((ADDR)helper_fmov_FT0_STN, stn);
-    gen_softfpu_helper1((ADDR)helper_fucom_ST0_FT0);
-    return true;
 }
 
 static bool translate_fucomi_softfpu(IR1_INST *pir1)
 {
-    IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
-    int stn = ir1_opnd_base_reg_num(opnd0);
-    gen_softfpu_helper2i((ADDR)helper_fmov_FT0_STN, stn);
-    gen_softfpu_helper1((ADDR)helper_fucomi_ST0_FT0);
-    return true;
+    if (option_softfpu == 2 && option_float80 && (option_softfpu_fast & 0x40000000)) {
+        la_fcom_ST0_FT0(pir1, true, true);
+        return true;
+    } else {
+        IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
+        int stn = ir1_opnd_base_reg_num(opnd0);
+        gen_softfpu_helper2i((ADDR)helper_fmov_FT0_STN, stn);
+        gen_softfpu_helper1((ADDR)helper_fucomi_ST0_FT0);
+        return true;
+    }
 }
 
 static bool translate_fucomip_softfpu(IR1_INST *pir1)
 {
-    IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
-    int stn = ir1_opnd_base_reg_num(opnd0);
-    gen_softfpu_helper2i((ADDR)helper_fmov_FT0_STN, stn);
-    gen_softfpu_helper1((ADDR)helper_fucomi_ST0_FT0);
-    gen_softfpu_helper1((ADDR)helper_fpop);
-    return true;
+    if (option_softfpu == 2 && option_float80 && (option_softfpu_fast & 0x80000000)) {
+        la_fcom_ST0_FT0(pir1, true, true);
+        la_fpu_pop();
+        return true;
+    } else {
+        IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
+        int stn = ir1_opnd_base_reg_num(opnd0);
+        gen_softfpu_helper2i((ADDR)helper_fmov_FT0_STN, stn);
+        gen_softfpu_helper1((ADDR)helper_fucomi_ST0_FT0);
+        gen_softfpu_helper1((ADDR)helper_fpop);
+        return true;
+    }
 }
 
 static bool translate_fucomp_softfpu(IR1_INST *pir1)
 {
-    int opnd_num = ir1_opnd_num(pir1);
-    int stn = 1;
-    if (opnd_num) {
-        IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
-        stn = ir1_opnd_base_reg_num(opnd0);
+    if (option_softfpu == 2 && option_float80 && (option_softfpu_fast & 0x100000000)) {
+        la_fcom_ST0_FT0(pir1, false, true);
+        la_fpu_pop();
+        return true;
+    } else {
+        int opnd_num = ir1_opnd_num(pir1);
+        int stn = 1;
+        if (opnd_num) {
+            IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
+            stn = ir1_opnd_base_reg_num(opnd0);
+        }
+        gen_softfpu_helper2i((ADDR)helper_fmov_FT0_STN, stn);
+        gen_softfpu_helper1((ADDR)helper_fucom_ST0_FT0);
+        gen_softfpu_helper1((ADDR)helper_fpop);
+        return true;
     }
-    gen_softfpu_helper2i((ADDR)helper_fmov_FT0_STN, stn);
-    gen_softfpu_helper1((ADDR)helper_fucom_ST0_FT0);
-    gen_softfpu_helper1((ADDR)helper_fpop);
-    return true;
 }
 
 static bool translate_fucompp_softfpu(IR1_INST *pir1)
 {
-    gen_softfpu_helper2i((ADDR)helper_fmov_FT0_STN, 1);
-    gen_softfpu_helper1((ADDR)helper_fucom_ST0_FT0);
-    gen_softfpu_helper1((ADDR)helper_fpop);
-    gen_softfpu_helper1((ADDR)helper_fpop);
-    return true;
+    if (option_softfpu == 2 && option_float80 && (option_softfpu_fast & 0x200000000)) {
+        la_fcom_ST0_FT0(pir1, false, true);
+        la_fpu_pop();
+        la_fpu_pop();
+        return true;
+    } else {
+        gen_softfpu_helper2i((ADDR)helper_fmov_FT0_STN, 1);
+        gen_softfpu_helper1((ADDR)helper_fucom_ST0_FT0);
+        gen_softfpu_helper1((ADDR)helper_fpop);
+        gen_softfpu_helper1((ADDR)helper_fpop);
+        return true;
+    }
 }
 
 static bool translate_fxam_softfpu(IR1_INST *pir1)
 {
-    if (option_softfpu == 2) {
+    if (option_softfpu == 2 && (!option_float80 || (option_float80 & 0x8000))) {
         IR2_OPND fpr_st0_low_opnd = ra_alloc_ftemp();
         IR2_OPND ftemp = ra_alloc_ftemp();
         IR2_OPND gpr_st0_high_opnd = ra_alloc_itemp();
@@ -3055,7 +4021,15 @@ static bool translate_fxam_softfpu(IR1_INST *pir1)
         IR2_OPND label_zero = ra_alloc_label();
 
 
-        get_float80_from_stn(fpr_st0_low_opnd, 0);
+        if (option_stack) {
+            IR2_OPND st0_opnd = ra_alloc_st(0);
+
+			la_x86fmov_ld(fpr_st0_low_opnd, st0_opnd);
+
+        } else {
+            get_float80_from_stn(fpr_st0_low_opnd, 0);
+
+        }
         la_movgr2fr_d(ftemp, zero_ir2_opnd);
         la_vextrins_h(ftemp, fpr_st0_low_opnd, 0x4);
         la_movfr2gr_d(gpr_st0_high_opnd, ftemp);
@@ -3080,7 +4054,11 @@ static bool translate_fxam_softfpu(IR1_INST *pir1)
         lsassert(tag_offset <= 0x7ff);
         la_ld_d(fpu_tag, env_ir2_opnd, tag_offset);
 
-        la_ld_wu(top_opnd, env_ir2_opnd, lsenv_offset_of_top(lsenv));
+        if (option_stack) {
+            la_x86mftop(top_opnd);
+        } else {
+            la_ld_wu(top_opnd, env_ir2_opnd, lsenv_offset_of_top(lsenv));
+        }
         li_d(temp1, (uint64)(0xffULL));
         la_slli_d(top_opnd, top_opnd, 3);
         la_srl_d(fpu_tag, fpu_tag, top_opnd);
@@ -3150,7 +4128,11 @@ static bool translate_fxam_softfpu(IR1_INST *pir1)
         ra_free_temp(temp2);
 
     } else {
+		if (option_softfpu == 2)
+			gen_softfpu_helper_prologue(pir1);
         gen_softfpu_helper1((ADDR)helper_fxam_ST0_softfpu);
+		if (option_softfpu == 2)
+			gen_softfpu_helper_epilogue(pir1);
 
     }
     return true;
@@ -3162,18 +4144,33 @@ static bool translate_fxch_softfpu(IR1_INST *pir1)
 
     IR1_OPND *src = ir1_get_opnd(pir1, index);
 	int stn = ir1_opnd_base_reg_num(src);
-    if (option_softfpu == 2) {
-        IR2_OPND st0_opnd = ra_alloc_ftemp();
-        IR2_OPND stn_opnd = ra_alloc_ftemp();
+    if (option_softfpu == 2 && (!option_float80 || (option_float80 & 0x8000))) {
+        if (option_stack) {
+            IR2_OPND st0_opnd = ra_alloc_st(0);
+            IR2_OPND stn_opnd = ra_alloc_st(stn);
+            IR2_OPND ftemp = ra_alloc_ftemp();
 
-        get_float80_from_stn(st0_opnd, 0);
-        get_float80_from_stn(stn_opnd, stn);
+			la_x86fmov_ld(ftemp, st0_opnd);
+			la_x86fmov_ld(st0_opnd, stn_opnd);
+			la_x86fmov_ld(stn_opnd, ftemp);
 
-        save_float80_to_stn(st0_opnd, stn);
-        save_float80_to_stn(stn_opnd, 0);
+        } else {
+            IR2_OPND st0_opnd = ra_alloc_ftemp();
+            IR2_OPND stn_opnd = ra_alloc_ftemp();
+
+            get_float80_from_stn(st0_opnd, 0);
+            get_float80_from_stn(stn_opnd, stn);
+
+            save_float80_to_stn(st0_opnd, stn);
+            save_float80_to_stn(stn_opnd, 0);
+        }
 
     } else {
+		if (option_softfpu == 2)
+			gen_softfpu_helper_prologue(pir1);
         gen_softfpu_helper2i((ADDR)helper_fxchg_ST0_STN, stn);
+		if (option_softfpu == 2)
+			gen_softfpu_helper_epilogue(pir1);
     }
     return true;
 }
