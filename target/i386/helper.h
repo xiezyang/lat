@@ -235,3 +235,7 @@ DEF_HELPER_3(rcrq, tl, env, tl, tl)
 #endif
 
 DEF_HELPER_1(rdrand, tl, env)
+
+#ifdef CONFIG_LATX
+DEF_HELPER_2(latx_float80, void, env, i32)
+#endif

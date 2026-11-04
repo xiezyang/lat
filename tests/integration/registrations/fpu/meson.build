@@ -84,6 +84,16 @@ endif
 foreach arch : ['x86_64', 'i386']
   if arch + '-linux-user' in target_dirs
     latx_integration_tests += [{
+      'name': 'test-x87-denormal-' + arch,
+      'runner': find_program('../../test-x87-denormal.sh'),
+      'args': [
+        emulators['latx-' + arch],
+        files('../../x87-denormal.asm'),
+        arch,
+      ],
+      'timeout': 120,
+    }]
+    latx_integration_tests += [{
       'name': 'test-x87-sqrt-flags-' + arch,
       'runner': find_program('../../test-x87-sqrt-flags.sh'),
       'args': [
