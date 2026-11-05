@@ -12645,7 +12645,8 @@ static bool latx_stat_is_proc_self_task(const struct stat *st)
 {
     struct stat task_st;
 
-    return stat("/proc/self/task", &task_st) == 0 &&
+    return S_ISDIR(st->st_mode) &&
+           stat("/proc/self/task", &task_st) == 0 &&
            st->st_dev == task_st.st_dev && st->st_ino == task_st.st_ino;
 }
 
@@ -12653,7 +12654,8 @@ static bool latx_statx_is_proc_self_task(const struct target_statx *stx)
 {
     struct stat task_st;
 
-    return stat("/proc/self/task", &task_st) == 0 &&
+    return (!(stx->stx_mask & STATX_TYPE) || S_ISDIR(stx->stx_mode)) &&
+           stat("/proc/self/task", &task_st) == 0 &&
            stx->stx_dev_major == major(task_st.st_dev) &&
            stx->stx_dev_minor == minor(task_st.st_dev) &&
            stx->stx_ino == task_st.st_ino;
@@ -12856,29 +12858,28 @@ static int open_cpuinfo(void *cpu_env, int fd, const char *oldpath)
     int i;
     int nprocs = get_nprocs();
     for (i =0; i < nprocs; i ++) {
-        dprintf(fd, "processor	: %d\n", i);
-        dprintf(fd, "vendor_id	: Loongson\n");
-#if defined(TARGET_X86_64) && defined(CONFIG_LATX)
-        dprintf(fd, "model name	: LATX64\n");
-#elif !defined(TARGET_X86_64) && defined(CONFIG_LATX)
-        dprintf(fd, "model name	: LATX32\n");
-#elif defined(TARGET_X86_64) && !defined(CONFIG_LATX)
-        dprintf(fd, "model name	: TCG64\n");
-#else
-        dprintf(fd, "model name	: TCG32\n");
-#endif
-        dprintf(fd, "cpu MHz	: 2500\n");
-        dprintf(fd, "physical id	: 0\n");
-        dprintf(fd, "siblings	: %d\n", nprocs);
-        dprintf(fd, "core id		: %d\n", i);
-        dprintf(fd, "cpu cores	: %d\n", nprocs);
         if (!g_cpu_flags) {
             CPUState *cpu = env_cpu(cpu_env);
             CPUArchState *env = cpu->env_ptr;
             g_cpu_flags = cpuinfo_flags(env);
         }
-        dprintf(fd, "flags\t: %s\n", g_cpu_flags);
-        dprintf(fd, "\n");
+        dprintf(fd, "processor	: %d\n"
+                    "vendor_id	: Loongson\n"
+#if defined(TARGET_X86_64) && defined(CONFIG_LATX)
+                    "model name	: LATX64\n"
+#elif !defined(TARGET_X86_64) && defined(CONFIG_LATX)
+                    "model name	: LATX32\n"
+#elif defined(TARGET_X86_64) && !defined(CONFIG_LATX)
+                    "model name	: TCG64\n"
+#else
+                    "model name	: TCG32\n"
+#endif
+                    "cpu MHz	: 2500\n"
+                    "physical id	: 0\n"
+                    "siblings	: %d\n"
+                    "core id		: %d\n"
+                    "cpu cores	: %d\n"
+                    "flags\t: %s\n\n", i, nprocs, i, nprocs, g_cpu_flags);
     }
 
     return 0;

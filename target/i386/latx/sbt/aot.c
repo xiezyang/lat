@@ -1261,6 +1261,7 @@ static void* relkind_to_fixup_addr[] = {
     [LOAD_HELPER_XTTS_DECRYPT] = latx_xtts_decrypt,
     [LOAD_HELPER_XTTS_CLOCK_NANOSLEEP] = latx_xtts_clock_nanosleep,
     [LOAD_HELPER_XTTS_MATRIX] = latx_xtts_matrix,
+    [LOAD_HELPER_XTTS_MPI_AUX] = latx_xtts_mpi_aux,
     [LOAD_HELPER_CPUID] = helper_cpuid,
     [LOAD_HELPER_RAISE_INT] = helper_raise_int,
     [LOAD_HELPER_RAISE_ILLOP] = helper_raise_illop,
@@ -1850,7 +1851,7 @@ void aot_xtts_before_unmap(target_ulong start, target_ulong len)
 void aot_init(void)
 {
     const char *unmap = getenv("LATX_XTTS_AOT_UNMAP");
-    xtts_unmap_cache_enabled = unmap && strcmp(unmap, "0");
+    xtts_unmap_cache_enabled = unmap == NULL || strcmp(unmap, "0") != 0;
     if (aot_scan_enabled()) {
         fprintf(stderr, "AOT_SCAN_INIT option_aot=%d load=%d\n",
                 option_aot, option_load_aot);

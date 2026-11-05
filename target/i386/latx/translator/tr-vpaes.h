@@ -29,6 +29,8 @@ bool latx_translate_vaesimc_vpaes(IR1_INST *pir1);
 bool latx_translate_vaeskeygenassist_vpaes(IR1_INST *pir1);
 
 const void *latx_vpaes_get_table_addr(int kind);
+void latx_xtts_aes_rounds(IR2_OPND state, IR2_OPND key, IR2_OPND keys,
+                         IR2_OPND count, bool encrypt);
 extern const uint8 latx_vpaes_enc_tables[9][16];
 extern const uint8 latx_vpaes_dec_tables[9][16];
 extern const uint8 latx_vpaes_keygen_tables[8][16];

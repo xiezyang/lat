@@ -203,7 +203,8 @@ static IR2_OPND load_round_key(IR1_OPND *opnd, int need_copy)
     return key_tmp;
 }
 
-static void emit_aes_round_lsx(IR2_OPND dst, IR2_OPND key, int enc, int last)
+static void emit_aes_round_lsx_tables(IR2_OPND dst, IR2_OPND key, int enc,
+                                      int last, const IR2_OPND *resident_mix)
 {
     IR2_OPND lo_nibble = ra_alloc_ftemp();
     IR2_OPND hi_nibble = ra_alloc_ftemp();
@@ -213,15 +214,21 @@ static void emit_aes_round_lsx(IR2_OPND dst, IR2_OPND key, int enc, int last)
     IR2_OPND zero = ra_alloc_ftemp();
 
     int table_kind = enc ? VPAES_TABLE_ENC : VPAES_TABLE_DEC;
+    IR2_OPND mix_lo = resident_mix ? vreg(VPAES_T7) : vreg(VPAES_T0);
+    IR2_OPND mix_hi = resident_mix ? *resident_mix : vreg(VPAES_T1);
 
-    vpaes_load_tables_lsx(table_kind, 0, 7);
+    if (!resident_mix) {
+        vpaes_load_tables_lsx(table_kind, 0, 7);
+    }
     if (enc) {
         vpaes_subbytes_lsx(dst, zero, lo_nibble, hi_nibble, table_mix,
                            mix_tmp0);
         la_vshuf_b(dst, dst, dst, vreg(VPAES_T6));
         if (!last) {
-            vpaes_load_tables_lsx(table_kind, 7, 2);
-            vpaes_mixcolumns_xtime_lsx(dst, vreg(VPAES_T0), vreg(VPAES_T1),
+            if (!resident_mix) {
+                vpaes_load_tables_lsx(table_kind, 7, 2);
+            }
+            vpaes_mixcolumns_xtime_lsx(dst, mix_lo, mix_hi,
                                        lo_nibble, hi_nibble, table_mix,
                                        mix_tmp0);
         }
@@ -230,8 +237,10 @@ static void emit_aes_round_lsx(IR2_OPND dst, IR2_OPND key, int enc, int last)
         vpaes_invsubbytes_lsx(dst, zero, lo_nibble, hi_nibble, table_mix,
                               mix_tmp0, mix_tmp1);
         if (!last) {
-            vpaes_load_tables_lsx(table_kind, 7, 2);
-            vpaes_invmixcolumns_xtime_lsx(dst, vreg(VPAES_T0), vreg(VPAES_T1),
+            if (!resident_mix) {
+                vpaes_load_tables_lsx(table_kind, 7, 2);
+            }
+            vpaes_invmixcolumns_xtime_lsx(dst, mix_lo, mix_hi,
                                           lo_nibble, hi_nibble, table_mix,
                                           mix_tmp0);
         }
@@ -243,6 +252,35 @@ static void emit_aes_round_lsx(IR2_OPND dst, IR2_OPND key, int enc, int last)
     ra_free_temp(table_mix);
     ra_free_temp(hi_nibble);
     ra_free_temp(lo_nibble);
+}
+
+static void emit_aes_round_lsx(IR2_OPND dst, IR2_OPND key, int enc, int last)
+{
+    emit_aes_round_lsx_tables(dst, key, enc, last, NULL);
+}
+
+void latx_xtts_aes_rounds(IR2_OPND state, IR2_OPND key, IR2_OPND keys,
+                         IR2_OPND count, bool encrypt)
+{
+    int kind = encrypt ? VPAES_TABLE_ENC : VPAES_TABLE_DEC;
+    IR2_OPND mix_high = ra_alloc_ftemp();
+    IR2_OPND tables = ra_alloc_itemp();
+    vpaes_load_addr(tables, kind);
+    for (int i = 0; i < 8; i++) {
+        latx_load_v128(vreg(i), tables, i * 16);
+    }
+    latx_load_v128(mix_high, tables, 8 * 16);
+    ra_free_temp(tables);
+    IR2_OPND loop = ra_alloc_label();
+    la_label(loop);
+    latx_load_v128(key, keys, 0);
+    emit_aes_round_lsx_tables(state, key, encrypt, false, &mix_high);
+    la_addi_d(keys, keys, 16);
+    la_addi_w(count, count, -1);
+    la_bne(count, zero_ir2_opnd, loop);
+    latx_load_v128(key, keys, 0);
+    emit_aes_round_lsx_tables(state, key, encrypt, true, &mix_high);
+    ra_free_temp(mix_high);
 }
 
 static bool translate_vaes_round_lsx(IR1_INST *pir1, int enc, int last)
