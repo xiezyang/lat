@@ -15,7 +15,11 @@ when the guest function does not match.
 Build on a LoongArch host with the x86_64 linux-user target:
 
 ```sh
-../source/configure \
+git clone --branch codex/no-lbt-recovery-20260919 \
+  git@github.com:xiezyang/lat.git lat-x86-64
+cd lat-x86-64
+
+./configure \
   --target-list=x86_64-linux-user \
   --enable-latx \
   --disable-debug-info \
@@ -28,6 +32,16 @@ ninja -j16 latx-x86_64
 
 KZT is not enabled. The resulting binary is statically linked for a
 LoongArch64 Linux host.
+
+The build requires Meson 0.56 or newer. If Meson is not installed, clone
+QEMU's Meson repository separately and pass `--meson=/path/to/meson.py`.
+New compiler versions may also require `--disable-werror` for unrelated
+configure probes.
+
+Static PIE linking depends on the LoongArch binutils version. GCC 14 with
+binutils 2.44 compiled every source file in an independent clean checkout
+but failed during the final static link with a BFD assertion. Use the release
+build toolchain when reproducing the shipped binary.
 
 ## Runtime
 
