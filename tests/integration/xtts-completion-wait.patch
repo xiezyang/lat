@@ -1,0 +1,24 @@
+--- a/aikit_test.cpp
++++ b/aikit_test.cpp
+@@ -16,1 +16,3 @@
+ #include <cstdlib>
++#include <condition_variable>
++#include <mutex>
+@@ -25,1 +27,3 @@
+ static std::atomic_bool ttsFinished(false);
++static std::mutex finishMutex;
++static std::condition_variable finishCondition;
+@@ -44,1 +48,5 @@
+-        ttsFinished = true;
++        {
++            std::lock_guard<std::mutex> lock(finishMutex);
++            ttsFinished = true;
++        }
++        finishCondition.notify_one();
+@@ -94,3 +102,4 @@
+-    while(ttsFinished != true){
+-        usleep(1000);
++    {
++        std::unique_lock<std::mutex> lock(finishMutex);
++        finishCondition.wait(lock, [] { return ttsFinished.load(); });
+     }

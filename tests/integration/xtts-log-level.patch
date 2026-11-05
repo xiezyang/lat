@@ -1,0 +1,5 @@
+--- a/aikit_test.cpp
++++ b/aikit_test.cpp
+@@ -130,1 +130,1 @@
+-			.logLevel(LOG_LVL_ERROR)
++			.logLevel(getenv("AIKIT_LOG_LEVEL") ? atoi(getenv("AIKIT_LOG_LEVEL")) : LOG_LVL_ERROR)
