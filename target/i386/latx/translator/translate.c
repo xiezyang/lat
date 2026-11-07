@@ -2495,6 +2495,10 @@ int tr_ir2_generate(struct TranslationBlock *tb)
     IR1_INST *pir1 = tb_ir1_inst(tb, 0);
 
     bool reduce_proepo = false;
+    /* Strict SoftFPU uses the guest x87 rounding state in its helpers.
+     * Keep the host rounding switches for native x87 paths. */
+    const bool switch_x87_fcsr = option_softfpu &&
+                                !latx_softfpu_sse_sync_enabled();
     bool x87_fcsr_active = false;
     int softfpu_region_end = -1;
 
@@ -2609,7 +2613,7 @@ int tr_ir2_generate(struct TranslationBlock *tb)
         }
 #endif
 
-        bool x87_insn = option_softfpu &&
+        bool x87_insn = switch_x87_fcsr &&
                          is_softfpu_x87_insn(ir1_opcode(pir1));
         if (x87_insn && !x87_fcsr_active) {
             gen_softfpu_x87_fcsr_enter();

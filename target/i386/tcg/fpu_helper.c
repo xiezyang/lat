@@ -1323,13 +1323,26 @@ void helper_f2xm1(CPUX86State *env)
     merge_exception_flags(env, old_flags);
 }
 
+#ifdef CONFIG_LATX
+static bool latx_prepare_x87_libm(CPUX86State *env, fenv_t *saved_host_env)
+{
+    if (!latx_softfpu_sse_sync_enabled()) {
+        return false;
+    }
+
+    /* Strict SoftFPU leaves the native rounding mode in use by SSE. */
+    fegetenv(saved_host_env);
+    fesetround(x86_rounding_mode_to_host((env->fpuc & FPU_RC_MASK) >>
+                                          FPU_RC_SHIFT));
+    return true;
+}
+#endif
+
 void helper_fptan(CPUX86State *env)
 {
 #ifdef CONFIG_LATX
     fenv_t saved_host_env;
-    if (latx_softfpu_sse_sync_enabled()) {
-        fegetenv(&saved_host_env);
-    }
+    bool restore_host_env = latx_prepare_x87_libm(env, &saved_host_env);
     long double fptemp = floatx80_to_longdouble(env, ST0);
 
     if ((fptemp > MAXTAN) || (fptemp < -MAXTAN)) {
@@ -1342,7 +1355,7 @@ void helper_fptan(CPUX86State *env)
         env->fpus &= ~0x400; /* C2 <-- 0 */
         /* the above code is for |arg| < 2**52 only */
     }
-    if (latx_softfpu_sse_sync_enabled()) {
+    if (restore_host_env) {
         fesetenv(&saved_host_env);
     }
 #else
@@ -2358,9 +2371,7 @@ void helper_fsincos(CPUX86State *env)
 {
 #ifdef CONFIG_LATX
     fenv_t saved_host_env;
-    if (latx_softfpu_sse_sync_enabled()) {
-        fegetenv(&saved_host_env);
-    }
+    bool restore_host_env = latx_prepare_x87_libm(env, &saved_host_env);
     long double fptemp = floatx80_to_longdouble(env, ST0);
 
     if ((fptemp > MAXTAN) || (fptemp < -MAXTAN)) {
@@ -2372,7 +2383,7 @@ void helper_fsincos(CPUX86State *env)
         env->fpus &= ~0x400;  /* C2 <-- 0 */
         /* the above code is for |arg| < 2**63 only */
     }
-    if (latx_softfpu_sse_sync_enabled()) {
+    if (restore_host_env) {
         fesetenv(&saved_host_env);
     }
 #else
@@ -2458,9 +2469,7 @@ void helper_fsin(CPUX86State *env)
 {
 #ifdef CONFIG_LATX
     fenv_t saved_host_env;
-    if (latx_softfpu_sse_sync_enabled()) {
-        fegetenv(&saved_host_env);
-    }
+    bool restore_host_env = latx_prepare_x87_libm(env, &saved_host_env);
     long double fptemp = floatx80_to_longdouble(env, ST0);
 
     if ((fptemp > MAXTAN) || (fptemp < -MAXTAN)) {
@@ -2470,7 +2479,7 @@ void helper_fsin(CPUX86State *env)
         env->fpus &= ~0x400;  /* C2 <-- 0 */
         /* the above code is for |arg| < 2**53 only */
     }
-    if (latx_softfpu_sse_sync_enabled()) {
+    if (restore_host_env) {
         fesetenv(&saved_host_env);
     }
 #else
@@ -2490,9 +2499,7 @@ void helper_fcos(CPUX86State *env)
 {
 #ifdef CONFIG_LATX
     fenv_t saved_host_env;
-    if (latx_softfpu_sse_sync_enabled()) {
-        fegetenv(&saved_host_env);
-    }
+    bool restore_host_env = latx_prepare_x87_libm(env, &saved_host_env);
     long double fptemp = floatx80_to_longdouble(env, ST0);
 
     if ((fptemp > MAXTAN) || (fptemp < -MAXTAN)) {
@@ -2502,7 +2509,7 @@ void helper_fcos(CPUX86State *env)
         env->fpus &= ~0x400;  /* C2 <-- 0 */
         /* the above code is for |arg| < 2**63 only */
     }
-    if (latx_softfpu_sse_sync_enabled()) {
+    if (restore_host_env) {
         fesetenv(&saved_host_env);
     }
 #else
