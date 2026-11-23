@@ -159,31 +159,42 @@ void unlink_indirect_jmp(CPUArchState *env, TranslationBlock *tb, ucontext_t *uc
 #endif
 
 #ifdef CONFIG_LATX_FAST_JMPCACHE
+    unsigned hit_offset;
 #ifdef CONFIG_LATX_GLUE_MASK
     /* Glue-masked fast jmpcache lands in jirl after 12 instructions. */
-    insn = qatomic_read((uint32_t *)(jmp_rx + INS_SIZE * 11));
-    jmp_rw += INS_SIZE * 11;
+    hit_offset = 11;
 #else
     /* Unmasked fast jmpcache reaches jirl after the eight-instruction hit path. */
-    insn = qatomic_read((uint32_t *)(jmp_rx + INS_SIZE * 7));
-    jmp_rw += INS_SIZE * 7;
+    hit_offset = 7;
 #endif
+    if (option_hash) {
+        /* HASH replaces the initial shift, XOR and mask. */
+        hit_offset -= 2;
+    }
+    insn = qatomic_read((uint32_t *)(jmp_rx + INS_SIZE * hit_offset));
+    jmp_rw += INS_SIZE * hit_offset;
 #else
-    CPUState *cpu = env_cpu(env);
-    uint32_t parallel = cpu->tcg_cflags & CF_PARALLEL;
-    if (!close_latx_parallel && !parallel) {
-        /*
-         * srli.d    itmp6,$x,16
-         * xor       itmp6,$x,itmp6
-         * bstrpick.d  itmp6,itmp6,15,0
-         * alsl.d    itmp6,itmp6,$fp,3
-         * ld.d      itmp1,itmp6,0
-         * bne       itmp1,$x,3
-         * ld.d      itmp1,itmp6,8
-         * jirl      $zero,itmp1,0
-         */
-        insn = qatomic_read((uint32_t *)(jmp_rx + INS_SIZE * 7));
-        jmp_rw += INS_SIZE * 7;
+    if (option_hash) {
+        /* HASH, scale to 8 bytes, load/check TB and invalidation, then jirl. */
+        insn = qatomic_read((uint32_t *)(jmp_rx + INS_SIZE * 10));
+        jmp_rw += INS_SIZE * 10;
+    } else {
+        CPUState *cpu = env_cpu(env);
+        uint32_t parallel = cpu->tcg_cflags & CF_PARALLEL;
+        if (!close_latx_parallel && !parallel) {
+            /*
+             * srli.d    itmp6,$x,16
+             * xor       itmp6,$x,itmp6
+             * bstrpick.d  itmp6,itmp6,15,0
+             * alsl.d    itmp6,itmp6,$fp,3
+             * ld.d      itmp1,itmp6,0
+             * bne       itmp1,$x,3
+             * ld.d      itmp1,itmp6,8
+             * jirl      $zero,itmp1,0
+             */
+            insn = qatomic_read((uint32_t *)(jmp_rx + INS_SIZE * 7));
+            jmp_rw += INS_SIZE * 7;
+        }
     }
 #endif
 

@@ -387,3 +387,10 @@ test(
   args: [files('test-latx-float80-options.py')],
   suite: 'lat-pr-fast',
 )
+
+test(
+  'test-latx-6600-hash',
+  python,
+  args: [files('test-latx-6600-hash.py')],
+  suite: 'lat-pr-fast',
+)

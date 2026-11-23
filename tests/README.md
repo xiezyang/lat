@@ -301,3 +301,28 @@ fixture directory. The runner compiles the native thread probe on demand.
 GDB verifies actual wrapper/callback entry and injects one attach or refresh
 failure without product fault-injection hooks. Normal zero returns, Guest errors,
 nested callbacks, and TLS-disabled existing contexts are checked separately.
+
+## Experimental 6600 indirect-jump HASH
+
+`test-6600-hash-{i386,x86_64}` alternates 10,000 times through two indirect
+jump targets with independently verified, identical mode-1 cache indices.
+The shared index exceeds 4095, guarding against a 12-bit truncation.
+Both targets must run on every iteration; the final sum detects stale hits
+and incorrect collision handling. The test needs NASM, LLD, nm and Python 3.
+It explicitly disables software floating point and its fast paths and uses
+no floating-point or vector instructions.
+
+The default run keeps `LATX_HASH=0`, so ordinary LoongArch hosts can run it.
+On a host implementing the experimental HASH instruction, set
+`LATX_TEST_6600_HASH=1` to run with HASH disabled and enabled. An emulator wrapper may be used
+as the first argument to `test-6600-hash.sh`; for experimental QEMU use
+`-cpu la464,bt-6600=on`. This QEMU property also changes LSX semantics and
+must be tested separately from HASH-only real-hardware support.
+
+`test-latx-6600-hash` in `lat-pr-fast` compiles the actual software index,
+lookup emitter and signal-unlink functions with small mocks. It checks
+32/64-bit indices, all 65,536 cache slots, identical enabled/disabled lookup
+addresses, instruction encoding, fast-cache entry scaling,
+and the emitted hit-instruction position for standard, fast and masked
+fast-cache builds. It also checks option parsing and that HASH preserves the
+selected AOT mode.

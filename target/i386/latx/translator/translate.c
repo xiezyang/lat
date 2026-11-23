@@ -2924,23 +2924,33 @@ static void generate_indirect_goto(void *code_buf)
     IR2_OPND next_tb = V0_RENAME_OPND;
     /*
      * lookup HASH_JMP_CACHE
-     * Step 1: calculate HASH = (x86_addr >> 12) ^ (x86_addr & 0xfff)
+     * Step 1: index = (x86_addr ^ (x86_addr >> 16)) & 0xffff.
+     * HASH mode 1 computes the same index scaled by 16.
      * Step 2: load &HASH_JMP_CACHE[0]
      * Step 3: load tb = HASH_JMP_CACHE[HASH]
      * Step 4: if (tb == 0) {goto labal_miss}
      * Step 5: if (tb.pc == x86_addr) {goto fpu_rotate}
      *         else {goto labal_miss}
      */
-    la_srli_d(next_tb, next_x86_addr, TB_JMP_CACHE_BITS);
-    la_xor(next_tb, next_x86_addr, next_tb);
-    la_bstrpick_d(next_tb, next_tb, TB_JMP_CACHE_BITS - 1, 0);
+    if (option_hash) {
+        /* imm=1: {addr[31:16] ^ addr[15:0], 4'b0}. */
+        la_hash(next_tb, next_x86_addr, 1);
+    } else {
+        la_srli_d(next_tb, next_x86_addr, TB_JMP_CACHE_BITS);
+        la_xor(next_tb, next_x86_addr, next_tb);
+        la_bstrpick_d(next_tb, next_tb, TB_JMP_CACHE_BITS - 1, 0);
+    }
 
 #ifdef CONFIG_LATX_FAST_JMPCACHE
 #ifdef CONFIG_LATX_GLUE_MASK
     #define PCADDI_JMP_INST_OFF 9
     IR2_OPND epi_addr = ra_alloc_itemp();
     la_pcaddi(epi_addr, PCADDI_JMP_INST_OFF);
-    la_alsl_d(next_tb, next_tb, jmp_cache_addr, 3);
+    if (option_hash) {
+        la_add_d(next_tb, jmp_cache_addr, next_tb);
+    } else {
+        la_alsl_d(next_tb, next_tb, jmp_cache_addr, 3);
+    }
     la_ld_d(jmp_entry, next_tb, 0);
     la_ld_d(next_tb, next_tb, 8);
     la_xor(jmp_entry, jmp_entry, next_x86_addr);
@@ -2948,14 +2958,23 @@ static void generate_indirect_goto(void *code_buf)
     la_maskeqz(epi_addr, epi_addr, jmp_entry);
     la_or(next_tb, next_tb, epi_addr);
 #else
-    la_alsl_d(next_tb, next_tb, jmp_cache_addr, 3);
+    if (option_hash) {
+        la_add_d(next_tb, jmp_cache_addr, next_tb);
+    } else {
+        la_alsl_d(next_tb, next_tb, jmp_cache_addr, 3);
+    }
     la_ld_d(jmp_entry, next_tb, 0);
     la_bne(jmp_entry, next_x86_addr, label_miss);
     la_ld_d(next_tb, next_tb, 8);
 #endif
     la_jirl(zero_ir2_opnd, next_tb, 0);
 #else
-    la_slli_d(next_tb, next_tb, 3);
+    if (option_hash) {
+        /* The ordinary cache stores 8-byte pointers, not 16-byte FastTBs. */
+        la_srli_d(next_tb, next_tb, 1);
+    } else {
+        la_slli_d(next_tb, next_tb, 3);
+    }
     la_ldx_d(next_tb, next_tb, jmp_cache_addr);
     la_beq(next_tb, zero_ir2_opnd, label_miss);
 

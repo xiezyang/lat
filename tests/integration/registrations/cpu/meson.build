@@ -10,3 +10,18 @@ if 'x86_64-linux-user' in target_dirs and \
     'timeout': 120,
   }]
 endif
+
+foreach arch : ['x86_64', 'i386']
+  if arch + '-linux-user' in target_dirs
+    latx_integration_tests += [{
+      'name': 'test-6600-hash-' + arch,
+      'runner': find_program('../../test-6600-hash.sh'),
+      'args': [
+        emulators['latx-' + arch],
+        files('../../6600-hash.asm'),
+        arch,
+      ],
+      'timeout': 120,
+    }]
+  endif
+endforeach

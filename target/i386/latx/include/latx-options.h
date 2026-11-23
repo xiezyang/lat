@@ -148,6 +148,8 @@ extern int option_fork_unlink;
 extern int option_set_rounding_opt;
 extern int option_cvt_opt;
 extern int option_fast_atomic;
+/* Opt-in permission for the experimental 6600 HASH instruction. */
+extern int option_hash;
 static inline int latx_smc_default(void) { return 0x2 | 0x4; }
 static inline int latx_smc_inv_page(void) { return option_smc_opt == 0; }
 static inline int latx_smc_inv_tb(void) { return option_smc_opt != 0; }
@@ -168,6 +170,7 @@ extern unsigned long long counter_mips_tr;
     ENVFUN(LATX_SMC, handle_arg_latx_smc) \
     ENVFUN(LATX_CLOSE_PARALLEL, handle_arg_latx_parallel) \
     ENVFUN(LATX_SOFTFPU, handle_arg_latx_softfpu) \
+    ENVFUN(LATX_HASH, handle_arg_latx_hash) \
     ENVFUN(LATX_SOFTFPU_FAST, handle_arg_latx_softfpu_fast) \
     ENVFUN(LATX_PRLIMIT, handle_arg_latx_prlimit) \
     ENVFUN(LATX_ROUNDING_OPT, handle_arg_latx_rounding) \

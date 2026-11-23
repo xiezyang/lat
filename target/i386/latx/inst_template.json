@@ -20689,6 +20689,14 @@
             "fpr_vj"
         ]
     },
+    "hash": {
+        "opcode": "0x00360000",
+        "opnd": [
+            "gpr_rd",
+            "gpr_rj",
+            "imm_ui1"
+        ]
+    },
     "ill": {
         "opcode": "-1",
         "opnd": [
