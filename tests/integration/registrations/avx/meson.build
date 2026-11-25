@@ -1,5 +1,21 @@
 if 'x86_64-linux-user' in target_dirs
+  foreach cvt_option : ['0', '1']
+    latx_integration_tests += [{
+      'name': 'test-avx-conversion-alias-' + cvt_option,
+      'runner': find_program('../../test-avx-conversion-alias.py'),
+      'args': [emulators['latx-x86_64'], files('../../vcvtpd-register-alias.asm')],
+      'env': {'LATX_SOFTFPU': '0', 'LATX_CVT_OPT': cvt_option},
+      'timeout': 120,
+    }]
+  endforeach
   if 'CONFIG_LATX_AVX_OPT' in config_host
+    latx_integration_tests += [{
+      'name': 'test-vcmpsd-writeback',
+      'runner': find_program('../../test-avx-regressions.py'),
+      'args': [emulators['latx-x86_64'], files('../../vcmpsd-writeback.asm')],
+      'env': {'LATX_SOFTFPU': '0'},
+      'timeout': 120,
+    }]
     latx_integration_tests += [{
       'name': 'test-f16c-memory-boundary',
       'runner': find_program('../../test-avx-regressions.py'),
@@ -74,15 +90,34 @@ if 'x86_64-linux-user' in target_dirs
     'args': [
       emulators['latx-x86_64'],
       files('../../avx-single-instruction-boundaries.asm'),
+      files('../../avx-scalar-double-alias.asm'),
+      files('../../vblendpd-xmm-alias.asm'),
+      files('../../vbroadcastsd-memory.asm'),
+      files('../../vinsertf128-alias.asm'),
+      files('../../vinsertf128-high-pending.asm'),
+      files('../../vmovsd-alias.asm'),
+      files('../../vperm2x128-immediate.asm'),
+      files('../../vpermilpd-ymm-immediate.asm'),
+      files('../../vpermilpd-immediate.asm'),
+      files('../../vpermilpd-variable.asm'),
+      files('../../vmovd-xmm-zero.asm'),
+      files('../../vmovss-memory-zero.asm'),
       files('../../avx128-shuffle.S'),
       files('../../avx-ymm-writeback.S'),
       files('../../vpshufd-distinct-regs.S'),
       files('../../vroundps-imm0b.S'),
+      files('../../vroundsd-fixed.asm'),
+      files('../../vroundss-fixed.asm'),
+      files('../../vcvtss2sd-alias.asm'),
+      files('../../vcvtdq2pd-ymm-alias.asm'),
+      files('../../vcvtsi2sd-alias.asm'),
+      files('../../vshufpd-interleave.asm'),
       files('../../avx-regression-extract-alias.S'),
       files('../../avx-regression-narrow-state.S'),
       files('../../avx-regression-fma-alias.S'),
       files('../../avx-regression-vround-alias.S'),
       files('../../avx-regression-vround-boundaries.S'),
+      files('../../vround-fixed-equivalence.asm'),
       files('../../vcvtps2dq-alias.c'),
       files('../../vpackus-fast.c'),
       files('../../vpmulhrsw-fast.c'),
@@ -97,6 +132,14 @@ if 'x86_64-linux-user' in target_dirs
     suite: 'latx-integration',
   )
   foreach cache_option : ['0000', '1100', '1101', '1110', '1111']
+    latx_integration_tests += [{
+      'name': 'test-base-displacement-' + cache_option,
+      'runner': find_program('../../test-avx-regressions.py'),
+      'args': [emulators['latx-x86_64'],
+               files('../../base-displacement.asm')],
+      'env': {'LATX_IMM_REG': cache_option, 'LATX_SOFTFPU': '0'},
+      'timeout': 120,
+    }]
     test(
       'test-rip-relative-cache-' + cache_option,
       find_program('../../test-avx-regressions.py'),
@@ -165,3 +208,36 @@ if 'CONFIG_LATX_AVX_OPT' in config_host
     endif
   endforeach
 endif
+
+foreach guest : [['x86_64', '64'], ['i386', '32']]
+  if guest[0] + '-linux-user' in target_dirs
+    foreach mode : [['hard', '0', '0'], ['soft', '1', '0'],
+                    ['strict', '2', '0'], ['fast', '2', '1']]
+      mxcsr_cases = ['mxcsr-mmx-preserve']
+      if mode[0] != 'fast'
+        # FAST x87 flags still share FCSR; do not treat them as SSE flags.
+        mxcsr_cases += ['mxcsr-exceptions']
+      endif
+      mxcsr_args = [emulators['latx-' + guest[0]], '--guest-bits', guest[1]]
+      if mode[0] != 'hard'
+        # handle_arg_latx_softfpu disables AOT for all softfpu modes.
+        mxcsr_args += ['--jit-only']
+      endif
+      foreach mxcsr_case : mxcsr_cases
+        foreach exception_option : ['0', '1']
+          latx_integration_tests += [{
+            'name': 'test-' + mxcsr_case + '-' + guest[0] + '-' + mode[0] + '-' + exception_option,
+            'runner': find_program('../../test-avx-regressions.py'),
+            'args': mxcsr_args + files('../../' + mxcsr_case + '.asm'),
+            'env': {'LATX_SOFTFPU': mode[1], 'LATX_SOFTFPU_FAST': mode[2],
+                    'LATX_ENABLE_FCSR_EXC': exception_option},
+            'timeout': 120,
+          }]
+        endforeach
+      endforeach
+    endforeach
+  endif
+endforeach
+
+test('test-mxcsr-fcsr-model', find_program('python3'),
+     args: files('../../test-mxcsr-fcsr-model.py'), suite: 'lat-pr-fast')

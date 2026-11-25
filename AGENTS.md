@@ -1,5 +1,15 @@
 # LAT agent guidance
 
+## Fixed master baseline for the 6600 experiment
+
+- On branch `codex/6600-hw-upper-clear`, master is pinned to
+  `cf79c04a85bd8259892f5e24eb8762ae2d9cdc5b` from `upstream/master`.
+- Continue work from this branch. Do not fetch master for further integration,
+  merge a newer master, or rebase this branch onto a newer master unless the
+  user explicitly changes this instruction.
+- This branch-specific instruction also applies when preparing a pull request;
+  it overrides the general latest-target update guidance below.
+
 ## Project scope
 
 - LAT supports only x86_64 and i386 user-mode guests on LoongArch Linux hosts.

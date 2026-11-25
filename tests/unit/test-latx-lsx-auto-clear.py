@@ -35,8 +35,8 @@ class LsxAutoClearTest(unittest.TestCase):
             return subprocess.run([str(binary), *args], capture_output=True)
 
     def test_xmm_copy_width(self):
-        # Compile the real translator: a wide final copy would hide the LSX
-        # producer from upper-zero cancellation. YMM arithmetic stays wide.
+        # Compile the real translator: XMM writes directly through LSX after
+        # the upstream copy removal. YMM arithmetic stays wide.
         source = r"""
 #include <assert.h>
 #include <stdbool.h>
@@ -52,7 +52,7 @@ static int ir1_opnd_is_xmm(IR1_OPND *o) { return o->bits == 128; }
 static int ir1_opnd_is_ymm(IR1_OPND *o) { return o->bits == 256; }
 static int ir1_opnd_base_reg_num(IR1_OPND *o) { return o->reg; }
 static IR2_OPND ra_alloc_xmm(int n) { return n; }
-static IR2_OPND ra_alloc_ftemp(void) { return 31; }
+static void ra_free_temp_auto(IR2_OPND r) { (void)r; }
 static IR2_OPND load_freg128_from_ir1(IR1_OPND *o) { return o->reg; }
 static IR2_OPND load_freg256_from_ir1(IR1_OPND *o) { return o->reg; }
 static bool translate_vaddpd_lsx(IR1_INST *i) { (void)i; return false; }
@@ -75,7 +75,7 @@ int main(void) {
         IR1_INST inst = { .opnd = {{128, dest}, {128, 1}, {128, 2}} };
         narrow = wide = zero_requests = 0;
         if (!translate_vaddpd(&inst)) return 1;
-        if (narrow != 2 || wide || zero_requests != 1) return 2;
+        if (narrow != 1 || wide || zero_requests != 1) return 2;
         for (int i = 0; i < 3; ++i) inst.opnd[i].bits = 256;
         narrow = wide = zero_requests = 0;
         if (!translate_vaddpd(&inst)) return 3;

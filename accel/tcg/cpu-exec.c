@@ -198,7 +198,7 @@ cpu_tb_exec(CPUState *cpu, TranslationBlock *itb, int *tb_exit)
         Dl_info dl_info;
         uintptr_t function;
         if (latx_kzt_runtime_enabled() &&
-            kzt_registered_onebridge_snapshot(itb->pc, NULL, &function) &&
+            kzt_registered_onebridge_snapshot(itb->pc, NULL, &function, NULL) &&
             dladdr((const void *)function, &dl_info)) {
             qemu_log_mask_and_addr(CPU_LOG_EXEC, itb->pc,
                    "pid(%d) - tid(%" PRIuPTR ") Trace cpu%d: %p [ "
@@ -272,8 +272,18 @@ cpu_tb_exec(CPUState *cpu, TranslationBlock *itb, int *tb_exit)
     ret = tcg_qemu_tb_exec(env, tb_ptr);
 
     int tbexit = ret & TB_EXIT_MASK;
-    ret = (ret & ~TB_EXIT_MASK) - 4;
-    TranslationBlock *rettb = tcg_tb_lookup(ret);
+    uintptr_t tc_ptr = ret & ~TB_EXIT_MASK;
+    TranslationBlock *rettb = NULL;
+    if (likely(tc_ptr != 0)) {
+        uintptr_t ret_pc = tc_ptr - 4;
+        uintptr_t tc_start = (uintptr_t)itb->tc.ptr;
+
+        if (ret_pc >= tc_start && ret_pc < tc_start + itb->tc.size) {
+            rettb = itb;
+        } else {
+            rettb = tcg_tb_lookup(ret_pc);
+        }
+    }
     ret = tbexit;
     if (rettb) {
         uint64_t lazypc = 0;
@@ -504,10 +514,14 @@ TranslationBlock *tb_htable_lookup(CPUState *cpu, target_ulong pc,
     desc.cflags = cflags;
     desc.trace_vcpu_dstate = *cpu->trace_dstate;
     desc.pc = pc;
+#ifdef CONFIG_USER_ONLY
+    phys_pc = pc;
+#else
     phys_pc = get_page_addr_code(desc.env, pc);
     if (phys_pc == -1) {
         return NULL;
     }
+#endif
     desc.page_addr0 = phys_pc;
     h = tb_hash_func(phys_pc, pc, flags, cflags, *cpu->trace_dstate);
     return qht_lookup_custom(&tb_ctx.htable, &desc, h, tb_lookup_cmp);
@@ -676,6 +690,13 @@ inline void tb_add_jump(TranslationBlock *tb, int n,
     /* The KZT callback owns this entry slot; never relink over its patch. */
     if (!tb->canlink[n] && tb->jmp_target_arg[n] == 0 &&
         tb->jmp_reset_offset[n] == TB_JMP_RESET_OFFSET_INVALID) {
+        return;
+    }
+#endif
+#ifdef CONFIG_LATX
+    /* Inlined CALL-to-next and PC thunks have no host patch slot. */
+    if (!use_tu_jmp(tb) &&
+        tb->jmp_target_arg[n] == TB_JMP_RESET_OFFSET_INVALID) {
         return;
     }
 #endif

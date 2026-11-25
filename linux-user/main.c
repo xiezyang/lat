@@ -54,6 +54,7 @@
 #include "cpu_loop-common.h"
 #include "crypto/init.h"
 #ifdef CONFIG_LATX
+#include "qemu/steam.h"
 #include "steam.h"
 #endif
 int mydebug = 1;
@@ -63,7 +64,6 @@ int mydebug = 1;
 #include "latx-options.h"
 #include "latx-runtime.h"
 #include "aot.h"
-#include <openssl/evp.h>
 #endif
 #ifdef CONFIG_LATX_PERF
 #include "latx-perf.h"
@@ -655,13 +655,34 @@ static void handle_arg_runtime_info(const char *arg)
 static void handle_arg_ld_prefix(const char *arg)
 {
     g_autofree char *setting = g_strdup_printf(
-        "LAT_LD_PREFIX=%s", arg);
+        LATX_GUEST_LD_PREFIX_ENV "=%s", arg);
+    g_autofree char *abi_setting = g_strdup_printf(
+        LATX_GUEST_LD_PREFIX_ABI_ENV "=%s", latx_runtime_guest_abi());
 
-    if (!setting || envlist_setenv(envlist, setting) != 0) {
+    if (!setting || !abi_setting ||
+        envlist_setenv(envlist, setting) != 0 ||
+        envlist_setenv(envlist, abi_setting) != 0) {
         usage(EXIT_FAILURE);
     }
     interp_prefix = strdup(arg);
     latx_runtime_prefix_selected();
+}
+
+static void sanitize_inherited_ld_prefix(void)
+{
+    const char *inherited_abi = getenv(LATX_GUEST_LD_PREFIX_ABI_ENV);
+
+    /* Steam mixed-ABI children must not inherit their parent's runtime. */
+    if (!latx_steam_context_active() || !inherited_abi ||
+        !strcmp(inherited_abi,
+                                  latx_runtime_guest_abi())) {
+        return;
+    }
+
+    unsetenv(LATX_GUEST_LD_PREFIX_ENV);
+    unsetenv(LATX_GUEST_LD_PREFIX_ABI_ENV);
+    (void)envlist_unsetenv(envlist, LATX_GUEST_LD_PREFIX_ENV);
+    (void)envlist_unsetenv(envlist, LATX_GUEST_LD_PREFIX_ABI_ENV);
 }
 
 static void handle_arg_optimize(const char *arg)
@@ -927,6 +948,19 @@ static void handle_arg_latx_monitor_shared_mem(const char *arg)
     option_monitor_shared_mem = strtol(arg, NULL, 0);
 }
 
+#ifndef TARGET_X86_64
+static void handle_arg_i386_shared_mmap_shadow(const char *arg)
+{
+    long value;
+
+    if (qemu_strtol(arg, NULL, 0, &value) || (value != 0 && value != 1)) {
+        error_report("LATX_I386_SHARED_MMAP_SHADOW must be 0 or 1");
+        exit(EXIT_FAILURE);
+    }
+    option_i386_shared_mmap_shadow = value;
+}
+#endif
+
 static void handle_arg_latx_private_mmap_shadow(const char *arg)
 {
     option_private_mmap_shadow = strtol(arg, NULL, 0);
@@ -1105,6 +1139,11 @@ static const struct qemu_argument arg_table[] = {
     "",           "enable get real self maps"},
     {"latx-monitor-shared-mem",    "LATX_MONITOR_SHARED_MEM",     true,  handle_arg_latx_monitor_shared_mem,
     "",           "monitor shared memory, retranslate self modifying page"},
+#ifndef TARGET_X86_64
+    {"latx-i386-shared-mmap-shadow", "LATX_I386_SHARED_MMAP_SHADOW", true,
+    handle_arg_i386_shared_mmap_shadow, "0|1",
+    "enable i386 misaligned shared file shadows (default: 0)"},
+#endif
     {"latx-private-mmap-shadow", "LATX_PRIVATE_MMAP_SHADOW", true,
     handle_arg_latx_private_mmap_shadow, "",
     "shadow writable private SQLite file mapping fragments"},
@@ -1561,6 +1600,16 @@ int main(int argc, char **argv, char **envp)
     /* extracting environment variables */
     optind = parse_args(argc, argv);
 
+    latx_steam_context_configure(
+        envlist,
+        latx_steam_program(exec_path) ||
+        envlist_getenv(envlist, LATX_STEAM_RUNTIME_FILES_ENV) != NULL);
+    if (latx_steam_context_active()) {
+        (void)g_setenv(LATX_STEAM_CONTEXT_ENV, "1", true);
+        (void)envlist_setenv(envlist, LATX_STEAM_CONTEXT_ENV "=1");
+    }
+    sanitize_inherited_ld_prefix();
+
     if (argc >= 5 && !strcmp(argv[1], argv[2])) {
         long long hash = 0;
         for (int i = 4; i < argc; ++i) {
@@ -1854,9 +1903,9 @@ int main(int argc, char **argv, char **envp)
     }
 
 #ifdef CONFIG_LATX_AOT
-    EVP_MD_CTX *ctx = EVP_MD_CTX_new();
-    unsigned char hash[EVP_MAX_MD_SIZE];
-    unsigned int hash_len;
+    GChecksum *ctx = g_checksum_new(G_CHECKSUM_SHA1);
+    unsigned char hash[20];
+    gsize hash_len = sizeof(hash);
     char *buf;
     char real[PATH_MAX], *temp;
     char *aot_dir;
@@ -1882,8 +1931,7 @@ int main(int argc, char **argv, char **envp)
     if (temp == NULL) {
         lsassertm(0, "%s error!", __func__);
     }
-    EVP_DigestInit_ex(ctx, EVP_sha1(), NULL);
-    EVP_DigestUpdate(ctx, real, strlen(real));
+    g_checksum_update(ctx, (const guchar *)real, strlen(real));
     int aotac = 4;
     for (i = 0; i < target_argc; i++) {
         if (option_aot_wine == 0 && strstr(target_argv[i], "wine")) {
@@ -1898,11 +1946,11 @@ int main(int argc, char **argv, char **envp)
                 aotac = 2;
                 continue;
             }
-            EVP_DigestUpdate(ctx, target_argv[i], arglen);
+            g_checksum_update(ctx, (const guchar *)target_argv[i], arglen);
         }
     }
-    EVP_DigestFinal_ex(ctx, hash, &hash_len);
-    EVP_MD_CTX_free(ctx);
+    g_checksum_get_digest(ctx, hash, &hash_len);
+    g_checksum_free(ctx);
     for (i = 0; i < hash_len; i++) {
         sprintf(buf, "%02x", hash[i] & 0xff);
         buf += 2;

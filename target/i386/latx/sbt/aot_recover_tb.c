@@ -41,6 +41,13 @@ inline static TranslationBlock *creat_tb(aot_tb *p_aot_tb, abi_ulong start,
     if (unlikely(!tb)) {
 	return NULL;
     }
+#ifdef CONFIG_LATX_PROFILER
+    /* tcg_tb_alloc() does not initialize profile fields. Both TB and TU
+     * recovery start new dynamic counters and restore only static IR2 data.
+     */
+    CLN_TB_PROFILE(tb);
+    SET_TB_PROFILE(tb, nr_code, p_aot_tb->profile_nr_code);
+#endif
     /* Initialize Tb */
     qemu_spin_init(&tb->jmp_lock);
     tb->lazypc[0] = p_aot_tb->lazypc[0];
@@ -156,7 +163,7 @@ static void recover_tb_range(target_ulong page, struct aot_tb *p_aot_tbs,
             tb_reset_jump(tb, 1);
         }
 #ifdef CONFIG_LATX_PROFILER
-        CLN_TB_PROFILE(tb);
+        /* creat_tb() already initialized counters and restored nr_code. */
 #endif
         aot_tb_register(tb, AOT_TB_RECOVERED);
 
@@ -175,10 +182,7 @@ static void recover_tb_range(target_ulong page, struct aot_tb *p_aot_tbs,
         if (p_aot_tbs[i].return_target_ptr_offset) {
             tb->return_target_ptr = p_aot_tbs[i].return_target_ptr_offset
                 + tb->tc.ptr;
-            aot_link_tree_insert(thread_cpu,
-                tb, tb->next_86_pc, (uint32_t *)(tb->tc.ptr +
-                p_aot_tbs[i].return_target_ptr_offset), tb->flags,
-                tb->cflags, AOT_LINK_TYPE_JRRA);
+            aot_link_tree_insert(tb, 0, 0);
         }
 #endif
     }

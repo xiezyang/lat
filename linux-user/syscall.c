@@ -359,11 +359,8 @@ out_marker:
 #define PR_CFI_BRANCH_LANDING_PADS 0
 #endif
 #ifdef CONFIG_LATX
-#define IMAGE_NT_SIGNATURE 0x00004550
 #define IMAGE_FILE_RELOCS_STRIPPED 0x0001
 #define IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE 0x0040
-#define PE_OPTIONAL_HEADER_OFFSET 24
-#define PE_COFF_OPTIONAL_HEADER_SIZE_OFFSET 20
 #define PE_COFF_CHARACTERISTICS_OFFSET 22
 #define PE32_IMAGE_BASE_OFFSET 28
 #define PE64_IMAGE_BASE_OFFSET 24
@@ -3616,6 +3613,50 @@ get_timeout:
             }
             break;
         }
+#ifdef SO_PEERGROUPS
+        case TARGET_SO_PEERGROUPS: {
+            g_autofree char *groups = NULL;
+
+            if (get_user_u32(len, optlen)) {
+                return -TARGET_EFAULT;
+            }
+            if (len < 0) {
+                return -TARGET_EINVAL;
+            }
+            /*
+             * A short buffer returns ERANGE without accessing optval. Query
+             * the size first, then stage the array so that only the actual
+             * output range needs to be writable in the guest. Do not allocate
+             * the guest's (potentially much larger) advertised capacity.
+             */
+            lv = 0;
+            for (;;) {
+                char *new_groups;
+
+                ret = get_errno(getsockopt(sockfd, level, SO_PEERGROUPS,
+                                           groups, &lv));
+                if (ret != -TARGET_ERANGE || lv > (socklen_t)len) {
+                    break;
+                }
+                /* Peer credentials may change between the two host calls. */
+                new_groups = g_try_realloc(groups, lv);
+                if (!new_groups) {
+                    return -TARGET_ENOMEM;
+                }
+                groups = new_groups;
+            }
+            if (ret < 0 && ret != -TARGET_ERANGE) {
+                return ret;
+            }
+            if (ret == 0 && lv && copy_to_user(optval_addr, groups, lv)) {
+                return -TARGET_EFAULT;
+            }
+            if (put_user_u32(lv, optlen)) {
+                return -TARGET_EFAULT;
+            }
+            break;
+        }
+#endif
         case TARGET_SO_PEERSEC: {
             char *name;
 
@@ -22431,6 +22472,8 @@ abi_long do_syscall_with_seccomp(void *cpu_env, int num, int seccomp_num,
     CPUState *cpu = env_cpu(cpu_env);
     CPUArchState *env = cpu->env_ptr;
     TaskState *ts = cpu->opaque;
+    struct GuestSeccompFilter *seccomp_filter =
+        __atomic_load_n(&ts->seccomp_filter, __ATOMIC_ACQUIRE);
     const abi_long seccomp_args[6] = {
         arg1, arg2, arg3, arg4, arg5, arg6,
     };
@@ -22485,11 +22528,13 @@ abi_long do_syscall_with_seccomp(void *cpu_env, int num, int seccomp_num,
     }
 
 #ifdef CONFIG_LATX_TUNNEL_LIB
-    suppress_tunnel = qatomic_read(&ts->seccomp_filter) && loader_tunnel;
+    suppress_tunnel = seccomp_filter && loader_tunnel;
 #endif
     if (suppress_tunnel) {
         ret = 0;
         seccomp_action = GUEST_SECCOMP_RETURN;
+    } else if (likely(!seccomp_filter)) {
+        seccomp_action = GUEST_SECCOMP_CONTINUE;
     } else {
         seccomp_action = guest_seccomp_filter_syscall(
             env, seccomp_num, seccomp_arch, seccomp_args, &ret);

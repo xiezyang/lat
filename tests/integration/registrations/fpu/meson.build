@@ -114,6 +114,16 @@ foreach arch : ['x86_64', 'i386']
       'timeout': 180,
     }]
     latx_integration_tests += [{
+      'name': 'test-x87-save-restore-' + arch,
+      'runner': find_program('../../test-x87-save-restore.sh'),
+      'args': [
+        emulators['latx-' + arch],
+        files('../../x87-save-restore.asm'),
+        arch,
+      ],
+      'timeout': 150,
+    }]
+    latx_integration_tests += [{
       'name': 'test-fpu-mode-boundary-' + arch,
       'runner': find_program('../../test-fpu-mode-boundary.sh'),
       'args': [

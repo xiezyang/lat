@@ -1110,6 +1110,17 @@ static size_t size_code_gen_buffer(size_t tb_size)
     return tb_size;
 }
 
+#if !defined(_WIN32) || defined(USE_STATIC_CODE_GEN_BUFFER)
+/* Keep the start of the code buffer on ordinary pages for short-lived guests. */
+static void advise_code_gen_buffer(void *buf, size_t size)
+{
+    size_t small = MIN(size, 32 * MiB);
+
+    qemu_madvise(buf, size, QEMU_MADV_HUGEPAGE);
+    qemu_madvise(buf, small, QEMU_MADV_NOHUGEPAGE);
+}
+#endif
+
 #ifdef USE_STATIC_CODE_GEN_BUFFER
 static uint8_t static_code_gen_buffer[DEFAULT_CODE_GEN_BUFFER_SIZE]
     __attribute__((aligned(CODE_GEN_ALIGN)));
@@ -1142,7 +1153,7 @@ static bool alloc_code_gen_buffer(size_t tb_size, int splitwx, Error **errp)
         error_setg_errno(errp, errno, "mprotect of jit buffer");
         return false;
     }
-    qemu_madvise(buf, size, QEMU_MADV_HUGEPAGE);
+    advise_code_gen_buffer(buf, size);
 
     tcg_ctx->code_gen_buffer = buf;
     return true;
@@ -1187,7 +1198,7 @@ static bool alloc_code_gen_buffer_anon(size_t size, int prot,
 #ifdef LOW_MEM_MODE_0
     qemu_madvise(buf, size, QEMU_MADV_NOHUGEPAGE);
 #else
-    qemu_madvise(buf, size, QEMU_MADV_HUGEPAGE);
+    advise_code_gen_buffer(buf, size);
 #endif
 
     tcg_ctx->code_gen_buffer = buf;
@@ -1204,12 +1215,8 @@ static bool alloc_tb_gen_buffer(size_t size)
         return false;
     }
 
-    /* Request large pages for the buffer.  */
-#ifdef LOW_MEM_MODE_0
+    /* Avoid allocating a large page for a small number of TBs. */
     qemu_madvise(buf, size, QEMU_MADV_NOHUGEPAGE);
-#else
-    qemu_madvise(buf, size, QEMU_MADV_HUGEPAGE);
-#endif
 
     tcg_ctx->tb_gen_buffer = buf;
     tcg_ctx->tb_gen_highwater = buf + size - 1024;
@@ -1241,8 +1248,8 @@ static bool alloc_code_gen_buffer_splitwx_memfd(size_t size, Error **errp)
     tcg_splitwx_diff = buf_rx - buf_rw;
 
     /* Request large pages for the buffer and the splitwx.  */
-    qemu_madvise(buf_rw, size, QEMU_MADV_HUGEPAGE);
-    qemu_madvise(buf_rx, size, QEMU_MADV_HUGEPAGE);
+    advise_code_gen_buffer(buf_rw, size);
+    advise_code_gen_buffer(buf_rx, size);
     return true;
 
  fail_rx:
@@ -3903,8 +3910,8 @@ void *page_alloc_target_data(target_ulong address, size_t size)
 
     page = address & TARGET_PAGE_MASK;
 
-    if(!(page_get_flags(address) & PAGE_VALID))
-        return NULL;
+    /* Mapping construction prepares shadow data before publishing PAGE_VALID. */
+    assert(have_mmap_lock());
 
     n = interval_tree_iter_first(&targetdata_root, page, page);
     if (!n) {
@@ -5043,7 +5050,9 @@ void *set_shadow_page(target_ulong orig_page, void *shadow_p, int64_t access_off
     } else {
         /* this page has been managed, shadow page needs to be released first */
         mmap_lock();
-        munmap(shadow_pd->p_addr, qemu_host_page_size);
+        if (shadow_pd->p_addr) {
+            munmap(shadow_pd->p_addr, qemu_host_page_size);
+        }
         shadow_pd->p_addr = shadow_p;
         shadow_pd->access_off = access_off;
         qemu_log_mask(LAT_LOG_MEM, "[LATX_16K] %s orig_p 0x"
@@ -5824,6 +5833,31 @@ int shared_private_interpret(siginfo_t *info, ucontext_t *uc)
     int64_t new_value = UC_GR(uc)[rk];
 
     real_guest_addr -= imm12;
+    /* Indexed loads/stores use rj + rk.  Atomic operations below use rj
+     * alone: their rk is the value operand, not an address index. */
+    switch (inst >> 15) {
+    case 0x7000: /* LDX.B */
+    case 0x7008: /* LDX.H */
+    case 0x7010: /* LDX.W */
+    case 0x7018: /* LDX.D */
+    case 0x7020: /* STX.B */
+    case 0x7028: /* STX.H */
+    case 0x7030: /* STX.W */
+    case 0x7038: /* STX.D */
+    case 0x7040: /* LDX.BU */
+    case 0x7048: /* LDX.HU */
+    case 0x7050: /* LDX.WU */
+    case 0x7060: /* FLDX.S */
+    case 0x7068: /* FLDX.D */
+    case 0x7070: /* FSTX.S */
+    case 0x7078: /* FSTX.D */
+    case 0x7080: /* VLDX */
+    case 0x7088: /* VSTX */
+    case 0x7090: /* XVLDX */
+    case 0x7098: /* XVSTX */
+        real_guest_addr = UC_GR(uc)[rj] + UC_GR(uc)[rk];
+        break;
+    }
     switch (inst >> 15) {
     case 0x7000: /* LDX.B */
         if (no_right(real_guest_addr, 1, PAGE_READ, &siaddr)) {
@@ -7908,7 +7942,7 @@ void shadow_page_munmap(abi_ulong start, abi_ulong end)
 
 void create_shadow_page_chunk(abi_ulong start, abi_ulong end,
                               int inside_prot, int inside_flags,
-                              int fd, abi_ulong offset)
+                              int fd, uint64_t offset)
 {
     abi_ulong real_start, real_end, addr, len;
     void *outside_p, *inside_p;
@@ -7935,7 +7969,7 @@ void create_shadow_page_chunk(abi_ulong start, abi_ulong end,
                     __func__, addr, fd > 0 ? "file" : "anon",
                     inside_flags & MAP_SHARED ? "shared" : "private",
                     inside_prot);
-            if (fd > 0) {
+            if (fd >= 0) {
                 /* file mapping */
                 inside_p = mmap(0, qemu_host_page_size, inside_prot,
                                 (inside_flags & ~MAP_FIXED), fd,
@@ -7980,7 +8014,7 @@ void create_shadow_page_chunk(abi_ulong start, abi_ulong end,
 }
 
 void update_shadow_page_chunk(abi_ulong start, abi_ulong end, int prot,
-                              int flags, int fd, abi_ulong offset)
+                              int flags, int fd, uint64_t offset)
 {
     abi_ulong addr;
     void *shadow_p;
@@ -8005,7 +8039,7 @@ void update_shadow_page_chunk(abi_ulong start, abi_ulong end, int prot,
                     flags & MAP_SHARED ? "shared" : "private", prot);
         }
         set_shadow_page(addr, shadow_p, access_off);
-        if (fd > 0) {
+        if (fd >= 0) {
             offset += TARGET_PAGE_SIZE;
         }
     }
