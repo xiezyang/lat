@@ -41,6 +41,7 @@ typedef int IR2_OPND;
 static uint64_t regs[32];
 static uint32_t hardware_fcsr;
 static int next_reg, option_enable_fcsr_exc;
+static int option_float80 = 0;
 enum { zero_ir2_opnd = 0, fcsr_ir2_opnd = 31 };
 static int ra_alloc_itemp(void) { return next_reg++; }
 static void ra_free_temp(int r) { (void)r; }
@@ -70,6 +71,7 @@ static void la_srli_w(int d, int s, int n)
 static void la_srli_d(int d, int s, int n) { regs[d] = regs[s] >> n; }
 static void la_slli_d(int d, int s, int n) { regs[d] = regs[s] << n; }
 static void la_xori(int d, int s, int imm) { regs[d] = regs[s] ^ imm; }
+static void la_ori(int d, int s, int imm) { regs[d] = regs[s] | imm; }
 static void la_andi(int d, int s, int imm) { regs[d] = regs[s] & imm; }
 static void la_or(int d, int a, int b) { regs[d] = regs[a] | regs[b]; }
 """
