@@ -716,6 +716,15 @@ static void handle_arg_latx_lsx_auto_clear(const char *arg)
     option_lsx_auto_clear = arg[0] == '1';
 }
 
+static void handle_arg_latx_x86addi(const char *arg)
+{
+    if (strcmp(arg, "0") && strcmp(arg, "1")) {
+        fprintf(stderr, "LATX_X86ADDI must be 0 or 1\n");
+        exit(EXIT_FAILURE);
+    }
+    option_x86addi = arg[0] == '1';
+}
+
 static void handle_arg_latx_float80(const char *arg)
 {
     option_float80 = strtol(arg, NULL, 0);
@@ -1046,6 +1055,8 @@ static const struct qemu_argument arg_table[] = {
     "",           "enable softfpu fast"},
     {"latx-stack",    "LATX_STACK",     true, handle_arg_latx_stack,
     "",           "enable hardware x87 stack"},
+    {"latx-x86addi",  "LATX_X86ADDI",   true, handle_arg_latx_x86addi,
+    "0|1",        "use 6600 signed-byte ADD flag instructions (default: 0)"},
     {"latx-hash",     "LATX_HASH",      true, handle_arg_latx_hash,
     "0|1",        "use experimental 6600 indirect-jump HASH (default: 0)"},
     {"latx-lsx-auto-clear", "LATX_LSX_AUTO_CLEAR", true, handle_arg_latx_lsx_auto_clear,

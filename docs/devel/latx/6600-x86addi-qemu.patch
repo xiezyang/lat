@@ -1,0 +1,46 @@
+--- a/target/loongarch/insns.decode
++++ b/target/loongarch/insns.decode
+@@ -134,2 +134,3 @@
+ @d2_i8                .... ........ .. ..... imm:8 rd:5    &d2_i8
++@r_si8                ................... imm:s8 rd:5    &r_i
+ @d2_i16                       .... ...... . imm:16 rd:5    &d2_i16
+@@ -2194,2 +2195,4 @@
+ x86add_w         00000000001111110..........00110 @rr_jk
++x86addi_w        0000000001010010011 ........ ..... @r_si8
++x86addi_d        0000000001010010111 ........ ..... @r_si8
+ x86add_wu        00000000001111110..........00000 @rr_jk
+--- a/target/loongarch/insn_trans/trans_lbt.c.inc
++++ b/target/loongarch/insn_trans/trans_lbt.c.inc
+@@ -57,2 +57,25 @@
+     return true;\
++}
++
++/* Signed-byte ADD flag operations leave the input register unchanged. */
++static bool trans_x86addi_w(DisasContext *ctx, arg_x86addi_w *a)
++{
++    if (!ctx->bt_6600 || !avail_64(ctx)) {
++        return false;
++    }
++    CHECK_BTE;
++    TCGv src = gpr_src(ctx, a->rd, EXT_NONE);
++    gen_helper_lbt_x86add_w(tcg_env, src, tcg_constant_tl(a->imm));
++    return true;
++}
++
++static bool trans_x86addi_d(DisasContext *ctx, arg_x86addi_d *a)
++{
++    if (!ctx->bt_6600 || !avail_64(ctx)) {
++        return false;
++    }
++    CHECK_BTE;
++    TCGv src = gpr_src(ctx, a->rd, EXT_NONE);
++    gen_helper_lbt_x86add_d(tcg_env, src, tcg_constant_tl(a->imm));
++    return true;
+ }
+--- a/target/loongarch/disas.c
++++ b/target/loongarch/disas.c
+@@ -2820,2 +2820,4 @@
+ INSN(x86add_w, rr_jk)
++INSN(x86addi_w, r_i)
++INSN(x86addi_d, r_i)
+ INSN(x86add_wu, rr_jk)

@@ -20689,6 +20689,20 @@
             "fpr_vj"
         ]
     },
+    "x86addi.w": {
+        "opcode": "0x00526000",
+        "opnd": [
+            "gpr_rd",
+            "imm_si8l"
+        ]
+    },
+    "x86addi.d": {
+        "opcode": "0x0052e000",
+        "opnd": [
+            "gpr_rd",
+            "imm_si8l"
+        ]
+    },
     "hash": {
         "opcode": "0x00360000",
         "opnd": [

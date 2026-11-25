@@ -152,6 +152,8 @@ extern int option_fast_atomic;
 extern int option_hash;
 /* The target clears YMM bits 255:128 on ordinary LSX register writes. */
 extern int option_lsx_auto_clear;
+/* Opt-in emission of the 6600 signed-byte ADD flag instructions. */
+extern int option_x86addi;
 static inline int latx_smc_default(void) { return 0x2 | 0x4; }
 static inline int latx_smc_inv_page(void) { return option_smc_opt == 0; }
 static inline int latx_smc_inv_tb(void) { return option_smc_opt != 0; }
@@ -174,6 +176,7 @@ extern unsigned long long counter_mips_tr;
     ENVFUN(LATX_SOFTFPU, handle_arg_latx_softfpu) \
     ENVFUN(LATX_HASH, handle_arg_latx_hash) \
     ENVFUN(LATX_LSX_AUTO_CLEAR, handle_arg_latx_lsx_auto_clear) \
+    ENVFUN(LATX_X86ADDI, handle_arg_latx_x86addi) \
     ENVFUN(LATX_SOFTFPU_FAST, handle_arg_latx_softfpu_fast) \
     ENVFUN(LATX_PRLIMIT, handle_arg_latx_prlimit) \
     ENVFUN(LATX_ROUNDING_OPT, handle_arg_latx_rounding) \

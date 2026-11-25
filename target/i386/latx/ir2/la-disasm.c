@@ -60,6 +60,7 @@ static IR2_OPND_TYPE la_to_ir2_type[] = {
     IR2_OPND_IMMD,//OPD_SI20
     IR2_OPND_IMMD,//OPD_SI5
     IR2_OPND_IMMD,//OPD_SI8
+    IR2_OPND_IMMD,//OPD_SI8L
     IR2_OPND_IMMD,//OPD_SI9
     IR2_OPND_SCR,//OPD_SJ
     IR2_OPND_IMMH,//OPD_UI1
@@ -132,6 +133,7 @@ static bool is_la_sign_opnd[] = {
     1,//OPD_SI20
     1,//OPD_SI5
     1,//OPD_SI8
+    1,//OPD_SI8L
     1,//OPD_SI9
     0,//OPD_SJ
     0,//OPD_UI1

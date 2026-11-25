@@ -58,6 +58,7 @@ typedef enum {
     IMM_SI20,
     IMM_SI5,
     IMM_SI8,
+    IMM_SI8L,
     IMM_SI9,
     SCR_SJ,
     IMM_UI1,

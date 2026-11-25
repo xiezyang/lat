@@ -25,3 +25,14 @@ foreach arch : ['x86_64', 'i386']
     }]
   endif
 endforeach
+
+foreach arch : ['x86_64', 'i386']
+  if arch + '-linux-user' in target_dirs
+    latx_integration_tests += [{
+      'name': 'test-x86addi-' + arch,
+      'runner': find_program('../../test-x86addi.py'),
+      'args': [emulators['latx-' + arch], arch],
+      'timeout': 120,
+    }]
+  endif
+endforeach

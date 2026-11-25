@@ -318,6 +318,8 @@ static bool ir2_src_contain_rsp(IR2_INST *ir2)
     case LISA_X86ADD_H:
     case LISA_X86ADD_W:
     case LISA_X86ADD_D:
+    case LISA_X86ADDI_W:
+    case LISA_X86ADDI_D:
     case LISA_X86SUB_B:
     case LISA_X86SUB_H:
     case LISA_X86SUB_W:

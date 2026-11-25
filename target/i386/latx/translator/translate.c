@@ -660,8 +660,17 @@ bool tr_opt_simm12(IR1_INST *ir1)
 {
 #ifdef CONFIG_LATX_FLAG_REDUCTION
     IR1_OPND *opnd1 = ir1_get_opnd(ir1, 1);
-    return !ir1_need_calculate_any_flag(ir1) &&
-            ir1_opnd_is_simm12(opnd1);
+    if (!ir1_opnd_is_simm12(opnd1)) {
+        return false;
+    }
+    if (!ir1_need_calculate_any_flag(ir1)) {
+        return true;
+    }
+    /* ADD can calculate live flags without materializing a signed byte. */
+    int size = ir1_opnd_size(ir1_get_opnd(ir1, 0));
+    int64_t imm = ir1_opnd_simm(opnd1);
+    return option_x86addi && ir1_opcode(ir1) == dt_X86_INS_ADD &&
+           (size == 32 || size == 64) && imm >= -128 && imm <= 127;
 #else
     return false;
 #endif

@@ -14,8 +14,26 @@ bool generate_eflag_by_lbt(IR2_OPND dest, IR2_OPND src0, IR2_OPND src1,
                            IR1_INST *pir1, bool is_imm)
 {
     switch (ir1_opcode(pir1)) {
-    case dt_X86_INS_XADD:
+    case dt_X86_INS_XADD: {
+        GENERATE_EFLAG_IR2_2(la_x86add);
+        break;
+    }
     case dt_X86_INS_ADD: {
+        IR1_OPND *opnd1 = ir1_get_opnd(pir1, 1);
+        int size = ir1_opnd_size(ir1_get_opnd(pir1, 0));
+
+        if (option_x86addi && is_imm && ir1_opnd_is_imm(opnd1) &&
+            (size == 32 || size == 64)) {
+            int64_t imm = ir1_opnd_simm(opnd1);
+            if (imm >= -128 && imm <= 127) {
+                if (size == 32) {
+                    la_x86addi_w(src0, imm);
+                } else {
+                    la_x86addi_d(src0, imm);
+                }
+                break;
+            }
+        }
         GENERATE_EFLAG_IR2_2(la_x86add);
         break;
     }

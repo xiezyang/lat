@@ -561,6 +561,14 @@
 #define LISA_XVSLLWIL_QU_DU LISA_INVALID
 
 IR2_OPCODE la_decode(uint32_t insn) {
+    switch (insn & 0xffffe000) {
+    case 0x00526000:
+        return LISA_X86ADDI_W;
+    case 0x0052e000:
+        return LISA_X86ADDI_D;
+    default:
+        break;
+    }
     switch ((insn >> 26) & 0x3f) {
     case 0x0:
         /* 000000.. ........ ........ ........ */

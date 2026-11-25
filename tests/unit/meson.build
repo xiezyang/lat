@@ -401,3 +401,10 @@ test(
   args: [files('test-latx-lsx-auto-clear.py')],
   suite: 'lat-pr-fast',
 )
+
+test(
+  'test-latx-x86addi',
+  python,
+  args: [files('test-latx-x86addi.py')],
+  suite: 'lat-pr-fast',
+)

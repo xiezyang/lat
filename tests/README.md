@@ -369,3 +369,20 @@ LASX. Its emitter-state tests separately check pending-zero cancellation.
 For bounded model runs, assemble with -DCASE_GROUP=N (1 through 10) to run
 one instruction group. Group 10 retains VMPSADBW and has a pre-existing timeout
 in the experimental model; the other groups cover the narrowed paths.
+
+## Experimental x86addi flag instructions
+
+`test-x86addi-x86_64` and `test-x86addi-i386` require the 6600 signed-byte
+ADD flag instructions. Set `LATX_TEST_X86ADDI=1` on a supporting runtime.
+`LATX_TEST_LA_RUNNER` can supply an outer LoongArch QEMU command, including
+its CPU model and sysroot arguments. The tests explicitly disable softfpu
+and softfpu_fast, and check both ADD results and all six arithmetic flags.
+Without the opt-in setting they skip to avoid executing unsupported opcodes.
+
+LAT emits `x86addi.w/d` only with `LATX_X86ADDI=1` or
+`-latx-x86addi 1`; the default is `0`. The switch controls both ADD flag
+instruction selection and omission of the immediate-register load. It does
+not change the AOT enablement setting. Existing AOT machine code is not
+rewritten by translation switches; use caches generated with the intended
+instruction support. The x86addi integration tests cover default, on, off,
+and command-line overrides of the environment setting.
