@@ -150,3 +150,18 @@ if 'CONFIG_LATX_AVX_OPT' in config_host
     endif
   endforeach
 endif
+
+if 'CONFIG_LATX_AVX_OPT' in config_host
+  foreach arch, bits : {'x86_64': '64', 'i386': '32'}
+    if arch + '-linux-user' in target_dirs
+      latx_integration_tests += [{
+        'name': 'test-lsx-narrow-' + arch,
+        'runner': find_program('../../test-avx-regressions.py'),
+        'args': [emulators['latx-' + arch], '--guest-bits', bits,
+                 files('../../lsx-narrow.asm')],
+        'env': {'LATX_SOFTFPU': '0', 'LATX_SOFTFPU_FAST': '0'},
+        'timeout': 180,
+      }]
+    endif
+  endforeach
+endif

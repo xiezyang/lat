@@ -2990,11 +2990,7 @@ bool translate_phminposuw(IR1_INST *pir1)
     IR2_OPND temp1 = ra_alloc_ftemp();
     IR2_OPND temp2 = ra_alloc_ftemp();
 
-    if (option_enable_lasx) {
-        la_xvori_b(temp, src, 0x0);
-    } else {
-        la_vori_b(temp, src, 0x0);
-    }
+    la_vori_b(temp, src, 0x0);
     la_vsrli_d(temp, temp, 0x10);
     la_vmin_hu(temp, temp, src);
     la_vsrli_d(temp, temp, 0x10);

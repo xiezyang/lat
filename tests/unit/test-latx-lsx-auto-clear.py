@@ -34,6 +34,59 @@ class LsxAutoClearTest(unittest.TestCase):
                            input=source, text=True, check=True)
             return subprocess.run([str(binary), *args], capture_output=True)
 
+    def test_xmm_copy_width(self):
+        # Compile the real translator: a wide final copy would hide the LSX
+        # producer from upper-zero cancellation. YMM arithmetic stays wide.
+        source = r"""
+#include <assert.h>
+#include <stdbool.h>
+typedef int IR2_OPND;
+typedef struct { int bits, reg; } IR1_OPND;
+typedef struct { IR1_OPND opnd[3]; } IR1_INST;
+static int option_enable_lasx = 1;
+static int narrow, wide, zero_requests;
+#define lsassert assert
+static void prepare_sse_rounding_mode(void) {}
+static IR1_OPND *ir1_get_opnd(IR1_INST *i, int n) { return &i->opnd[n]; }
+static int ir1_opnd_is_xmm(IR1_OPND *o) { return o->bits == 128; }
+static int ir1_opnd_is_ymm(IR1_OPND *o) { return o->bits == 256; }
+static int ir1_opnd_base_reg_num(IR1_OPND *o) { return o->reg; }
+static IR2_OPND ra_alloc_xmm(int n) { return n; }
+static IR2_OPND ra_alloc_ftemp(void) { return 31; }
+static IR2_OPND load_freg128_from_ir1(IR1_OPND *o) { return o->reg; }
+static IR2_OPND load_freg256_from_ir1(IR1_OPND *o) { return o->reg; }
+static bool translate_vaddpd_lsx(IR1_INST *i) { (void)i; return false; }
+static void la_vfadd_d(int d, int a, int b) {
+    (void)d; (void)a; (void)b; ++narrow;
+}
+static void la_xvfadd_d(int d, int a, int b) {
+    (void)d; (void)a; (void)b; ++wide;
+}
+void la_vori_b(int d, int s, int imm) {
+    assert(d != 31 && s == 31 && imm == 0); ++narrow;
+}
+void la_xvori_b(int d, int s, int imm) {
+    assert(d != 31 && s == 31 && imm == 0); ++wide;
+}
+static void set_high128_xreg_to_zero(int d) { (void)d; ++zero_requests; }
+""" + function("target/i386/latx/translator/tr-avx.c", "translate_vaddpd") + r"""
+int main(void) {
+    for (int dest = 0; dest < 3; ++dest) {
+        IR1_INST inst = { .opnd = {{128, dest}, {128, 1}, {128, 2}} };
+        narrow = wide = zero_requests = 0;
+        if (!translate_vaddpd(&inst)) return 1;
+        if (narrow != 2 || wide || zero_requests != 1) return 2;
+        for (int i = 0; i < 3; ++i) inst.opnd[i].bits = 256;
+        narrow = wide = zero_requests = 0;
+        if (!translate_vaddpd(&inst)) return 3;
+        if (narrow || wide != 1 || zero_requests) return 4;
+    }
+    return 0;
+}
+"""
+        result = self.compile_run(source)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_option(self):
         source = """
 #include <stdio.h>

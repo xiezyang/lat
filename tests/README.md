@@ -341,3 +341,31 @@ It explicitly disables software floating point and its fast paths.
 The runtime fixture is skipped unless `LATX_LSX_AUTO_CLEAR=1`; it requires
 hardware with automatic upper-half clearing or a matching experimental
 emulator wrapper. No hardware model is automatically enabled by the LATX option.
+
+
+## LASX-to-LSX narrowing
+
+`test-lsx-narrow-{x86_64,i386}` checks fixed AVX instruction cases in JIT and
+cold/hot AOT using the common runner and verified cache-load markers.
+It hashes every bit of each 256-bit result, including XMM operations' zeroed
+YMM upper halves. Reference hashes were obtained independently from native
+32-bit and 64-bit x86 execution; assembling `lsx-narrow.asm` with `-DRECORD=1`
+prints the ten little-endian 32-bit reference hashes. Exit codes 1 through 10
+identify the failing instruction group.
+
+Coverage includes source/destination aliases, memory operands, all 32 floating
+comparison predicates, scalar merges, conversions, duplicate/broadcast,
+integer comparisons, FMA operand orders, gather, legacy SSE preservation and
+full-width copies. Reciprocal approximation tests use infinity, whose exact
+zero result allows checking the merge without requiring identical approximation
+bits across host instruction sets. Software floating point and its fast paths
+are explicitly disabled. Run with `LATX_LSX_AUTO_CLEAR=1` only on matching
+hardware or through a matching experimental emulator.
+
+`test-latx-lsx-auto-clear` also compiles the actual VADDPD translator to verify
+that XMM computation and its final copy emit LSX, while YMM arithmetic remains
+LASX. Its emitter-state tests separately check pending-zero cancellation.
+
+For bounded model runs, assemble with -DCASE_GROUP=N (1 through 10) to run
+one instruction group. Group 10 retains VMPSADBW and has a pre-existing timeout
+in the experimental model; the other groups cover the narrowed paths.
