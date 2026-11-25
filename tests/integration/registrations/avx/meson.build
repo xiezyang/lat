@@ -135,3 +135,18 @@ if 'i386-linux-user' in target_dirs
     'timeout': 120,
   }]
 endif
+
+if 'CONFIG_LATX_AVX_OPT' in config_host
+  foreach arch, bits : {'x86_64': '64', 'i386': '32'}
+    if arch + '-linux-user' in target_dirs
+      latx_integration_tests += [{
+        'name': 'test-lsx-auto-clear-' + arch,
+        'runner': find_program('../../test-lsx-auto-clear.sh'),
+        'args': [emulators['latx-' + arch], '--guest-bits', bits,
+                 files('../../lsx-auto-clear.asm')],
+        'env': {'LATX_SOFTFPU': '0', 'LATX_SOFTFPU_FAST': '0'},
+        'timeout': 120,
+      }]
+    endif
+  endforeach
+endif

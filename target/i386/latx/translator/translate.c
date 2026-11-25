@@ -696,8 +696,12 @@ IR2_OPND save_h128_of_ymm(IR1_INST *ir1)
 
     IR1_OPND *dest = ir1_get_opnd(ir1, 0);
     IR2_OPND temp = ra_alloc_ftemp();
+    IR2_OPND reg = ra_alloc_xmm(ir1_opnd_base_reg_num(dest));
 
-    la_xvori_b(temp, ra_alloc_xmm(ir1_opnd_base_reg_num(dest)), 0);
+    if (option_lsx_auto_clear) {
+        flush_pending_ymmh_zero(reg);
+    }
+    la_xvori_b(temp, reg, 0);
     return temp;
 }
 
@@ -1986,7 +1990,8 @@ bool ir1_translate(IR1_INST *ir1)
     /*sse instructions need to reserve h128 bit of ymm\
         if support avx instructions*/
     IR2_OPND temp = ir2_opnd_new_none();
-    if (option_lative && option_enable_lasx && ir1_need_reserve_h128(ir1)) {
+    if ((option_lative || option_lsx_auto_clear) && option_enable_lasx &&
+        ir1_need_reserve_h128(ir1)) {
         temp = save_h128_of_ymm(ir1);
     }
 
@@ -2026,7 +2031,8 @@ bool ir1_translate(IR1_INST *ir1)
     }
 
     /*restore h128 bit of ymm after translating sse instructions*/
-    if (option_lative && option_enable_lasx && temp._type != IR2_OPND_NONE) {
+    if ((option_lative || option_lsx_auto_clear) && option_enable_lasx &&
+        temp._type != IR2_OPND_NONE) {
         restore_h128_of_ymm(ir1, temp);
     }
 

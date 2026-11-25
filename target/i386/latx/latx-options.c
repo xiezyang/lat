@@ -118,6 +118,7 @@ int option_set_rounding_opt;
 int option_cvt_opt;
 int option_fast_atomic;
 int option_hash;
+int option_lsx_auto_clear;
 char *option_wine_pe_fixed_base;
 char *option_wine_pe_fixed_address;
 int option_aot_pe_profile;
@@ -295,6 +296,7 @@ void options_init(void)
     option_set_rounding_opt = 1;
     option_cvt_opt = 1;
     option_hash = 0;
+    option_lsx_auto_clear = 0;
     if (have_am())
         option_fast_atomic = 1;
     else

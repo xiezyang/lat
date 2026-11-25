@@ -326,3 +326,18 @@ addresses, instruction encoding, fast-cache entry scaling,
 and the emitted hit-instruction position for standard, fast and masked
 fast-cache builds. It also checks option parsing and that HASH preserves the
 selected AOT mode.
+
+## Experimental LSX automatic upper-half clearing
+
+`test-latx-lsx-auto-clear` in `lat-pr-fast` compiles the actual clear emitters
+and option handler with a small vector-state model. It checks LSX writes,
+LASX fallbacks, deferred clears, VZEROUPPER, instruction boundaries,
+unmapped temporaries, option validation and the default-off path.
+
+`test-lsx-auto-clear-{x86_64,i386}` uses the common AVX regression runner
+for JIT and cold/hot AOT with a verified load marker. It checks all 256 bits
+after LSX and LASX-based XMM operations, legacy SSE writes and VZEROUPPER.
+It explicitly disables software floating point and its fast paths.
+The runtime fixture is skipped unless `LATX_LSX_AUTO_CLEAR=1`; it requires
+hardware with automatic upper-half clearing or a matching experimental
+emulator wrapper. No hardware model is automatically enabled by the LATX option.

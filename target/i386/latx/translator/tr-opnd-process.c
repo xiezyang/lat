@@ -7,6 +7,7 @@
 #include "common.h"
 #include "reg-alloc.h"
 #include "ir2.h"
+#include "ir2-la-assemble.h"
 #include "latx-options.h"
 #include "lsenv.h"
 #include "translate.h"
@@ -1427,9 +1428,38 @@ static int mapped_ymm_index(IR2_OPND opnd)
     return -1;
 }
 
+/* Do not cross a control-flow or guest-instruction boundary. */
+static bool last_write_clears_ymmh(IR2_OPND opnd)
+{
+    for (IR2_INST *inst = lsenv->tr_data->last_ir2; inst;
+         inst = ir2_prev(inst)) {
+        IR2_OPCODE opcode = ir2_opcode(inst);
+
+        if (opcode <= LISA_PSEUDO_END || ir2_opcode_is_branch(opcode) ||
+            ir2_opcode_is_jirl(opcode)) {
+            return false;
+        }
+        if (inst->op_count && !la_ir2_opcode_is_store(opcode) &&
+            ir2_opnd_cmp(&inst->_opnd[0], &opnd)) {
+            const GM_LA_OPCODE_FORMAT *format =
+                &lisa_format_table[opcode - LISA_INVALID];
+
+            /* Exclude LASX, scalar FP and experimental x87 instructions. */
+            return format->opnd[0] == FPR_VD &&
+                   !(opcode >= LISA_X86FADD_LD && opcode <= LISA_X86FUCOM_LD) &&
+                   !(opcode >= LISA_X86FADD_SS && opcode <= LISA_X86FMUL_SD);
+        }
+    }
+    return false;
+}
+
 /* Instruction emitters do not update the translation-time pending mask. */
 static void emit_high128_clear(IR2_OPND opnd)
 {
+    if (option_lsx_auto_clear) {
+        la_vori_b(opnd, opnd, 0);
+        return;
+    }
     IR2_OPND zero = ra_alloc_ftemp();
 
     la_vxor_v(zero, zero, zero);
@@ -1504,8 +1534,11 @@ void emit_ymmh_zeros(void)
         return;
     }
 
-    IR2_OPND zero = ra_alloc_ftemp();
-    la_vxor_v(zero, zero, zero);
+    IR2_OPND zero = ir2_opnd_new_none();
+    if (!option_lsx_auto_clear) {
+        zero = ra_alloc_ftemp();
+        la_vxor_v(zero, zero, zero);
+    }
     for (int index = 0; index < CPU_NB_REGS; ++index) {
         IR2_OPND opnd;
 
@@ -1513,9 +1546,15 @@ void emit_ymmh_zeros(void)
             continue;
         }
         ir2_opnd_build(&opnd, IR2_OPND_FPR, reg_xmm_map[index]);
-        la_xvpermi_q(opnd, zero, XVPERMI_Q_4_0(0, 2));
+        if (option_lsx_auto_clear) {
+            la_vori_b(opnd, opnd, 0);
+        } else {
+            la_xvpermi_q(opnd, zero, XVPERMI_Q_4_0(0, 2));
+        }
     }
-    ra_free_temp(zero);
+    if (!option_lsx_auto_clear) {
+        ra_free_temp(zero);
+    }
 }
 
 void set_high128_xreg_to_zero(IR2_OPND opnd)
@@ -1527,6 +1566,10 @@ void set_high128_xreg_to_zero(IR2_OPND opnd)
         return;
     }
 
+    if (option_lsx_auto_clear && last_write_clears_ymmh(opnd)) {
+        cancel_pending_ymmh_zero(opnd);
+        return;
+    }
     index = mapped_ymm_index(opnd);
     if (index >= 0) {
         lsenv->tr_data->ymmh_zero_pending |= UINT16_C(1) << index;

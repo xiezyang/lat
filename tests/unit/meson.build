@@ -394,3 +394,10 @@ test(
   args: [files('test-latx-6600-hash.py')],
   suite: 'lat-pr-fast',
 )
+
+test(
+  'test-latx-lsx-auto-clear',
+  python,
+  args: [files('test-latx-lsx-auto-clear.py')],
+  suite: 'lat-pr-fast',
+)
