@@ -2,7 +2,7 @@
 
 ## Fixed master baseline for the 6600 experiment
 
-- On branch `codex/6600-hw-upper-clear`, master is pinned to
+- On branch `6600-test`, master is pinned to
   `cf79c04a85bd8259892f5e24eb8762ae2d9cdc5b` from `upstream/master`.
 - Continue work from this branch. Do not fetch master for further integration,
   merge a newer master, or rebase this branch onto a newer master unless the
