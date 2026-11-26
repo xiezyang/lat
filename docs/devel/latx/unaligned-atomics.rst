@@ -46,10 +46,11 @@ interpreter.
 Validation boundaries
 ---------------------
 
-``lat-pr-fast`` includes two host-independent production-body tests::
+``lat-pr-fast`` includes three host-independent production-body tests::
 
     python3 tests/unit/test-latx-unaligned-atomic.py
     python3 tests/unit/test-latx-atomic-trap.py
+    python3 tests/unit/test-latx-atomic-width.py
 
 The first executes the emitted ADC/SBB/NEG/BTS/BTR/BTC IR in a byte-addressed
 model, injects CAS conflicts, checks adjacent bytes and carry inputs, and rejects
@@ -57,6 +58,10 @@ invalid option values and absent instruction capabilities.
 The second exercises both CMPXCHG16B fallback instruction sequences and the real
 interpreter/dispatch bodies for success, mismatch and permission failure; it
 also checks that SC.Q selection is unchanged.
+The third executes the AMADD/AMAND/AMOR/AMXOR interpreter bodies with ordinary
+NOPs and legacy 16/32-bit width markers, including builds with ``NDEBUG``.
+Only the two defined marker encodings override the instruction width; an
+ordinary NOP must not suppress an interpreted memory update.
 
 These tests model host instruction execution, page relocation and parts of the
 signal context. They do not prove LoongArch LBT flags, kernel signal delivery,

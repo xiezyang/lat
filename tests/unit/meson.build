@@ -106,6 +106,13 @@ test(
 )
 
 test(
+  'test-latx-atomic-width',
+  python,
+  args: [files('test-latx-atomic-width.py'), project_source_root],
+  suite: 'lat-pr-fast',
+)
+
+test(
   'test-i386-shared-mmap-failure',
   python,
   args: [files('test-i386-shared-mmap-failure.py'), project_source_root],

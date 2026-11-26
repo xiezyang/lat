@@ -6590,6 +6590,13 @@ static int recover_interpret_oldpage(abi_ulong oldpage, void * newpage,
 }
 
 
+static bool is_atomic_width_marker(uint32_t inst)
+{
+    /* ANDI zero, zero, 0 is a NOP, not a legacy operand-width marker. */
+    return inst == (0x03400000 | (16 << 10)) ||
+           inst == (0x03400000 | (32 << 10));
+}
+
 static int interpret_cmpxchg8b(ucontext_t *uc, uint32_t* inst,
         uint64_t *fixed_siaddr)
 {
@@ -6714,8 +6721,8 @@ static int interpret_add(ucontext_t *uc, uint32_t* inst,
         return LOCKINT_SEGV; /* send segv to guest */
     }
 
-    int opnd0_size = (inst[-2] & 0xffc003ff) == 0x03400000 ?
-                ((inst[-2] << 10)) >> 20 : size;
+    int opnd0_size = is_atomic_width_marker(inst[-2]) ?
+                (int)((inst[-2] << 10) >> 20) : size;
     if (page_addr != ((siaddr + (opnd0_size >> 3)) & qemu_host_page_mask)) {
         page_num = 2;
     } else {
@@ -6735,7 +6742,7 @@ static int interpret_add(ucontext_t *uc, uint32_t* inst,
     /*
      * add.d
      */
-    if ((inst[-2] & 0xffc003ff) == 0x03400000) {
+    if (is_atomic_width_marker(inst[-2])) {
         /* andi 0, 0, opnd0_size */
         int opnd0_size = (inst[-2] << 10) >> 20;
         qemu_log_mask(LAT_LOG_MEM, "[LATX_LOCK] %s opnd0_size %d\n",
@@ -6796,8 +6803,8 @@ static int interpret_and(ucontext_t *uc, uint32_t* inst,
         return LOCKINT_SEGV; /* send segv to guest */
     }
 
-    int opnd0_size = (inst[-1] & 0xffc003ff) == 0x03400000 ?
-                ((inst[-1] << 10)) >> 20 : size;
+    int opnd0_size = is_atomic_width_marker(inst[-1]) ?
+                (int)((inst[-1] << 10) >> 20) : size;
     if (page_addr != ((siaddr + (opnd0_size >> 3)) & qemu_host_page_mask)) {
         page_num = 2;
     } else {
@@ -6817,7 +6824,7 @@ static int interpret_and(ucontext_t *uc, uint32_t* inst,
     /*
      * and
      */
-    if ((inst[-1] & 0xffc003ff) == 0x03400000) {
+    if (is_atomic_width_marker(inst[-1])) {
         /* andi 0, 0, opnd0_size */
         int opnd0_size = (inst[-1] << 10) >> 20;
         qemu_log_mask(LAT_LOG_MEM, "[LATX_LOCK] %s opnd0_size %d\n",
@@ -6872,8 +6879,8 @@ static int interpret_or(ucontext_t *uc, uint32_t* inst,
         return LOCKINT_SEGV; /* send segv to guest */
     }
 
-    int opnd0_size = (inst[-1] & 0xffc003ff) == 0x03400000 ?
-                ((inst[-1] << 10)) >> 20 : size;
+    int opnd0_size = is_atomic_width_marker(inst[-1]) ?
+                (int)((inst[-1] << 10) >> 20) : size;
     if (page_addr != ((siaddr + (opnd0_size >> 3)) & qemu_host_page_mask)) {
         page_num = 2;
     } else {
@@ -6893,7 +6900,7 @@ static int interpret_or(ucontext_t *uc, uint32_t* inst,
     /*
      * or
      */
-    if ((inst[-1] & 0xffc003ff) == 0x03400000) {
+    if (is_atomic_width_marker(inst[-1])) {
         /* andi 0, 0, opnd0_size */
         int opnd0_size = (inst[-1] << 10) >> 20;
         qemu_log_mask(LAT_LOG_MEM, "[LATX_LOCK] %s opnd0_size %d\n",
@@ -6948,8 +6955,8 @@ static int interpret_xor(ucontext_t *uc, uint32_t* inst,
         return LOCKINT_SEGV; /* send segv to guest */
     }
 
-    int opnd0_size = (inst[-2] & 0xffc003ff) == 0x03400000 ?
-                ((inst[-2] << 10)) >> 20 : size;
+    int opnd0_size = is_atomic_width_marker(inst[-2]) ?
+                (int)((inst[-2] << 10) >> 20) : size;
     if (page_addr != ((siaddr + (opnd0_size >> 3)) & qemu_host_page_mask)) {
         page_num = 2;
     } else {
@@ -6969,7 +6976,7 @@ static int interpret_xor(ucontext_t *uc, uint32_t* inst,
     /*
      * or
      */
-    if ((inst[-2] & 0xffc003ff) == 0x03400000) {
+    if (is_atomic_width_marker(inst[-2])) {
         /* andi 0, 0, opnd0_size */
         int opnd0_size = (inst[-2] << 10) >> 20;
         qemu_log_mask(LAT_LOG_MEM, "[LATX_LOCK] %s opnd0_size %d\n",
