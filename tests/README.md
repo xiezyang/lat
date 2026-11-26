@@ -332,3 +332,13 @@ a protection failure after the first host VMA has changed. It verifies that
 staged mappings are released, old contents and ordinary/SMC permissions are
 restored, and a subsequent attempt can reuse the address. This is a failure
 injection test of the mapping function, not a multithreaded guest stress test.
+
+## Cache-line-local unaligned atomic tests
+
+The CPU integration domain registers a standalone LoongArch hardware probe and
+separate x86_64/i386 guest tests for legacy and enabled translation modes.
+Set `LATX_TEST_UNALIGNED_ATOMIC=1` only on hardware providing the new guarantee;
+enabled guest tests first require the raw native probe to pass. The two
+production-body models are in `lat-pr-fast`. See
+[unaligned atomic support and test commands](../docs/devel/latx/unaligned-atomics.rst)
+for compiler, prebuilt-fixture, capability and evidence requirements.

@@ -99,3 +99,66 @@ A prebuilt probe from the tested checkout can be supplied with
 ``LATX_ATOMIC_NATIVE_PROBE=/absolute/path/to/native-unaligned-atomic`` when
 a native compiler is unavailable. The runner records its SHA256; retain its
 source revision and build command with the result.
+
+LAT guest regression
+--------------------
+
+``tests/integration/unaligned-atomic.c`` is a freestanding Linux x86 fixture.
+Its expected memory results and arithmetic flags are calculated independently
+in C. It covers all in-line offsets and 8/16/32-bit operations (also 64-bit for
+x86_64), carry/borrow and signed boundaries, XADD/XCHG returned values, both
+CMPXCHG outcomes, CMPXCHG8B, signed and out-of-word bit indices, cross-line
+accesses, adjacent-byte preservation, a shared counter across fork, and a
+cross-page permission fault without a partial update. x86_64 also checks
+aligned CMPXCHG16B success and mismatch.
+
+The following commands run the mode-0 tests on legacy hardware::
+
+    meson test -C build64-tests --suite latx-integration \
+      test-unaligned-atomic-x86_64-0 test-unaligned-atomic-i386-0 \
+      --print-errorlogs
+
+On new hardware, opt into and run the mode-1 tests::
+
+    LATX_TEST_UNALIGNED_ATOMIC=1 meson test -C build64-tests \
+      --suite latx-integration \
+      test-unaligned-atomic-x86_64-1 test-unaligned-atomic-i386-1 \
+      --print-errorlogs
+
+The enabled tests require the native probe to pass first. This prevents an old
+host's SIGBUS interpreter from passing as new hardware support. Without the
+explicit test opt-in the mode-1 tests skip; with it the legacy mode-0 tests
+skip. On new hardware, the option must be enabled in the tested translator.
+
+The runner builds fixtures only at test execution using Clang/LLD. To supply
+fixtures built on an x86 Linux machine from the tested checkout::
+
+    mkdir -p atomic-guests
+    gcc -m64 -O2 -Wall -Wextra -Werror -ffreestanding -fno-builtin \
+      -fno-stack-protector -fno-pie -fomit-frame-pointer -mno-red-zone \
+      -nostdlib -static -no-pie -Wl,--build-id=none \
+      tests/integration/unaligned-atomic.c \
+      -o atomic-guests/unaligned-atomic-x86_64
+    gcc -m32 -O2 -Wall -Wextra -Werror -ffreestanding -fno-builtin \
+      -fno-stack-protector -fno-pie -fomit-frame-pointer \
+      -nostdlib -static -no-pie -Wl,--build-id=none \
+      tests/integration/unaligned-atomic.c \
+      -o atomic-guests/unaligned-atomic-i386
+
+Set ``LATX_ATOMIC_GUEST_DIR=/absolute/path/to/atomic-guests`` on the target.
+A missing fixture is a failure. Alternatively ``LATX_ATOMIC_GUEST_CC`` selects
+a cross compiler command; the runner adds ``-m32`` or ``-m64`` as appropriate.
+The runner records fixture SHA256 values and requires the final PASS sentinel.
+Timeout or abnormal termination fails and terminates the guest process group.
+
+The tests explicitly set ``LATX_SOFTFPU=0`` and ``LATX_SOFTFPU_FAST=0`` in the
+environment and command line; they exercise integer operations. AOT and KZT are
+disabled. ``LATX_CLOSE_PARALLEL=1`` prevents the single-thread atomic shortcut.
+``LATX_MT=2`` requests guest page checks on 16K hosts and is disabled by LAT on
+4K hosts. Address-translation selection is not changed by these tests.
+
+The script-driven fixtures are registered in ``latx-integration`` and are not
+built by normal product builds. Neither a passing native probe nor a passing
+host IR model substitutes for running these guests through the candidate LAT.
+Weak-memory ordering, uncached accesses and concurrent cross-line software
+fallback remain separate validation gates.

@@ -18,4 +18,21 @@ if host_machine.cpu_family() == 'loongarch64'
     'args': [],
     'timeout': 120,
   }]
+  foreach arch : ['x86_64', 'i386']
+    if 'CONFIG_LATX' in config_host and arch + '-linux-user' in target_dirs
+      foreach mode : ['0', '1']
+        latx_integration_tests += [{
+          'name': 'test-unaligned-atomic-' + arch + '-' + mode,
+          'runner': find_program('../../test-unaligned-atomic.py'),
+          'args': [
+            emulators['latx-' + arch],
+            files('../../unaligned-atomic.c'),
+            arch,
+            mode,
+          ],
+          'timeout': 240,
+        }]
+      endforeach
+    endif
+  endforeach
 endif
