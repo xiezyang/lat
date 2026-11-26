@@ -700,6 +700,15 @@ static void handle_arg_latx_parallel(const char *arg)
     close_latx_parallel = strtol(arg, NULL, 0);
 }
 
+static void handle_arg_latx_unaligned_atomic(const char *arg)
+{
+    if (strcmp(arg, "0") && strcmp(arg, "1")) {
+        error_report("LATX_UNALIGNED_ATOMIC expects 0 or 1");
+        exit(EXIT_FAILURE);
+    }
+    option_unaligned_atomic = arg[0] == '1';
+}
+
 static void handle_arg_latx_softfpu(const char *arg)
 {
     option_softfpu = strtol(arg, NULL, 0);
@@ -1041,6 +1050,9 @@ static const struct qemu_argument arg_table[] = {
     "",           "smc strategy: 0 (page) 1 (tb) 2(+shmm) 6(+helper,default)"},
     {"latx-close-parallel",    "LATX_CLOSE_PARALLEL",     true,  handle_arg_latx_parallel,
     "",           "disable latx parallel"},
+    {"latx-unaligned-atomic", "LATX_UNALIGNED_ATOMIC", true,
+     handle_arg_latx_unaligned_atomic, "0|1",
+     "enable cache-line-local unaligned atomics (requires hardware support)"},
     {"latx-softfpu",    "LATX_SOFTFPU",     true,  handle_arg_latx_softfpu,
     "",           "enable softfpu"},
     {"latx-softfpu-fast",    "LATX_SOFTFPU_FAST",     true,  handle_arg_latx_softfpu_fast,

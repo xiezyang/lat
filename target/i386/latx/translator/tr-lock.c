@@ -40,6 +40,9 @@ IR2_OPND convert_mem_to_itemp(IR1_OPND *opnd0)
 */
 bool translate_lock_sbb(IR1_INST *pir1)
 {
+    if (option_unaligned_atomic) {
+        return translate_lock_carry_fast_atomic(pir1);
+    }
     IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
     IR1_OPND *opnd1 = ir1_get_opnd(pir1, 1);
 
@@ -182,7 +185,7 @@ bool translate_lock_sbb(IR1_INST *pir1)
 */
 bool translate_lock_add(IR1_INST *pir1)
 {
-    if (option_fast_atomic)
+    if (option_fast_atomic || option_unaligned_atomic)
         return translate_lock_add_fast_atomic(pir1);
 
     IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
@@ -322,6 +325,9 @@ bool translate_lock_add(IR1_INST *pir1)
 */
 bool translate_lock_adc(IR1_INST *pir1)
 {
+    if (option_unaligned_atomic) {
+        return translate_lock_carry_fast_atomic(pir1);
+    }
     IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
     IR1_OPND *opnd1 = ir1_get_opnd(pir1, 1);
 
@@ -459,7 +465,7 @@ bool translate_lock_adc(IR1_INST *pir1)
 */
 bool translate_lock_and(IR1_INST *pir1)
 {
-    if (option_fast_atomic)
+    if (option_fast_atomic || option_unaligned_atomic)
         return translate_lock_and_fast_atomic(pir1);
 
     IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
@@ -596,7 +602,7 @@ bool translate_lock_and(IR1_INST *pir1)
 */
 bool translate_lock_inc(IR1_INST *pir1)
 {
-    if (option_fast_atomic)
+    if (option_fast_atomic || option_unaligned_atomic)
         return translate_lock_inc_fast_atomic(pir1);
 
     IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
@@ -734,7 +740,7 @@ bool translate_lock_inc(IR1_INST *pir1)
 */
 bool translate_lock_dec(IR1_INST *pir1)
 {
-    if (option_fast_atomic)
+    if (option_fast_atomic || option_unaligned_atomic)
         return translate_lock_dec_fast_atomic(pir1);
 
     IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
@@ -872,7 +878,7 @@ bool translate_lock_dec(IR1_INST *pir1)
 */
 bool translate_lock_sub(IR1_INST *pir1)
 {
-    if (option_fast_atomic)
+    if (option_fast_atomic || option_unaligned_atomic)
         return translate_lock_sub_fast_atomic(pir1);
 
     IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
@@ -1012,6 +1018,9 @@ bool translate_lock_sub(IR1_INST *pir1)
 */
 bool translate_lock_neg(IR1_INST *pir1)
 {
+    if (option_unaligned_atomic) {
+        return translate_lock_neg_fast_atomic(pir1);
+    }
     IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
 
     IR2_OPND src0, dest, tmp;
@@ -1155,7 +1164,7 @@ bool translate_lock_neg(IR1_INST *pir1)
 */
 bool translate_lock_or(IR1_INST *pir1)
 {
-    if (option_fast_atomic)
+    if (option_fast_atomic || option_unaligned_atomic)
         return translate_lock_or_fast_atomic(pir1);
 
     IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
@@ -1292,7 +1301,7 @@ bool translate_lock_or(IR1_INST *pir1)
 */
 bool translate_lock_not(IR1_INST *pir1)
 {
-    if (option_fast_atomic)
+    if (option_fast_atomic || option_unaligned_atomic)
         return translate_lock_not_fast_atomic(pir1);
 
     IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
@@ -1428,7 +1437,7 @@ bool translate_lock_not(IR1_INST *pir1)
 */
 bool translate_lock_xor(IR1_INST *pir1)
 {
-    if (option_fast_atomic)
+    if (option_fast_atomic || option_unaligned_atomic)
         return translate_lock_xor_fast_atomic(pir1);
 
     IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
@@ -1568,7 +1577,7 @@ bool translate_lock_xor(IR1_INST *pir1)
 */
 bool translate_lock_xadd(IR1_INST *pir1)
 {
-    if (option_fast_atomic)
+    if (option_fast_atomic || option_unaligned_atomic)
         return translate_lock_xadd_fast_atomic(pir1);
 
     IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
@@ -1712,7 +1721,7 @@ bool translate_lock_xadd(IR1_INST *pir1)
 */
 bool translate_lock_cmpxchg(IR1_INST *pir1)
 {
-    if (option_fast_atomic)
+    if (option_fast_atomic || option_unaligned_atomic)
         return translate_lock_cmpxchg_fast_atomic(pir1);
 
     IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);

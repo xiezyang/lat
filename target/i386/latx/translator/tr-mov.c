@@ -1506,7 +1506,7 @@ bool translate_xchg(IR1_INST *pir1)
 #ifndef CONFIG_LATX_LLSC
     return translate_xchg_spinlock(pir1);
 #else
-    if (option_fast_atomic) {
+    if (option_fast_atomic || option_unaligned_atomic) {
         return translate_lock_xchg_fast_atomic(pir1);
     }
 
@@ -1882,7 +1882,12 @@ bool translate_cmpxchg16b(IR1_INST *pir1)
 
     IR2_OPND zf_opnd = ra_alloc_itemp();
 
-    la_ll_d(zero_ir2_opnd, zero_ir2_opnd, 4);
+    if (option_unaligned_atomic) {
+        /* LL.D at address 4 no longer reliably raises ALE on these hosts. */
+        la_break(LATX_CMPXCHG16B_BREAK_CODE);
+    } else {
+        la_ll_d(zero_ir2_opnd, zero_ir2_opnd, 4);
+    }
     la_amswap_d(zf_opnd, zero_ir2_opnd, mem_opnd);
 
     generate_eflag_calculation(zf_opnd, zf_opnd, zf_opnd,

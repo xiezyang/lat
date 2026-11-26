@@ -23,9 +23,57 @@
                            opsz == 16 ? la_amcas_db_h : la_amcas_db_b)
 
 //bool translate_lock_btx_fast_atomic(IR1_INST *pir1)
-//bool translate_lock_sbb_fast_atomic(IR1_INST *pir1)
-//bool translate_lock_adc_fast_atomic(IR1_INST *pir1)
-//bool translate_lock_neg_fast_atomic(IR1_INST *pir1)
+
+/* ADC/SBB read the incoming LBT carry without changing it. Keep the original
+ * source for flag calculation: folding carry into src1 would lose AF/OF/CF
+ * information when src1 + CF wraps at the guest operand width.
+ */
+bool translate_lock_carry_fast_atomic(IR1_INST *pir1)
+{
+    IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
+    int size = ir1_opnd_size(opnd0);
+    IR2_OPND mem = convert_mem_no_offset(opnd0);
+    IR2_OPND src = load_ireg_from_ir1(ir1_get_opnd(pir1, 1),
+                                    SIGN_EXTENSION, false);
+    IR2_OPND old = ra_alloc_itemp();
+    IR2_OPND delta = ra_alloc_itemp();
+    IR2_OPND result = ra_alloc_itemp();
+    IR2_INST *(*amadd)(IR2_OPND, IR2_OPND, IR2_OPND) = ATO_AMADD(size);
+
+    gen_test_page_flag(mem, 0, PAGE_WRITE | PAGE_WRITE_ORG, size / 8);
+    if (ir1_opcode(pir1) == dt_X86_INS_ADC) {
+        la_adc_d(delta, src, zero_ir2_opnd);
+    } else {
+        la_sbc_d(delta, zero_ir2_opnd, src);
+    }
+    amadd(old, delta, mem);
+    la_add_d(result, old, delta);
+    generate_eflag_calculation(result, old, src, pir1, true);
+    return true;
+}
+
+bool translate_lock_neg_fast_atomic(IR1_INST *pir1)
+{
+    IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
+    int size = ir1_opnd_size(opnd0);
+    IR2_OPND mem = convert_mem_no_offset(opnd0);
+    IR2_OPND old = ra_alloc_itemp();
+    IR2_OPND expected = ra_alloc_itemp();
+    IR2_OPND result = ra_alloc_itemp();
+    IR2_OPND retry = ra_alloc_label();
+    IR2_INST *(*amcas)(IR2_OPND, IR2_OPND, IR2_OPND) = ATO_AMCAS(size);
+
+    gen_test_page_flag(mem, 0, PAGE_WRITE | PAGE_WRITE_ORG, size / 8);
+    la_label(retry);
+    load_ireg_from_ir2_mem_2(old, mem, 0, size, SIGN_EXTENSION, false);
+    la_or(expected, old, zero_ir2_opnd);
+    la_sub_d(result, zero_ir2_opnd, old);
+    amcas(expected, result, mem);
+    la_bne(expected, old, retry);
+    /* Do not change guest flags on a failed compare-and-swap attempt. */
+    generate_eflag_calculation(result, zero_ir2_opnd, old, pir1, true);
+    return true;
+}
 
 bool translate_lock_add_fast_atomic(IR1_INST *pir1)
 {

@@ -1365,7 +1365,9 @@ int cpu_signal_handler(int host_signum, void *pinfo,
             return 1;
         }
     }
-    if (info->si_signo == SIGBUS) {
+    if (info->si_signo == SIGBUS ||
+        (info->si_signo == SIGTRAP && option_unaligned_atomic &&
+         latx_is_cmpxchg16b_break((uint32_t *)pc))) {
         int ret = lock_interpret(info, uc);
         if (!ret) {
             mmap_unlock();

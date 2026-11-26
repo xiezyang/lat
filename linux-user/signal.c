@@ -1219,7 +1219,13 @@ static void host_signal_handler(int host_signum, siginfo_t *info,
 
     /* the CPU emulator uses some host signals to detect exceptions,
        we forward to it some signals */
-    if ((host_signum == SIGSEGV || host_signum == SIGBUS) &&
+    if ((host_signum == SIGSEGV || host_signum == SIGBUS
+#ifdef CONFIG_LATX
+         || (host_signum == SIGTRAP && option_unaligned_atomic &&
+             tcg_tb_lookup(UC_PC(uc)) &&
+             latx_is_cmpxchg16b_break((uint32_t *)UC_PC(uc)))
+#endif
+        ) &&
         info->si_code > 0 &&
         guest_fault_signal_requeue != host_signum) {
 #ifdef CONFIG_LATX

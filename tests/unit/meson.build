@@ -92,6 +92,20 @@ test(
 )
 
 test(
+  'test-latx-unaligned-atomic',
+  python,
+  args: [files('test-latx-unaligned-atomic.py'), project_source_root],
+  suite: 'lat-pr-fast',
+)
+
+test(
+  'test-latx-atomic-trap',
+  python,
+  args: [files('test-latx-atomic-trap.py'), project_source_root],
+  suite: 'lat-pr-fast',
+)
+
+test(
   'test-i386-shared-mmap-failure',
   python,
   args: [files('test-i386-shared-mmap-failure.py'), project_source_root],

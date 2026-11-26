@@ -100,8 +100,71 @@ static bool calculate_btx(IR2_OPND src0, IR2_OPND bit_offset, IR1_OPCODE opcode)
     return true;
 }
 
+static bool translate_btx_fast_atomic(IR1_INST *pir1)
+{
+    IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
+    IR1_OPND *opnd1 = ir1_get_opnd(pir1, 1);
+    int size = ir1_opnd_size(opnd0);
+    int imm;
+    IR2_OPND mem = ra_alloc_itemp();
+    IR1_OPCODE opcode = ir1_opcode(pir1);
+
+    /* Keep x86's signed bit-string address calculation, but do not round the
+     * resulting address down to an unrelated 8-byte word.
+     */
+    get_mem_bitbase(mem, &imm, opnd0, opnd1, true);
+    /* Leave room for the three temporaries needed by the page check. */
+    gen_test_page_flag(mem, 0, PAGE_WRITE | PAGE_WRITE_ORG, size / 8);
+    IR2_OPND bit = ra_alloc_itemp();
+    get_bitoffset(bit, opnd0, opnd1);
+    IR2_OPND old = ra_alloc_itemp();
+    IR2_OPND mask;
+    if (size != 16) {
+        mask = ra_alloc_itemp();
+        la_ori(mask, zero_ir2_opnd, 1);
+        la_sll_d(mask, mask, bit);
+    }
+
+    if (size == 16) {
+        IR2_OPND expected = ra_alloc_itemp();
+        IR2_OPND result = ra_alloc_itemp();
+        IR2_OPND retry = ra_alloc_label();
+        la_label(retry);
+        load_ireg_from_ir2_mem_2(old, mem, 0, size, SIGN_EXTENSION, false);
+        la_or(expected, old, zero_ir2_opnd);
+        la_or(result, old, zero_ir2_opnd);
+        calculate_btx(result, bit, opcode);
+        la_amcas_db_h(expected, result, mem);
+        la_bne(expected, old, retry);
+    } else if (opcode == dt_X86_INS_BTS) {
+        if (size == 64) {
+            la_amor_db_d(old, mask, mem);
+        } else {
+            la_amor_db_w(old, mask, mem);
+        }
+    } else if (opcode == dt_X86_INS_BTR) {
+        la_nor(mask, mask, zero_ir2_opnd);
+        if (size == 64) {
+            la_amand_db_d(old, mask, mem);
+        } else {
+            la_amand_db_w(old, mask, mem);
+        }
+    } else {
+        if (size == 64) {
+            la_amxor_db_d(old, mask, mem);
+        } else {
+            la_amxor_db_w(old, mask, mem);
+        }
+    }
+    generate_eflag_calculation(old, old, bit, pir1, true);
+    return true;
+}
+
 bool translate_btx_llsc(IR1_INST *pir1)
 {
+    if (option_unaligned_atomic && ir1_opcode(pir1) != dt_X86_INS_BT) {
+        return translate_btx_fast_atomic(pir1);
+    }
     IR1_OPND *opnd0 = ir1_get_opnd(pir1, 0);
     IR1_OPND *opnd1 = ir1_get_opnd(pir1, 1);
 

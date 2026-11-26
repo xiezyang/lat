@@ -12,6 +12,7 @@
 #include "latx-disassemble-trace.h"
 #include "latx-debug.h"
 #include "latx-runtime.h"
+#include "latx-atomic.h"
 
 #ifdef TARGET_X86_64
 #define LATX_SYSTEM_CONFIG_FILE "/etc/latx-x86_64.conf"
@@ -175,6 +176,7 @@ extern unsigned long long counter_mips_tr;
     ENVFUN(LATX_VPAES, handle_arg_latx_vpaes) \
     ENVFUN(LATX_SMC, handle_arg_latx_smc) \
     ENVFUN(LATX_CLOSE_PARALLEL, handle_arg_latx_parallel) \
+    ENVFUN(LATX_UNALIGNED_ATOMIC, handle_arg_latx_unaligned_atomic) \
     ENVFUN(LATX_SOFTFPU, handle_arg_latx_softfpu) \
     ENVFUN(LATX_SOFTFPU_FAST, handle_arg_latx_softfpu_fast) \
     ENVFUN(LATX_PRLIMIT, handle_arg_latx_prlimit) \

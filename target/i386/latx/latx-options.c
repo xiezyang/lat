@@ -12,6 +12,7 @@
 #include "latx-runtime.h"
 #include "latx-string-utils.h"
 #include "translate.h"
+#include "qemu/error-report.h"
 #if defined(CONFIG_LATX_KZT)
 #include "kzt-groups.h"
 #endif
@@ -117,6 +118,7 @@ int option_fork_unlink;
 int option_set_rounding_opt;
 int option_cvt_opt;
 int option_fast_atomic;
+int option_unaligned_atomic;
 char *option_wine_pe_fixed_base;
 char *option_wine_pe_fixed_address;
 int option_aot_pe_profile;
@@ -296,6 +298,7 @@ void options_init(void)
 
     option_set_rounding_opt = 1;
     option_cvt_opt = 1;
+    option_unaligned_atomic = 0;
     if (have_am())
         option_fast_atomic = 1;
     else
@@ -304,6 +307,13 @@ void options_init(void)
 
 bool latx_options_finalize(void)
 {
+    if (option_unaligned_atomic && !have_am()) {
+        error_report("LATX_UNALIGNED_ATOMIC=1 requires LAM, LAM_BH and LAMCAS");
+        /* Other finalization errors may deliberately fall back to JIT/KZT-off.
+         * Missing instructions cannot safely fall back after this opt-in.
+         */
+        exit(EXIT_FAILURE);
+    }
 #if defined(CONFIG_LATX_KZT)
     if (option_kzt_guest_tls_error) {
         kzt_groups_reject_configuration(option_kzt_guest_tls_error, true);

@@ -7326,11 +7326,18 @@ static void lock_interpret_segv(siginfo_t *info, ucontext_t *uc,
  */
 int lock_interpret(siginfo_t *info, ucontext_t *uc)
 {
+    uint32_t *inst = (uint32_t *)UC_PC(uc);
+
+    if (option_unaligned_atomic && latx_is_cmpxchg16b_break(inst)) {
+        /* SIGTRAP describes the BREAK, not the guest data access. Recover
+         * that address before checking shadow-page metadata.
+         */
+        info->si_addr = (void *)(uintptr_t)UC_GR(uc)[(inst[1] >> 5) & 0x1f];
+    }
     if (page_get_target_data((uint64_t)info->si_addr)) {
         /* TODO */
         qemu_log_mask(LAT_LOG_MEM, "[LATX_LOCK] shadow page TODO\n");
     } else {
-        uint32_t* inst = (uint32_t *)UC_PC(uc);
         uint64_t fixed_siaddr;
         int ret = LOCKINT_BAD;
 
@@ -7382,6 +7389,14 @@ int lock_interpret(siginfo_t *info, ucontext_t *uc)
                 }
                 return ret;
             }
+        }
+
+        if (option_unaligned_atomic && latx_is_cmpxchg16b_break(inst)) {
+            ret = interpret_cmpxchg16b(uc, inst, &fixed_siaddr);
+            if (ret == LOCKINT_SEGV) {
+                lock_interpret_segv(info, uc, fixed_siaddr, 0x4);
+            }
+            return ret;
         }
 
         /* AM* */

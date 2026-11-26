@@ -158,6 +158,8 @@ TRANS_FUNC_DEF(invalid);
 TRANS_FUNC_DEF(add);
 TRANS_FUNC_DEF(lock_add);
 TRANS_FUNC_DEF(lock_add_fast_atomic);
+TRANS_FUNC_DEF(lock_carry_fast_atomic);
+TRANS_FUNC_DEF(lock_neg_fast_atomic);
 TRANS_FUNC_DEF(push);
 TRANS_FUNC_DEF(pop);
 TRANS_FUNC_DEF(or);
