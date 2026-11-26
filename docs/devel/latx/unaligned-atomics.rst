@@ -62,3 +62,40 @@ These tests model host instruction execution, page relocation and parts of the
 signal context. They do not prove LoongArch LBT flags, kernel signal delivery,
 native non-aligned atomicity, or concurrency of the page-relocation fallback.
 Target correctness and performance measurements remain separate requirements.
+
+Native hardware probe
+---------------------
+
+Build this standalone program with a LoongArch Linux C compiler and run it
+without LAT::
+
+    cc -O2 -Wall -Wextra -Werror -pthread \
+      tests/native/loongarch-unaligned-atomic.c -o native-unaligned-atomic
+    ./native-unaligned-atomic
+
+It sweeps every cache-line-local offset for the AM*_DB variants used by LAT
+and LL.W/SC.W and LL.D/SC.D. It checks old values, updated values and adjacent
+bytes, and includes both AMCAS comparison outcomes. Two threads pinned to
+different available CPUs contend on AMADD, AMCAS and LL/SC for every natural
+alignment residue. Returned-old-value histograms supplement the final counters,
+including byte-counter wrapping.
+
+SIGBUS, SIGSEGV or SIGILL during the sweep is reported as unsupported, never
+interpreted as a successful access. Exit 0 means the checks passed; 77 means
+an instruction/alignment or the two-CPU environment was unavailable; 1 means
+an incorrect result or a setup failure. ``--require`` converts 77 to failure
+when this hardware contract is expected. Uncached memory, cross-line native
+atomicity and memory-ordering litmus tests are outside this probe.
+
+The program uses raw encodings for v1.1 AM instructions so the assembler need
+not recognize their mnemonics. The base LL/SC instructions use normal assembly.
+The ``test-native-unaligned-atomic`` integration registration builds the probe
+only when that test is run. To require the new hardware during suite execution::
+
+    LATX_TEST_UNALIGNED_ATOMIC=1 meson test -C build64-tests \
+      --suite latx-integration test-native-unaligned-atomic --print-errorlogs
+
+A prebuilt probe from the tested checkout can be supplied with
+``LATX_ATOMIC_NATIVE_PROBE=/absolute/path/to/native-unaligned-atomic`` when
+a native compiler is unavailable. The runner records its SHA256; retain its
+source revision and build command with the result.

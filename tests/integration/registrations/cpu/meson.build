@@ -10,3 +10,12 @@ if 'x86_64-linux-user' in target_dirs and \
     'timeout': 120,
   }]
 endif
+
+if host_machine.cpu_family() == 'loongarch64'
+  latx_integration_tests += [{
+    'name': 'test-native-unaligned-atomic',
+    'runner': find_program('../../../native/test-unaligned-atomic.py'),
+    'args': [],
+    'timeout': 120,
+  }]
+endif
