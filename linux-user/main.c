@@ -737,6 +737,15 @@ static void handle_arg_latx_lsx_auto_clear(const char *arg)
     option_lsx_auto_clear = arg[0] == '1';
 }
 
+static void handle_arg_latx_fld_clear(const char *arg)
+{
+    if (strcmp(arg, "0") && strcmp(arg, "1")) {
+        fprintf(stderr, "LATX_FLD_CLEAR must be 0 or 1\n");
+        exit(EXIT_FAILURE);
+    }
+    option_fld_clear = arg[0] == '1';
+}
+
 static void handle_arg_latx_x86addi(const char *arg)
 {
     if (strcmp(arg, "0") && strcmp(arg, "1")) {
@@ -1093,6 +1102,8 @@ static const struct qemu_argument arg_table[] = {
     "0|1",        "use 6600 signed-byte ADD flag instructions (default: 0)"},
     {"latx-hash",     "LATX_HASH",      true, handle_arg_latx_hash,
     "0|1",        "use experimental 6600 indirect-jump HASH (default: 0)"},
+    {"latx-fld-clear", "LATX_FLD_CLEAR", true, handle_arg_latx_fld_clear,
+    "0|1",        "use scalar loads that zero the rest of XMM (default: 0)"},
     {"latx-lsx-auto-clear", "LATX_LSX_AUTO_CLEAR", true, handle_arg_latx_lsx_auto_clear,
     "0|1",        "assume LSX writes clear YMM upper halves (default: 0)"},
     {"latx-float80",    "LATX_FLOAT80",     true, handle_arg_latx_float80,

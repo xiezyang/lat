@@ -518,7 +518,7 @@ bool translate_movsd(IR1_INST *pir1)
     IR1_OPND *dest = ir1_get_opnd(pir1, 0);
     IR1_OPND *src = ir1_get_opnd(pir1, 1);
     if (ir1_opnd_is_xmm(dest) && ir1_opnd_is_mem(src)) {
-        if (SHBR_ON_64(pir1)) {
+        if (option_fld_clear || SHBR_ON_64(pir1)) {
             IR2_OPND dest_opnd = ra_alloc_xmm(ir1_opnd_base_reg_num(dest));
             load_freg_from_ir1_2(dest_opnd, src, IS_INTEGER);
         } else{
@@ -556,7 +556,7 @@ bool translate_movss(IR1_INST *pir1)
     IR1_OPND *src = ir1_get_opnd(pir1, 1);
 
     if (ir1_opnd_is_xmm(dest) && ir1_opnd_is_mem(src)) {
-        if (SHBR_ON_32(pir1)) {
+        if (option_fld_clear || SHBR_ON_32(pir1)) {
             IR2_OPND xmm_dest = ra_alloc_xmm(ir1_opnd_base_reg_num(dest));
             load_freg_from_ir1_2(xmm_dest, src, IS_INTEGER);
             return true;

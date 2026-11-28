@@ -241,3 +241,19 @@ endforeach
 
 test('test-mxcsr-fcsr-model', find_program('python3'),
      args: files('../../test-mxcsr-fcsr-model.py'), suite: 'lat-pr-fast')
+
+# Enabled only on a target that implements the experimental scalar-load rule.
+if 'CONFIG_LATX_AVX_OPT' in config_host
+  foreach arch, bits : {'x86_64': '64', 'i386': '32'}
+    if arch + '-linux-user' in target_dirs
+      latx_integration_tests += [{
+        'name': 'test-fld-clear-' + arch,
+        'runner': find_program('../../test-fld-clear.sh'),
+        'args': [emulators['latx-' + arch], '--guest-bits', bits,
+                 files('../../fld-clear.asm')],
+        'env': {'LATX_SOFTFPU': '0', 'LATX_SOFTFPU_FAST': '0'},
+        'timeout': 120,
+      }]
+    endif
+  endforeach
+endif

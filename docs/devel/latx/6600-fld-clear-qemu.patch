@@ -1,0 +1,348 @@
+--- a/target/loongarch/cpu.c
++++ b/target/loongarch/cpu.c
+@@ -734,6 +734,16 @@
+     LOONGARCH_CPU(obj)->env.bt_6600 = value;
+ }
+ 
++static bool loongarch_get_fld_clear(Object *obj, Error **errp)
++{
++    return LOONGARCH_CPU(obj)->env.fld_clear;
++}
++
++static void loongarch_set_fld_clear(Object *obj, bool value, Error **errp)
++{
++    LOONGARCH_CPU(obj)->env.fld_clear = value;
++}
++
+ void loongarch_cpu_post_init(Object *obj)
+ {
+     LoongArchCPU *cpu = LOONGARCH_CPU(obj);
+@@ -750,6 +760,11 @@
+                              loongarch_set_bt_6600);
+     object_property_set_description(obj, "bt-6600",
+         "Experimental 6600 HASH and LSX upper-128 clearing semantics");
++
++    object_property_add_bool(obj, "fld-clear", loongarch_get_fld_clear,
++                             loongarch_set_fld_clear);
++    object_property_set_description(obj, "fld-clear",
++        "FLD.S/D zero bits 127:32/64 and preserve bits 255:128");
+ 
+     if (FIELD_EX32(cpu->env.cpucfg[2], CPUCFG2, LSX)) {
+         object_property_add_bool(obj, "lsx", loongarch_get_lsx,
+--- a/target/loongarch/cpu.h
++++ b/target/loongarch/cpu.h
+@@ -328,6 +328,7 @@
+     /* Experimental CPU property, not an architectural register or CPUCFG bit. */
+     bool atomic_64;
+     bool bt_6600;
++    bool fld_clear;
+ 
+     uint64_t scr[4];
+ 
+--- a/target/loongarch/helper.h
++++ b/target/loongarch/helper.h
+@@ -880,6 +880,7 @@
+ DEF_HELPER_1(lbt_x86mftop, tl, env)
+ DEF_HELPER_2(get_fpr, tl, env, i32)
+ DEF_HELPER_3(set_fpr, void, env, tl, i32)
++DEF_HELPER_3(fld_clear, void, env, tl, i32)
+ DEF_HELPER_2(lbt_setx86j, tl, env, i32)
+ // DEF_HELPER_2(lbt_setarmj, tl, env, i32)
+ // DEF_HELPER_4(lbt_armadd_w, void, env, tl, tl, i32)
+--- a/target/loongarch/insn_trans/trans_fmemory.c.inc
++++ b/target/loongarch/insn_trans/trans_fmemory.c.inc
+@@ -20,8 +20,16 @@
+     addr = make_address_i(ctx, addr, a->imm);
+ 
+     tcg_gen_qemu_ld_tl(dest, addr, ctx->mem_idx, mop);
+-    maybe_nanbox_load(dest, mop);
+-    set_fpr(a->fd, dest);
++    if (ctx->fld_clear) {
++        /*
++         * The zero-extended load and D[1] clear happen only after a successful
++         * access. D[2:3] retain their values, independently of bt-6600 LSX.
++         */
++        gen_helper_fld_clear(tcg_env, dest, tcg_constant_i32(a->fd));
++    } else {
++        maybe_nanbox_load(dest, mop);
++        set_fpr(a->fd, dest);
++    }
+ 
+     return true;
+ }
+--- a/target/loongarch/lbt_helper.c
++++ b/target/loongarch/lbt_helper.c
+@@ -555,6 +555,16 @@
+     } 
+ }
+ 
++/* FLD follows the same optional x87 stack mapping as scalar FPR writes. */
++void helper_fld_clear(CPULoongArchState *env, uint64_t val, uint32_t reg_num)
++{
++    if (reg_num < 8 && (env->fcsr0 & (1 << 6))) {
++        reg_num = (reg_num + env->x86_top) % 8;
++    }
++    env->fpr[reg_num].vreg.D[0] = val;
++    env->fpr[reg_num].vreg.D[1] = 0;
++}
++
+ uint64_t helper_get_fpr_x80(CPULoongArchState *env, uint32_t reg_num)
+ {
+     uint64_t ret;
+--- a/target/loongarch/translate.c
++++ b/target/loongarch/translate.c
+@@ -150,6 +150,7 @@
+     ctx->cpucfg2 = env->cpucfg[2];
+     ctx->atomic_64 = env->atomic_64;
+     ctx->bt_6600 = env->bt_6600;
++    ctx->fld_clear = env->fld_clear;
+ }
+ 
+ static void loongarch_tr_tb_start(DisasContextBase *dcbase, CPUState *cs)
+--- a/target/loongarch/translate.h
++++ b/target/loongarch/translate.h
+@@ -58,6 +58,7 @@
+     uint32_t cpucfg2;
+     bool atomic_64;
+     bool bt_6600;
++    bool fld_clear;
+ } DisasContext;
+ 
+ void generate_exception(DisasContext *ctx, int excp);
+--- a/tests/tcg/loongarch64/Makefile.target
++++ b/tests/tcg/loongarch64/Makefile.target
+@@ -41,4 +41,8 @@
+ test_lsx_estimate: CFLAGS += -mlsx -mlasx -fno-tree-vectorize
+ run-test_lsx_estimate: QEMU_OPTS += -cpu la464,bt-6600=on
+ 
++LOONGARCH64_TESTS += test_fld_clear
++test_fld_clear: CFLAGS += -mlasx -fno-tree-vectorize
++run-test_fld_clear: QEMU_OPTS += -cpu la464,fld-clear=on
++
+ TESTS += $(LOONGARCH64_TESTS)
+--- /dev/null
++++ b/tests/tcg/loongarch64/test_fld_clear.c
+@@ -0,0 +1,223 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++/* Direct FLD regression: all 32 registers, raw bits and full 256-bit state. */
++#include <inttypes.h>
++#include <stdint.h>
++#include <stdio.h>
++#include <string.h>
++#include <sys/mman.h>
++#include <sys/auxv.h>
++#include <unistd.h>
++#include <signal.h>
++#include <ucontext.h>
++
++typedef struct { uint64_t d[4]; } vec256;
++typedef void (*load_fn)(vec256 *, const void *);
++#define LOAD(name, reg, op) \
++static __attribute__((noinline)) void name(vec256 *v, const void *p) \
++{ \
++    __asm__ volatile("xvld $xr" #reg ", %0, 0\n\t" \
++                     op " $f" #reg ", %1, 0\n\t" \
++                     "xvst $xr" #reg ", %0, 0" \
++                     : : "r"(v), "r"(p) : "f" #reg, "memory"); \
++}
++LOAD(load_s_0, 0, "fld.s")
++LOAD(load_d_0, 0, "fld.d")
++LOAD(load_s_1, 1, "fld.s")
++LOAD(load_d_1, 1, "fld.d")
++LOAD(load_s_2, 2, "fld.s")
++LOAD(load_d_2, 2, "fld.d")
++LOAD(load_s_3, 3, "fld.s")
++LOAD(load_d_3, 3, "fld.d")
++LOAD(load_s_4, 4, "fld.s")
++LOAD(load_d_4, 4, "fld.d")
++LOAD(load_s_5, 5, "fld.s")
++LOAD(load_d_5, 5, "fld.d")
++LOAD(load_s_6, 6, "fld.s")
++LOAD(load_d_6, 6, "fld.d")
++LOAD(load_s_7, 7, "fld.s")
++LOAD(load_d_7, 7, "fld.d")
++LOAD(load_s_8, 8, "fld.s")
++LOAD(load_d_8, 8, "fld.d")
++LOAD(load_s_9, 9, "fld.s")
++LOAD(load_d_9, 9, "fld.d")
++LOAD(load_s_10, 10, "fld.s")
++LOAD(load_d_10, 10, "fld.d")
++LOAD(load_s_11, 11, "fld.s")
++LOAD(load_d_11, 11, "fld.d")
++LOAD(load_s_12, 12, "fld.s")
++LOAD(load_d_12, 12, "fld.d")
++LOAD(load_s_13, 13, "fld.s")
++LOAD(load_d_13, 13, "fld.d")
++LOAD(load_s_14, 14, "fld.s")
++LOAD(load_d_14, 14, "fld.d")
++LOAD(load_s_15, 15, "fld.s")
++LOAD(load_d_15, 15, "fld.d")
++LOAD(load_s_16, 16, "fld.s")
++LOAD(load_d_16, 16, "fld.d")
++LOAD(load_s_17, 17, "fld.s")
++LOAD(load_d_17, 17, "fld.d")
++LOAD(load_s_18, 18, "fld.s")
++LOAD(load_d_18, 18, "fld.d")
++LOAD(load_s_19, 19, "fld.s")
++LOAD(load_d_19, 19, "fld.d")
++LOAD(load_s_20, 20, "fld.s")
++LOAD(load_d_20, 20, "fld.d")
++LOAD(load_s_21, 21, "fld.s")
++LOAD(load_d_21, 21, "fld.d")
++LOAD(load_s_22, 22, "fld.s")
++LOAD(load_d_22, 22, "fld.d")
++LOAD(load_s_23, 23, "fld.s")
++LOAD(load_d_23, 23, "fld.d")
++LOAD(load_s_24, 24, "fld.s")
++LOAD(load_d_24, 24, "fld.d")
++LOAD(load_s_25, 25, "fld.s")
++LOAD(load_d_25, 25, "fld.d")
++LOAD(load_s_26, 26, "fld.s")
++LOAD(load_d_26, 26, "fld.d")
++LOAD(load_s_27, 27, "fld.s")
++LOAD(load_d_27, 27, "fld.d")
++LOAD(load_s_28, 28, "fld.s")
++LOAD(load_d_28, 28, "fld.d")
++LOAD(load_s_29, 29, "fld.s")
++LOAD(load_d_29, 29, "fld.d")
++LOAD(load_s_30, 30, "fld.s")
++LOAD(load_d_30, 30, "fld.d")
++LOAD(load_s_31, 31, "fld.s")
++LOAD(load_d_31, 31, "fld.d")
++static const load_fn singles[] = {
++    load_s_0, load_s_1, load_s_2, load_s_3,
++    load_s_4, load_s_5, load_s_6, load_s_7,
++    load_s_8, load_s_9, load_s_10, load_s_11,
++    load_s_12, load_s_13, load_s_14, load_s_15,
++    load_s_16, load_s_17, load_s_18, load_s_19,
++    load_s_20, load_s_21, load_s_22, load_s_23,
++    load_s_24, load_s_25, load_s_26, load_s_27,
++    load_s_28, load_s_29, load_s_30, load_s_31,
++};
++static const load_fn doubles[] = {
++    load_d_0, load_d_1, load_d_2, load_d_3,
++    load_d_4, load_d_5, load_d_6, load_d_7,
++    load_d_8, load_d_9, load_d_10, load_d_11,
++    load_d_12, load_d_13, load_d_14, load_d_15,
++    load_d_16, load_d_17, load_d_18, load_d_19,
++    load_d_20, load_d_21, load_d_22, load_d_23,
++    load_d_24, load_d_25, load_d_26, load_d_27,
++    load_d_28, load_d_29, load_d_30, load_d_31,
++};
++
++static volatile sig_atomic_t faulted;
++static void fault_handler(int sig, siginfo_t *info, void *context)
++{
++    ucontext_t *uc = context;
++    (void)info;
++    faulted = sig;
++    uc->uc_mcontext.__pc += 4;
++}
++
++static unsigned checks;
++static int check(const vec256 *got, const vec256 *want, const char *what,
++                 unsigned reg)
++{
++    ++checks;
++    if (!memcmp(got, want, sizeof(*got))) {
++        return 0;
++    }
++    fprintf(stderr, "%s reg %u mismatch: %016" PRIx64 " %016" PRIx64
++            " %016" PRIx64 " %016" PRIx64 "\n", what, reg,
++            got->d[3], got->d[2], got->d[1], got->d[0]);
++    return 1;
++}
++
++int main(int argc, char **argv)
++{
++    const int enabled = argc == 1 || strcmp(argv[1], "off");
++    static const uint64_t data[] = {
++        0, UINT64_MAX, 0x8000000080000000ULL, 0x3ff000003f800000ULL,
++        0xbff00000bf800000ULL, 0x7ff000007f800000ULL,
++        0x7ff800007fc01234ULL, 0x7ff000007f801234ULL,
++        1, 0x000fffffffffffffULL, 0x0010000000800000ULL,
++        0x7fefffff7f7fffffULL, 0xaaaaaaaa55555555ULL,
++        0x55555555aaaaaaaaULL, 0x0123456789abcdefULL,
++        0x8000000000000001ULL,
++    };
++    static const vec256 presets[] = {
++        { {0xfedcba9876543210ULL, 0x0123456789abcdefULL,
++          0x99aabbccddeeff00ULL, 0x1122334455667788ULL} },
++        { {UINT64_MAX, UINT64_MAX, UINT64_MAX, UINT64_MAX} },
++        { {0xaaaaaaaaaaaaaaaaULL, 0x5555555555555555ULL,
++          0x5555555555555555ULL, 0xaaaaaaaaaaaaaaaaULL} },
++        { {0, 0, 1, 0x8000000000000000ULL} },
++    };
++    const unsigned long page = getauxval(AT_PAGESZ);
++    unsigned char *memory = mmap(NULL, 2 * page, PROT_READ | PROT_WRITE,
++                                MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
++    if (memory == MAP_FAILED || mprotect(memory + page, page, PROT_NONE)) {
++        return 2;
++    }
++    struct sigaction sa = { .sa_sigaction = fault_handler,
++                            .sa_flags = SA_SIGINFO };
++    sigemptyset(&sa.sa_mask);
++    if (sigaction(SIGSEGV, &sa, NULL)) {
++        return 2;
++    }
++    for (unsigned reg = 0; reg < 32; ++reg) {
++        for (unsigned pattern = 0; pattern < 4; ++pattern) {
++            for (unsigned i = 0; i < sizeof(data) / sizeof(data[0]); ++i) {
++                for (unsigned address = 0; address < 4; ++address) {
++                    uint64_t value = data[i];
++                    unsigned char *p = memory + address * 16;
++                    if (address == 3) {
++                        p = memory + page - 4;
++                    }
++                    memcpy(p, &value, 4);
++                    vec256 got = presets[pattern], want = got;
++                    want.d[0] = (uint32_t)value;
++                    if (enabled) {
++                        want.d[1] = 0;
++                    } else {
++                        want.d[0] |= 0xffffffff00000000ULL;
++                    }
++                    singles[reg](&got, p);
++                    if (check(&got, &want, "fld.s", reg)) {
++                        return 1;
++                    }
++                    if (address == 3) {
++                        p = memory + page - 8;
++                    }
++                    memcpy(p, &value, 8);
++                    want.d[0] = value;
++                    doubles[reg](&got, p);
++                    if (check(&got, &want, "s->d", reg)) {
++                        return 1;
++                    }
++                    memcpy(p, &value, 4);
++                    want.d[0] = (uint32_t)value;
++                    if (!enabled) {
++                        want.d[0] |= 0xffffffff00000000ULL;
++                    }
++                    singles[reg](&got, p);
++                    if (check(&got, &want, "d->s", reg)) {
++                        return 1;
++                    }
++                }
++            }
++        }
++    }
++    /*
++     * Skip the faulting instruction in the handler, then store its unchanged
++     * destination to prove neither the load nor the clear committed.
++     */
++    for (unsigned wide = 0; wide < 2; ++wide) {
++        vec256 got = presets[0];
++        faulted = 0;
++        (wide ? doubles[16] : singles[16])(&got, memory + page);
++        if (faulted != SIGSEGV || check(&got, &presets[0], "fault", 16)) {
++            return 3;
++        }
++    }
++    munmap(memory, 2 * page);
++    printf("FLD clear=%d: %u full-register checks, "
++           "page-end s/d and fault passed\n",
++           enabled, checks);
++    return 0;
++}
